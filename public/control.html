@@ -153,6 +153,41 @@
         word-break: break-all;
         margin-top: 8px;
       }
+      .toggles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+        padding: 10px 12px;
+        background: #0f1318;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 13px;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .toggle input {
+        width: 20px;
+        height: 20px;
+        flex: none;
+        padding: 0;
+        accent-color: var(--accent);
+      }
+      .toggle em {
+        display: block;
+        font-style: normal;
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
       .banner {
         border-radius: 10px;
         padding: 12px 14px;
@@ -278,6 +313,9 @@
         visible”. The page background is already transparent — no custom CSS needed.
       </p>
       <code id="overlay-url"></code>
+      <div class="row">
+        <button class="ghost" data-copy="overlay-url">Copy overlay link</button>
+      </div>
       <p class="muted" style="margin-top: 10px">
         Tweak with query params:
         <b>size</b> (px), <b>color</b>, <b>label</b>, <b>align</b> (left/center/right),
@@ -291,16 +329,48 @@
       <p class="muted">
         A second Browser Source, 1280×720, that shows your webcam with the pose skeleton on it and
         counts reps at the same time — so OBS never needs a Video Capture Device for this camera.
-        Only one page should count at a time; this URL does, so close the camera page before going
-        live.
+        Tick what you want and paste the URL below into OBS.
       </p>
+
+      <div class="toggles" id="tracker-toggles">
+        <label class="toggle"
+          ><input type="checkbox" id="t-count" checked /><span
+            >Count my reps<em>Off = display only</em></span
+          ></label
+        >
+        <label class="toggle"
+          ><input type="checkbox" id="t-cutout" /><span
+            >Remove background<em>No green screen needed</em></span
+          ></label
+        >
+        <label class="toggle"
+          ><input type="checkbox" id="t-video" checked /><span
+            >Show camera<em>Off = skeleton only</em></span
+          ></label
+        >
+        <label class="toggle"
+          ><input type="checkbox" id="t-skeleton" checked /><span
+            >Show skeleton<em>The pose lines</em></span
+          ></label
+        >
+        <label class="toggle"
+          ><input type="checkbox" id="t-counter" checked /><span
+            >Show the number<em>Baked into this source</em></span
+          ></label
+        >
+        <label class="toggle"
+          ><input type="checkbox" id="t-mirror" /><span
+            >Mirror<em>Flip horizontally</em></span
+          ></label
+        >
+      </div>
+
       <code id="tracker-url"></code>
-      <p class="muted" style="margin-top: 10px">
-        <b>cutout</b>=1 removes the background so you float over your scene, <b>bg</b>=00ff00 puts a
-        chroma-key colour behind you instead, <b>video</b>=0 leaves just the skeleton,
-        <b>skeleton</b>=0 hides it, <b>counter</b>=0 drops the number, <b>mirror</b>=1 flips it, and
-        <b>count</b>=0 makes it display-only.
-      </p>
+      <div class="row">
+        <button class="ghost" data-copy="tracker-url">Copy camera link</button>
+        <button class="ghost" id="tracker-open">Open it here</button>
+      </div>
+      <p class="muted" id="tracker-note" style="margin-top: 10px"></p>
     </section>
 
     <section>
@@ -435,9 +505,6 @@
         post('/api/settings', payload);
       });
 
-      $('overlay-url').textContent = `${location.origin}/overlay.html?size=88&subs=1`;
-      $('tracker-url').textContent = `${location.origin}/tracker.html?count=1`;
-
       // --- live state ------------------------------------------------------
       let source;
       function connect() {
@@ -449,6 +516,97 @@
         };
       }
       connect();
+    </script>
+
+    <script type="module">
+      // The OBS links live in their own module so the URL rules can be shared
+      // with the tracker page and tested away from the DOM.
+      import { buildTrackerUrl, buildOverlayUrl, redactToken } from '/js/obs-link.js';
+
+      const $ = (id) => document.getElementById(id);
+      const token = new URLSearchParams(location.search).get('token');
+
+      $('overlay-url').textContent = buildOverlayUrl(location.origin, { size: 88, subs: true });
+
+      // The real URL is kept beside the displayed one: what you copy has to
+      // include the token, but a token rendered on a page you might have on
+      // screen is one screenshot away from being someone else's.
+      const trackerUrl = () =>
+        buildTrackerUrl(
+          location.origin,
+          {
+            count: $('t-count').checked,
+            cutout: $('t-cutout').checked,
+            video: $('t-video').checked,
+            skeleton: $('t-skeleton').checked,
+            counter: $('t-counter').checked,
+            mirror: $('t-mirror').checked,
+          },
+          token,
+        );
+
+      const copyable = new Map();
+
+      function renderTracker() {
+        const url = trackerUrl();
+        copyable.set('tracker-url', url);
+        $('tracker-url').textContent = redactToken(url);
+
+        const notes = [];
+        if ($('t-count').checked) {
+          notes.push(
+            'This source counts, so close the camera page before you go live — two counting pages double every push-up.',
+          );
+        } else {
+          notes.push('Display only: something else has to count. Leave the camera page open.');
+        }
+        if (!$('t-video').checked) {
+          notes.push(
+            'Skeleton only still opens the webcam, so OBS cannot also have it as a Video Capture Device.',
+          );
+        }
+        if ($('t-cutout').checked) {
+          notes.push('The cutout costs GPU work every frame — check your encoder before a long stream.');
+        }
+        $('tracker-note').textContent = notes.join(' ');
+      }
+
+      for (const el of document.querySelectorAll('#tracker-toggles input')) {
+        el.addEventListener('change', renderTracker);
+      }
+      renderTracker();
+
+      for (const button of document.querySelectorAll('[data-copy]')) {
+        button.addEventListener('click', async () => {
+          const id = button.dataset.copy;
+          const text = copyable.get(id) ?? $(id).textContent;
+          const original = button.textContent;
+          try {
+            // Clipboard access needs a secure origin; 127.0.0.1 counts, a LAN
+            // IP does not, so the phone case has to fall back to selecting it.
+            await navigator.clipboard.writeText(text);
+            button.textContent = 'Copied';
+          } catch {
+            selectText($(id));
+            button.textContent = 'Press ⌘/Ctrl+C';
+          }
+          setTimeout(() => {
+            button.textContent = original;
+          }, 1600);
+        });
+      }
+
+      function selectText(el) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const selection = getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      $('tracker-open').addEventListener('click', () => {
+        location.href = trackerUrl();
+      });
     </script>
   </body>
 </html>
