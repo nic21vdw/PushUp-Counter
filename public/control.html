@@ -194,11 +194,22 @@
       <h2>Push-ups left</h2>
       <div class="remaining"><span id="remaining">—</span><small id="channel"></small></div>
       <div class="stats">
-        <div class="stat"><b id="subs">—</b><span>Subscribers</span></div>
         <div class="stat"><b id="gained">—</b><span>Subs this stream</span></div>
-        <div class="stat"><b id="done">—</b><span>Done</span></div>
-        <div class="stat"><b id="total">—</b><span>Total owed</span></div>
+        <div class="stat"><b id="done">—</b><span>Done this stream</span></div>
+        <div class="stat"><b id="total">—</b><span>Owed this stream</span></div>
+        <div class="stat"><b id="subs">—</b><span>Subs total</span></div>
       </div>
+      <p class="muted" id="stream-since" style="margin: 12px 0 0"></p>
+    </section>
+
+    <section>
+      <h2>Going live</h2>
+      <p class="muted" style="margin-top: 0">
+        Start a new stream so only subscribers gained from now on add push-ups. Anything you still
+        owe carries over, so the overlay number won't jump. This happens automatically when you
+        start the server after a break — the button is for starting a second stream the same day.
+      </p>
+      <button class="primary" id="new-stream" style="width: 100%">Start new stream</button>
     </section>
 
     <section>
@@ -225,7 +236,7 @@
       <h2>Settings</h2>
       <div class="fields">
         <div>
-          <label for="pledged">Base push-ups owed</label>
+          <label for="pledged">Base owed (carried over)</label>
           <input id="pledged" type="number" inputmode="numeric" />
         </div>
         <div>
@@ -237,16 +248,15 @@
           <input id="doneField" type="number" inputmode="numeric" />
         </div>
         <div>
-          <label for="baselineSubs">Baseline sub count</label>
+          <label for="baselineSubs">Sub count at stream start</label>
           <input id="baselineSubs" type="number" inputmode="numeric" />
         </div>
       </div>
       <div class="row">
         <button class="primary" id="save">Save settings</button>
-        <button class="ghost" id="rebaseline">Start subs from now</button>
       </div>
       <p class="muted" style="margin-bottom: 0">
-        Left to do = base owed + (subscribers − baseline) × per sub − done.
+        Left to do = base owed + (subs gained this stream × per sub) − done this stream.
       </p>
     </section>
 
@@ -314,6 +324,11 @@
           state.subs === null ? '—' : `${state.subsGained > 0 ? '+' : ''}${fmt(state.subsGained)}`;
         $('done').textContent = fmt(state.done);
         $('total').textContent = fmt(state.total);
+        $('stream-since').textContent = state.streamStartedAt
+          ? `Stream started ${new Date(state.streamStartedAt).toLocaleString()} at ${fmt(
+              state.baselineSubs,
+            )} subs.`
+          : 'Waiting for the first subscriber count…';
 
         for (const [id, value] of [
           ['pledged', state.pledged],
@@ -360,7 +375,16 @@
 
       $('undo').addEventListener('click', () => post('/api/undo'));
       $('refresh').addEventListener('click', () => post('/api/refresh'));
-      $('rebaseline').addEventListener('click', () => post('/api/rebaseline'));
+
+      // Clears the stream's history, so make it hard to hit by accident.
+      $('new-stream').addEventListener('click', () => {
+        const ok = confirm(
+          'Start a new stream?\n\n' +
+            'Subs gained so far stop counting, push-ups done resets to 0, and ' +
+            'whatever you still owe becomes the new base.',
+        );
+        if (ok) post('/api/new-stream');
+      });
 
       $('save').addEventListener('click', () => {
         // Only send fields that actually have a value — a blank box means

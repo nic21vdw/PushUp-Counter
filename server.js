@@ -45,6 +45,15 @@ const CONFIG = {
   host: env('HOST', '127.0.0.1'),
   pollSeconds: Math.max(15, Number(env('POLL_SECONDS', '30'))),
   controlToken: env('CONTROL_TOKEN'),
+  // Restarting after this long counts as a new stream. Short gaps (a crash, a
+  // reboot, closing the laptop between scenes) resume the session in progress.
+  // "off" never starts one automatically; "0" always does.
+  newStreamAfterHours: (() => {
+    const raw = env('NEW_STREAM_AFTER_HOURS', '6').toLowerCase();
+    if (raw === 'off' || raw === 'never') return Infinity;
+    const hours = Number(raw);
+    return Number.isFinite(hours) && hours >= 0 ? hours : 6;
+  })(),
 };
 
 // ---------------------------------------------------------------------------
@@ -67,6 +76,10 @@ const DEFAULT_STATE = {
   channelTitle: '',
   // Recent mutations, newest first, so the control page can undo mistakes.
   history: [],
+  // When the current stream session began, and when the server last ran. The
+  // gap between the two is how we tell "crashed mid-stream" from "next stream".
+  streamStartedAt: null,
+  lastSeenAt: null,
 };
 
 let state = { ...DEFAULT_STATE };
@@ -98,6 +111,31 @@ function pushHistory(entry) {
   state.history = state.history.slice(0, 25);
 }
 
+/**
+ * Begin a fresh stream session.
+ *
+ * Only subscribers gained from this moment on add push-ups. Whatever you still
+ * owed at the end of the last stream carries over as the new base, so the
+ * number on screen never jumps — it just stops counting yesterday's growth.
+ *
+ * `closingSubs` is the count the *previous* stream ended on, which is not the
+ * same as `subs` when the server was off overnight. Settling up against the
+ * live count instead would bill you for every subscriber gained while you were
+ * asleep — the exact thing per-stream tracking exists to avoid.
+ */
+function startNewStream(subs, closingSubs = subs) {
+  const gained =
+    closingSubs !== null && state.baselineSubs !== null ? closingSubs - state.baselineSubs : 0;
+  const carriedOver = Math.max(0, state.pledged + gained * state.perSub - state.done);
+
+  state.pledged = carriedOver;
+  state.done = 0;
+  state.baselineSubs = subs ?? state.subs;
+  state.streamStartedAt = new Date().toISOString();
+  state.history = [];
+  return carriedOver;
+}
+
 // ---------------------------------------------------------------------------
 // The maths
 // ---------------------------------------------------------------------------
@@ -125,6 +163,7 @@ function view() {
     hiddenSubscriberCount: state.hiddenSubscriberCount,
     channelTitle: state.channelTitle,
     history: state.history,
+    streamStartedAt: state.streamStartedAt,
     pollSeconds: CONFIG.pollSeconds,
     configured: Boolean(CONFIG.apiKey && (CONFIG.channelId || CONFIG.handle)),
     error: lastError,
@@ -170,30 +209,66 @@ async function fetchSubscriberCount() {
   };
 }
 
+/**
+ * True when this process start should begin a new stream rather than pick up
+ * where the last one left off. Decided once, on the first successful poll, so
+ * that the session always starts from a real subscriber count.
+ */
+let streamDecisionPending = true;
+
+function shouldStartNewStream() {
+  if (state.streamStartedAt === null || state.baselineSubs === null) return true;
+  if (CONFIG.newStreamAfterHours === Infinity) return false;
+  if (!state.lastSeenAt) return true;
+  const hoursDown = (Date.now() - Date.parse(state.lastSeenAt)) / 3_600_000;
+  return hoursDown >= CONFIG.newStreamAfterHours;
+}
+
 async function poll({ quiet = false } = {}) {
   try {
     const { subs, hidden, title } = await fetchSubscriberCount();
     const previous = state.subs;
-    const first = state.baselineSubs === null;
 
     state.subs = subs;
     state.hiddenSubscriberCount = hidden;
     state.channelTitle = title;
     state.subsUpdatedAt = new Date().toISOString();
-    if (first) state.baselineSubs = subs;
     lastError = null;
 
-    if (previous !== subs || first) {
-      if (!quiet && previous !== null && previous !== subs) {
-        const delta = subs - previous;
+    // Only subscribers gained during this stream count toward push-ups.
+    let opened = false;
+    if (streamDecisionPending) {
+      streamDecisionPending = false;
+      if (shouldStartNewStream()) {
+        // `previous` is where the last stream left off — see startNewStream.
+        const carried = startNewStream(subs, previous);
+        opened = true;
         console.log(
-          `[youtube] ${previous} -> ${subs} subs (${delta > 0 ? '+' : ''}${delta}) ` +
-            `= ${view().remaining} push-ups left`,
+          `[stream] new session at ${subs} subs` +
+            (carried ? ` — ${carried} push-ups carried over from last time` : ''),
+        );
+      } else {
+        console.log(
+          `[stream] resuming the session from ${new Date(state.streamStartedAt).toLocaleString()}` +
+            ` (${view().remaining} push-ups left)`,
         );
       }
-      await saveState();
-      broadcast();
     }
+
+    if (!quiet && previous !== null && previous !== subs) {
+      const delta = subs - previous;
+      console.log(
+        `[youtube] ${previous} -> ${subs} subs (${delta > 0 ? '+' : ''}${delta}) ` +
+          `= ${view().remaining} push-ups left`,
+      );
+    }
+
+    // Written every poll, not just on a change: this timestamp is what tells a
+    // restart whether the stream is still going, so it must not go stale while
+    // the sub count happens to sit still.
+    state.lastSeenAt = new Date().toISOString();
+    await saveState();
+    broadcast();
   } catch (err) {
     const message = err.name === 'TimeoutError' ? 'YouTube API request timed out' : err.message;
     if (lastError !== message) console.error(`[youtube] ${message}`);
@@ -351,12 +426,11 @@ const server = http.createServer(async (req, res) => {
         break;
       }
 
-      // Start the subscriber goal over from the count showing right now.
-      case '/api/rebaseline': {
+      // Going live: only subscribers from here on add push-ups. Whatever is
+      // still owed carries over, so the number on screen does not jump.
+      case '/api/new-stream': {
         if (state.subs === null) return sendJson(res, 400, { error: 'No subscriber count yet' });
-        const before = { baselineSubs: state.baselineSubs };
-        state.baselineSubs = state.subs;
-        pushHistory({ type: 'settings', before });
+        startNewStream(state.subs);
         break;
       }
 
