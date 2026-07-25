@@ -10,8 +10,13 @@ yourself and let it count your reps automatically, one subtracted per push-up as
 you do it. See [Counting with the webcam](#6-counting-with-the-webcam).
 
 ```
-left to do = base owed + (subscribers − baseline) × push-ups per sub − done
+left to do = base owed + (subs gained this stream × push-ups per sub) − done this stream
 ```
+
+**Only subscribers gained while you are live count.** Growth between streams is
+free — otherwise the number runs away from you overnight. Starting the server
+begins a new stream automatically; whatever you still owed carries over as the
+new base, so the overlay number never jumps.
 
 No dependencies, no build step, no `npm install`. Just Node 18+ (and a webcam if
 you want the automatic counting).
@@ -94,12 +99,12 @@ leave it open next to you on the floor.
   instantly, no refresh.
 - **Custom amount** for anything else.
 - **Undo last** if you fat-finger it.
-- **Base push-ups owed** — the fixed pile you started with (a sponsor pledge,
-  a dare, whatever). Subscribers add on top of this.
-- **Push-ups per sub** — `1` for "+1 subscriber = +1 push-up". Decimals work.
-- **Start subs from now** — resets the baseline to the current count, so only
-  subscribers gained from this moment on add push-ups. Hit this at the top of a
-  stream.
+- **Base owed** — what you carried in from last time, plus any pledge or dare.
+  This stream's subscribers add on top of it.
+- **Push-ups per sub** — `1` for "+1 subscriber = +1 push-up". Decimals work, so
+  `0.5` is one push-up per two subs if the growth gets out of hand.
+- **Start new stream** — only needed if you go live twice in one day. Starting
+  the server already does this for you.
 
 The counter survives a restart: everything lives in `state.json` next to the
 server, written after every change.
@@ -191,6 +196,25 @@ after each rep.
 - Close OBS's own access to the webcam first if it has it exclusively, or the
   page won't be able to open it.
 - Video is processed entirely in the browser and never leaves the machine.
+## Streams, and why the count resets
+
+Push-ups only accrue from subscribers gained **during a stream**. When a stream
+ends, the counter stops moving until the next one starts.
+
+Starting the server decides which it is:
+
+- **Off for more than 6 hours** (`NEW_STREAM_AFTER_HOURS`) → new stream. The sub
+  baseline moves to your current count, push-ups done resets to 0, and anything
+  you still owed becomes the new base owed. Overnight growth costs you nothing.
+- **A shorter gap** — an OBS crash, a reboot, a laptop lid mid-stream → the
+  session in progress picks straight back up, sub baseline and all.
+
+Set `NEW_STREAM_AFTER_HOURS=off` to only ever start streams by hand, or `0` to
+always start fresh on launch. The **Start new stream** button is there for a
+second stream in one day.
+
+So if you finish a stream owing 120, you come back tomorrow owing 120 — not 120
+plus every subscriber who arrived while you were asleep.
 
 ## Controlling it from your phone
 
@@ -209,7 +233,8 @@ The overlay stays readable without a token; only changes require it.
 ## Notes on the YouTube API
 
 - Polling is every 30s by default (`POLL_SECONDS`). Each poll costs 1 quota
-  unit, so a 24h stream uses ~2,880 of the free 10,000/day.
+  unit, so a 24h stream uses ~2,880 of the free 10,000/day. Stop the server when
+  you go off air and it costs nothing at all.
 - **YouTube rounds public subscriber counts once you pass 1,000** (1,010 → shows
   as "1.01K", and the API returns `1010`; past 10,000 it rounds to 3
   significant figures). Below 1,000 the count is exact. Above that, expect the
