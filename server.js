@@ -117,8 +117,24 @@ function pushHistory(entry) {
 // the log readable and makes Undo mean "throw out that set".
 const CAMERA_MERGE_WINDOW_MS = 90_000;
 
-function recordDone(amount, source) {
+/**
+ * Which camera page last reported a rep, and when. Two pages counting at once
+ * (the camera page left open behind the OBS source, say) would double every
+ * push-up, so the most recent counter is broadcast and the others say so.
+ * Deliberately advisory: refusing reps outright would lose real push-ups.
+ */
+let activeCamera = null;
+const CAMERA_ACTIVE_MS = 30_000;
+
+function activeCameraView() {
+  if (!activeCamera) return null;
+  if (Date.now() - activeCamera.at > CAMERA_ACTIVE_MS) return null;
+  return activeCamera.id;
+}
+
+function recordDone(amount, source, clientId = null) {
   state.done += amount;
+  if (source === 'camera' && clientId) activeCamera = { id: clientId, at: Date.now() };
 
   const newest = state.history[0];
   const mergeable =
@@ -191,6 +207,7 @@ function view() {
     channelTitle: state.channelTitle,
     history: state.history,
     streamStartedAt: state.streamStartedAt,
+    countingClientId: activeCameraView(),
     pollSeconds: CONFIG.pollSeconds,
     configured: Boolean(CONFIG.apiKey && (CONFIG.channelId || CONFIG.handle)),
     error: lastError,
@@ -438,7 +455,8 @@ const server = http.createServer(async (req, res) => {
         if (amount === null || amount === 0) {
           return sendJson(res, 400, { error: 'amount must be a non-zero number' });
         }
-        recordDone(amount, body.source === 'camera' ? 'camera' : 'manual');
+        const clientId = typeof body.clientId === 'string' ? body.clientId.slice(0, 64) : null;
+        recordDone(amount, body.source === 'camera' ? 'camera' : 'manual', clientId);
         break;
       }
 

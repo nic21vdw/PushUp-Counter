@@ -60,11 +60,21 @@ let sessionReps = 0;
 let serverState = null;
 let pendingReps = 0;
 
+// Distinguishes this page from an OBS tracker source that is also counting.
+const clientId = `camera-${Math.random().toString(36).slice(2, 10)}`;
+
 const client = new CounterClient({
   token,
+  clientId,
   onState: (state) => {
     serverState = state;
     render();
+    if (state.countingClientId && state.countingClientId !== clientId) {
+      showBanner(
+        'The OBS tracker source is also counting reps — every push-up will be counted twice. ' +
+          'Close one of them, or open the tracker with count=0.',
+      );
+    }
   },
   onError: showBanner,
   onPending: (count) => {

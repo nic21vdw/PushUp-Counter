@@ -57,7 +57,8 @@ npm start
 ```
 
 The webcam counter lives at `/camera.html`, linked from the top of the control
-page.
+page, and the OBS-ready version of it at `/tracker.html` — see
+[Putting the tracker on stream](#7-putting-the-tracker-on-stream).
 
 ## 4. Add it to OBS
 
@@ -196,6 +197,70 @@ after each rep.
 - Close OBS's own access to the webcam first if it has it exclusively, or the
   page won't be able to open it.
 - Video is processed entirely in the browser and never leaves the machine.
+
+## 7. Putting the tracker on stream
+
+`/camera.html` is the page you tune on — sliders, readouts, a big control panel.
+You don't want that on stream, and you can't point OBS's Video Capture Device at
+the same webcam the browser is using; on most machines whichever app opens the
+camera first keeps it.
+
+So there's a second page built for OBS: **`/tracker.html`**. It shows your camera
+with the skeleton drawn on it, counts your reps, and reports them to the same
+server — one Browser Source that replaces the Video Capture Device entirely, so
+nothing is fighting over the webcam.
+
+**Sources → + → Browser:**
+
+| Field  | Value                                            |
+| ------ | ------------------------------------------------ |
+| URL    | `http://127.0.0.1:4747/tracker.html?count=1`     |
+| Width  | `1280`                                           |
+| Height | `720`                                            |
+
+Then **remove the Video Capture Device** for that camera from your scene. Leave
+"Shutdown source when not visible" **off** for this one — the camera needs to
+stay open while you're doing push-ups off-scene.
+
+### Making it look like part of the scene
+
+The page is transparent, so it composites like the text overlay.
+
+| Param | Example | What it does |
+| --- | --- | --- |
+| `count` | `count=1` | Count reps from this page. **Off by default** |
+| `cutout` | `cutout=1` | Remove the background — just you over your scene |
+| `bg` | `bg=00ff00` | Solid colour behind you, if you'd rather key it in OBS |
+| `video` | `video=0` | No camera picture, skeleton only |
+| `skeleton` | `skeleton=0` | Hide the skeleton |
+| `counter` | `counter=0` | Hide the number baked into this source |
+| `mirror` | `mirror=1` | Flip horizontally |
+| `size` | `size=72` | Size of the baked-in number, in px |
+| `color` | `color=%23ffffff` | Colour of that number |
+| `label` | `label=TO GO` | Text after the number |
+
+`cutout=1` is the one worth trying first: the pose model returns a body-shaped
+mask, so the background is removed and you appear over your scene with no
+physical green screen and no chroma key. It costs some GPU, so it's only
+computed when you actually ask for it.
+
+If you'd rather key it yourself, `bg=00ff00` fills the background with green
+instead of transparency and you add a Chroma Key filter in OBS. Asking for `bg`
+turns the cutout on for you — otherwise the camera frame would cover the colour
+and it would look like the setting did nothing.
+
+Skeleton-only over your existing camera (`video=0&count=1`) is possible, but it
+means both OBS and the browser want the webcam. Only do that if your camera
+allows two apps at once.
+
+### Only one page counts at a time
+
+`tracker.html?count=1` and `camera.html` both count. If both are open, every
+push-up is counted twice. The server reports whichever page counted most
+recently, and the other one says so — but it can't guess which you meant, so
+close the camera page before you go live, or run the source with `count=0` and
+keep counting from the camera page.
+
 ## Streams, and why the count resets
 
 Push-ups only accrue from subscribers gained **during a stream**. When a stream

@@ -9,12 +9,22 @@
 
 export class CounterClient {
   /**
-   * @param {{token?: string|null, onState?: (state: object) => void,
+   * @param {{token?: string|null, clientId?: string|null,
+   *          onState?: (state: object) => void,
    *          onError?: (message: string) => void,
    *          onPending?: (count: number) => void}} [config]
    */
-  constructor({ token = null, onState = () => {}, onError = () => {}, onPending = () => {} } = {}) {
+  constructor({
+    token = null,
+    clientId = null,
+    onState = () => {},
+    onError = () => {},
+    onPending = () => {},
+  } = {}) {
     this.token = token;
+    // Lets the server tell counting pages apart, so two of them counting the
+    // same push-ups is visible instead of silently doubling the total.
+    this.clientId = clientId;
     this.onState = onState;
     this.onError = onError;
     this.onPending = onPending;
@@ -23,10 +33,12 @@ export class CounterClient {
     this.flushing = false;
     this.retryTimer = null;
     this.source = null;
+    this.stopped = false;
   }
 
   /** Subscribe to server state over SSE, reconnecting on drop. */
   connect() {
+    if (this.stopped) return;
     this.source = new EventSource('/api/events');
     this.source.onmessage = (event) => {
       try {
@@ -37,6 +49,7 @@ export class CounterClient {
     };
     this.source.onerror = () => {
       this.source.close();
+      if (this.stopped) return;
       setTimeout(() => this.connect(), 2000);
     };
   }
@@ -64,7 +77,7 @@ export class CounterClient {
           'Content-Type': 'application/json',
           ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
         },
-        body: JSON.stringify({ amount, source: 'camera' }),
+        body: JSON.stringify({ amount, source: 'camera', clientId: this.clientId }),
       });
       const data = await res.json().catch(() => ({}));
 
@@ -99,10 +112,26 @@ export class CounterClient {
   }
 
   #scheduleRetry() {
-    if (this.retryTimer !== null) return;
+    if (this.stopped || this.retryTimer !== null) return;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       this.#flush();
     }, 2000);
+  }
+
+  /**
+   * Stop talking to the server: close the event stream and abandon retries.
+   *
+   * Without this a client that can't reach the server retries forever, which
+   * keeps a closed page alive and hangs anything embedding it.
+   */
+  stop() {
+    this.stopped = true;
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.source?.close();
+    this.source = null;
   }
 }

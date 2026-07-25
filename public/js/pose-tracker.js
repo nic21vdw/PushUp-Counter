@@ -40,14 +40,22 @@ export class PoseTracker {
   /**
    * @param {{video: HTMLVideoElement, canvas: HTMLCanvasElement,
    *          onPose: (pose: {landmarks: Array|null, worldLandmarks: Array|null, timestamp: number}) => void,
-   *          onStatus?: (message: string) => void}} config
+   *          onStatus?: (message: string) => void,
+   *          segmentation?: boolean,
+   *          onFrame?: ((frame: object) => void)|null}} config
    */
-  constructor({ video, canvas, onPose, onStatus = () => {} }) {
+  constructor({ video, canvas, onPose, onStatus = () => {}, segmentation = false, onFrame = null }) {
     this.video = video;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onPose = onPose;
     this.onStatus = onStatus;
+    // Body-shaped alpha mask, for cutting the background out of the OBS view.
+    // Costs GPU work, so it is only requested when a page actually draws it.
+    this.segmentation = segmentation;
+    // Replaces the built-in skeleton drawing when a page wants to compose the
+    // frame itself. Receives everything needed to paint one frame.
+    this.onFrame = onFrame;
     this.landmarker = null;
     this.drawingUtils = null;
     this.connections = null;
@@ -94,6 +102,7 @@ export class PoseTracker {
       baseOptions: { modelAssetPath: assets.model, delegate: 'GPU' },
       runningMode: 'VIDEO',
       numPoses: 1,
+      outputSegmentationMasks: this.segmentation,
       minPoseDetectionConfidence: 0.5,
       minPosePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,
@@ -168,23 +177,51 @@ export class PoseTracker {
 
     const landmarks = result?.landmarks?.[0] ?? null;
     const worldLandmarks = result?.worldLandmarks?.[0] ?? null;
+    const mask = result?.segmentationMasks?.[0] ?? null;
 
-    this.#draw(landmarks);
-    this.onPose({ landmarks, worldLandmarks, timestamp });
+    try {
+      this.#draw(landmarks, mask);
+      this.onPose({ landmarks, worldLandmarks, timestamp });
+    } finally {
+      // Masks hold GPU/WASM memory that is not garbage collected. Skipping this
+      // leaks a buffer per frame and the tab dies partway through a stream.
+      mask?.close?.();
+    }
   }
 
-  #draw(landmarks) {
+  #draw(landmarks, mask) {
     const { ctx, canvas } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!landmarks || !this.drawingUtils) return;
 
-    const accent = this.highlight ? '#4ade80' : '#38bdf8';
+    if (this.onFrame) {
+      this.onFrame({
+        ctx,
+        canvas,
+        video: this.video,
+        landmarks,
+        mask,
+        highlight: this.highlight,
+        drawingUtils: this.drawingUtils,
+        connections: this.connections,
+      });
+      return;
+    }
+
+    if (!landmarks || !this.drawingUtils) return;
+    this.drawSkeleton(landmarks);
+  }
+
+  /** The default skeleton, exposed so a custom renderer can still use it. */
+  drawSkeleton(landmarks, { highlight = this.highlight } = {}) {
+    if (!landmarks || !this.drawingUtils) return;
+    const { canvas } = this;
+    const accent = highlight ? '#4ade80' : '#38bdf8';
     this.drawingUtils.drawConnectors(landmarks, this.connections, {
       color: accent,
       lineWidth: Math.max(2, canvas.width / 300),
     });
     this.drawingUtils.drawLandmarks(landmarks, {
-      color: this.highlight ? '#bbf7d0' : '#f8fafc',
+      color: highlight ? '#bbf7d0' : '#f8fafc',
       fillColor: accent,
       radius: Math.max(2, canvas.width / 450),
     });

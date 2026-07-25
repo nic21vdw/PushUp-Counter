@@ -287,6 +287,23 @@
     </section>
 
     <section>
+      <h2>OBS camera source</h2>
+      <p class="muted">
+        A second Browser Source, 1280×720, that shows your webcam with the pose skeleton on it and
+        counts reps at the same time — so OBS never needs a Video Capture Device for this camera.
+        Only one page should count at a time; this URL does, so close the camera page before going
+        live.
+      </p>
+      <code id="tracker-url"></code>
+      <p class="muted" style="margin-top: 10px">
+        <b>cutout</b>=1 removes the background so you float over your scene, <b>bg</b>=00ff00 puts a
+        chroma-key colour behind you instead, <b>video</b>=0 leaves just the skeleton,
+        <b>skeleton</b>=0 hides it, <b>counter</b>=0 drops the number, <b>mirror</b>=1 flips it, and
+        <b>count</b>=0 makes it display-only.
+      </p>
+    </section>
+
+    <section>
       <h2>Recent changes</h2>
       <ul class="history" id="history">
         <li><span>Nothing yet</span></li>
@@ -419,6 +436,7 @@
       });
 
       $('overlay-url').textContent = `${location.origin}/overlay.html?size=88&subs=1`;
+      $('tracker-url').textContent = `${location.origin}/tracker.html?count=1`;
 
       // --- live state ------------------------------------------------------
       let source;
