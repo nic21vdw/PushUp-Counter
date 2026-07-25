@@ -1,11 +1,13 @@
 {
   "name": "pushup-counter",
   "version": "1.0.0",
-  "description": "YouTube subscriber-driven push-up counter with a transparent OBS overlay",
+  "description": "YouTube subscriber-driven push-up counter with webcam rep detection and a transparent OBS overlay",
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "fetch-assets": "node fetch-assets.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "engines": {
     "node": ">=18"
