@@ -54,7 +54,11 @@ npm start
   Push-up counter is running.
   Control page  http://127.0.0.1:4747/control.html
   OBS overlay   http://127.0.0.1:4747/overlay.html
+  OBS camera    http://127.0.0.1:4747/tracker.html?count=1
 ```
+
+Those last two are the links you paste into OBS as Browser Sources — the number
+on its own, and the camera-with-skeleton that counts your reps.
 
 The webcam counter lives at `/camera.html`, linked from the top of the control
 page, and the OBS-ready version of it at `/tracker.html` — see
@@ -222,6 +226,14 @@ Then **remove the Video Capture Device** for that camera from your scene. Leave
 "Shutdown source when not visible" **off** for this one — the camera needs to
 stay open while you're doing push-ups off-scene.
 
+### Building the link without reading this table
+
+The **OBS camera source** panel on the control page has a checkbox per option and
+shows the finished URL underneath, with a **Copy camera link** button. It carries
+your `CONTROL_TOKEN` into the URL for you when the source counts — leave that out
+and the source loads, draws, and then silently banks nothing. The displayed URL
+masks the token; the copied one has it.
+
 ### Making it look like part of the scene
 
 The page is transparent, so it composites like the text overlay.
@@ -252,6 +264,20 @@ and it would look like the setting did nothing.
 Skeleton-only over your existing camera (`video=0&count=1`) is possible, but it
 means both OBS and the browser want the webcam. Only do that if your camera
 allows two apps at once.
+
+### If the source comes up blank
+
+The page draws nothing until it has the camera, and prints why in a red box in
+the top-left of the source — read that first. The usual causes:
+
+- **Something else already has the webcam.** Remove the Video Capture Device for
+  that camera from every scene, and close `/camera.html`. On most machines the
+  first app to open a camera keeps it.
+- **OBS itself has no camera permission.** On macOS that's System Settings →
+  Privacy & Security → Camera → OBS; on Windows, Settings → Privacy → Camera.
+  Granting it needs an OBS restart.
+- **Old OBS.** Browser sources could not open a webcam at all before OBS 25.
+- **Right-click the source → Interact** to see the page as the browser sees it.
 
 ### Only one page counts at a time
 

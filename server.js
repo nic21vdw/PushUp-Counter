@@ -536,8 +536,14 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
   const base = `http://${CONFIG.host === '0.0.0.0' ? 'localhost' : CONFIG.host}:${CONFIG.port}`;
   console.log('');
   console.log('  Push-up counter is running.');
+  // The camera source is the one people come looking for, so it is printed
+  // here rather than left to be found in the README.
+  const trackerQuery = CONFIG.controlToken
+    ? `?count=1&token=${encodeURIComponent(CONFIG.controlToken)}`
+    : '?count=1';
   console.log(`  Control page  ${base}/control.html`);
   console.log(`  OBS overlay   ${base}/overlay.html`);
+  console.log(`  OBS camera    ${base}/tracker.html${trackerQuery}`);
   if (CONFIG.controlToken) console.log('  Control token required for edits (CONTROL_TOKEN is set).');
   if (!CONFIG.apiKey) console.log('  ! YOUTUBE_API_KEY is missing — copy .env.example to .env.');
   console.log('');
