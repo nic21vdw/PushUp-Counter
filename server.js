@@ -98,6 +98,33 @@ function pushHistory(entry) {
   state.history = state.history.slice(0, 25);
 }
 
+// Webcam reps arrive one at a time, so a 40-rep set would push everything else
+// out of the 25-entry history and leave Undo able to take back only the last
+// rep. Instead, consecutive detected reps roll up into one entry, which keeps
+// the log readable and makes Undo mean "throw out that set".
+const CAMERA_MERGE_WINDOW_MS = 90_000;
+
+function recordDone(amount, source) {
+  state.done += amount;
+
+  const newest = state.history[0];
+  const mergeable =
+    source === 'camera' &&
+    newest?.type === 'done' &&
+    newest.source === 'camera' &&
+    Date.now() - Date.parse(newest.at) < CAMERA_MERGE_WINDOW_MS;
+
+  if (!mergeable) {
+    pushHistory({ type: 'done', amount, source });
+    return;
+  }
+
+  newest.amount += amount;
+  newest.at = new Date().toISOString();
+  // Corrections can cancel a run out entirely; don't leave a 0 behind.
+  if (newest.amount === 0) state.history.shift();
+}
+
 // ---------------------------------------------------------------------------
 // The maths
 // ---------------------------------------------------------------------------
@@ -223,6 +250,13 @@ const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  // The vendored pose runtime ships as .mjs, and browsers refuse to import a
+  // module that isn't served as JavaScript.
+  '.mjs': 'text/javascript; charset=utf-8',
+  // WebAssembly.instantiateStreaming rejects anything but application/wasm.
+  '.wasm': 'application/wasm',
+  '.task': 'application/octet-stream',
+  '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
@@ -274,9 +308,12 @@ async function serveStatic(req, res, url) {
     const body = await fsp.readFile(filePath);
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(filePath)] ?? 'application/octet-stream',
+      'Content-Length': body.length,
       'Cache-Control': 'no-store',
     });
-    res.end(body);
+    // HEAD gets the headers only — the camera page uses it to check whether the
+    // pose model has been vendored before deciding to fall back to the CDN.
+    res.end(req.method === 'HEAD' ? undefined : body);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found');
@@ -320,14 +357,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     switch (url.pathname) {
-      // "Okay, I did 50 push-ups."
+      // "Okay, I did 50 push-ups." `source: 'camera'` marks a detected rep.
       case '/api/done': {
         const amount = num(body.amount);
         if (amount === null || amount === 0) {
           return sendJson(res, 400, { error: 'amount must be a non-zero number' });
         }
-        state.done += amount;
-        pushHistory({ type: 'done', amount });
+        recordDone(amount, body.source === 'camera' ? 'camera' : 'manual');
         break;
       }
 
@@ -390,8 +426,8 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, view());
   }
 
-  if (req.method !== 'GET') {
-    res.writeHead(405, { Allow: 'GET, POST' }).end('Method not allowed');
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { Allow: 'GET, HEAD, POST' }).end('Method not allowed');
     return;
   }
 

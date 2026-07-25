@@ -3,3 +3,7 @@ state.json
 state.json.tmp
 node_modules/
 .DS_Store
+
+# Pose model + WASM runtime for the camera page (~24 MiB).
+# Populate with: npm run fetch-assets
+public/vendor/

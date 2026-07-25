@@ -202,6 +202,17 @@
     </section>
 
     <section>
+      <h2>Count them with the webcam</h2>
+      <p class="muted" style="margin-top: 0">
+        Let the camera watch you and subtract each push-up as you do it, instead of tapping a
+        number after the set.
+      </p>
+      <div class="row">
+        <button class="primary" id="camera-go" style="width: 100%">Open camera counter</button>
+      </div>
+    </section>
+
+    <section>
       <h2>I just did some push-ups</h2>
       <div class="grid">
         <button data-done="5">5</button>
@@ -334,7 +345,7 @@
           const li = document.createElement('li');
           const what =
             entry.type === 'done'
-              ? `Did ${fmt(entry.amount)} push-ups`
+              ? `${entry.source === 'camera' ? 'Camera counted' : 'Did'} ${fmt(entry.amount)} push-ups`
               : entry.type === 'pledge'
                 ? `Owed ${entry.amount > 0 ? '+' : ''}${fmt(entry.amount)}`
                 : 'Settings changed';
@@ -356,6 +367,10 @@
       });
       $('custom').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') $('custom-go').click();
+      });
+
+      $('camera-go').addEventListener('click', () => {
+        location.href = token ? `camera.html?token=${encodeURIComponent(token)}` : 'camera.html';
       });
 
       $('undo').addEventListener('click', () => post('/api/undo'));
