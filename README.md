@@ -155,7 +155,12 @@ npm run fetch-assets     # ~24 MiB into public/vendor, gitignored
 ```
 
 Without it the page pulls the same files from a CDN the first time you start the
-camera. `npm run fetch-assets -- --clean` reverts to the CDN.
+camera — which on a live OBS source is exactly the wrong moment to depend on the
+network. Both pages say so when it happens: the camera page keeps the notice up,
+and the OBS source shows it for 20 seconds and logs it, so it does not sit burnt
+into your stream all session.
+
+`npm run fetch-assets -- --clean` reverts to the CDN.
 
 ### Camera placement
 

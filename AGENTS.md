@@ -35,8 +35,11 @@ without a reason that outweighs losing `git clone && npm start`.
   14831, `no-youtube` 14931. Pick a fresh base for a new one — a shared base means
   two servers race and the loser dies with `EADDRINUSE`, which shows up as a
   confusing "server did not start" timeout.
-- **`public/vendor/` is gitignored** (~24 MiB pose model). `npm run fetch-assets`
-  populates it; without it the camera page falls back to a CDN.
+- **`public/vendor/` is gitignored** (~24 MiB MediaPipe runtime + pose model).
+  `npm run fetch-assets` populates it; without it the pages fall back to a CDN and
+  say so (`CDN_FALLBACK_NOTICE`). The notice is persistent on `camera.html` but
+  time-limited on `tracker.html`, because that page *is* the stream overlay — do
+  not make it permanent there. Note that populating it also un-skips a test.
 - **Only one page should count reps at a time.** The server tracks a counting
   client id so `camera.html` and a `tracker.html?count=1` OBS source don't both
   subtract from the same push-up.

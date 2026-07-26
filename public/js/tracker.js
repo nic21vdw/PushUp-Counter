@@ -58,12 +58,13 @@ const client = new CounterClient({
   onError: (message) => setStatus('server', message),
 });
 
-// The camera lifecycle, the server connection and the double-counting check all
-// report through the one status box; slots keep them from wiping each other.
-const statuses = new StatusSlots(['camera', 'server', 'double']);
+// The camera lifecycle, the server connection, the double-counting check and the
+// MediaPipe asset source all report through the one status box; slots keep them
+// from wiping each other. `assets` is last: it is advice, not a fault.
+const statuses = new StatusSlots(['camera', 'server', 'double', 'assets']);
 
 /**
- * @param {'camera'|'server'|'double'} slot
+ * @param {'camera'|'server'|'double'|'assets'} slot
  * @param {string} message falsy clears this slot
  * @param {'error'|'info'} [tone] `info` is progress, not a problem
  */
@@ -128,8 +129,19 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
   }
 }
 
+/**
+ * How long the CDN notice stays up on the OBS source, in ms.
+ *
+ * Unlike the camera page, this page *is* the stream overlay — a permanent notice
+ * would be burnt into the broadcast for the whole session. Long enough to catch
+ * while you are adding the source or switching scenes, short enough that it is
+ * gone before anyone watching reads it. It is also logged to the console, which
+ * OBS keeps in the source's inspector, so it survives being dismissed.
+ */
+const CDN_NOTICE_MS = 20_000;
+
 async function start() {
-  const { PoseTracker } = await import('./pose-tracker.js');
+  const { PoseTracker, CDN_FALLBACK_NOTICE } = await import('./pose-tracker.js');
   tracker = new PoseTracker({
     video,
     canvas,
@@ -144,6 +156,12 @@ async function start() {
   await tracker.start();
   // The canvas is sized from the video; the page scales it to the source.
   setStatus('camera', '');
+
+  if (tracker.assetSource === 'cdn') {
+    console.warn(CDN_FALLBACK_NOTICE);
+    setStatus('assets', CDN_FALLBACK_NOTICE, 'info');
+    setTimeout(() => setStatus('assets', ''), CDN_NOTICE_MS);
+  }
 }
 
 start().catch((err) => {

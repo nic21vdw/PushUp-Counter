@@ -164,11 +164,13 @@ function speak(text) {
   speechSynthesis.speak(utterance);
 }
 
-// Four writers, one banner: the camera lifecycle, the server's own error field,
-// the rep-report connection, and the double-counting check.
-const banners = new StatusSlots(['camera', 'server', 'report', 'double']);
+// Five writers, one banner: the camera lifecycle, the server's own error field,
+// the rep-report connection, the double-counting check, and where MediaPipe was
+// loaded from. `assets` is last because it is advice, not a fault — anything
+// actually wrong should outrank it.
+const banners = new StatusSlots(['camera', 'server', 'report', 'double', 'assets']);
 
-/** @param {'camera'|'server'|'report'|'double'} slot @param {string} message falsy clears */
+/** @param {'camera'|'server'|'report'|'double'|'assets'} slot @param {string} message falsy clears */
 function setBanner(slot, message) {
   const winner = banners.set(slot, message);
   el.banner.textContent = winner?.message ?? '';
@@ -248,10 +250,12 @@ function renderFrame(result) {
  */
 let tracker = null;
 let capture = null;
+let cdnNotice = '';
 async function getTracker() {
   if (tracker) return tracker;
-  const { PoseTracker, CAPTURE } = await import('./pose-tracker.js');
+  const { PoseTracker, CAPTURE, CDN_FALLBACK_NOTICE } = await import('./pose-tracker.js');
   capture = CAPTURE;
+  cdnNotice = CDN_FALLBACK_NOTICE;
   tracker = new PoseTracker({
     video: el.video,
     canvas: el.canvas,
@@ -375,6 +379,10 @@ el.toggleCamera.addEventListener('click', async () => {
   try {
     const active = await getTracker();
     await active.start({ source });
+    // Only known once the model has actually loaded. Left up rather than timed
+    // out: this page is not on stream, so there is nothing to pollute, and the
+    // fix is a command you run between sessions.
+    setBanner('assets', active.assetSource === 'cdn' ? cdnNotice : '');
     // Only known once a stream exists, and only correct per source.
     el.stage.classList.toggle('no-mirror', !capture[source].mirror);
     showLive(source);

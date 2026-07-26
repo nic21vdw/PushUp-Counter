@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CAPTURE, PoseTracker } from '../public/js/pose-tracker.js';
+import { CAPTURE, PoseTracker, CDN_FALLBACK_NOTICE } from '../public/js/pose-tracker.js';
+import { StatusSlots } from '../public/js/status-slots.js';
 
 /**
  * A tracker built on stubs. Enough to reach the argument checks in start()
@@ -57,6 +58,37 @@ test('the webcam stays the default source', async () => {
 
   await assert.rejects(() => tracker.start({ source: 'screen' }), /stopped at load/);
   assert.equal(tracker.source, 'screen');
+});
+
+test('nothing claims an asset source before the model has loaded', () => {
+  // A page that trusted a stale/absent value here would either warn about a CDN
+  // it never used, or stay quiet about one it did.
+  assert.equal(stubTracker().assetSource, null);
+});
+
+test('the CDN notice names the command that fixes it', () => {
+  assert.match(CDN_FALLBACK_NOTICE, /fetch-assets/);
+  assert.match(CDN_FALLBACK_NOTICE, /MediaPipe/);
+});
+
+// The pages put 'assets' last on purpose: loading from a CDN is advice, and a
+// real failure must not be hidden behind it.
+test('a real fault outranks the asset advice', () => {
+  const cameraPage = new StatusSlots(['camera', 'server', 'report', 'double', 'assets']);
+  cameraPage.set('assets', CDN_FALLBACK_NOTICE, 'info');
+  assert.equal(cameraPage.current().message, CDN_FALLBACK_NOTICE, 'shows when alone');
+
+  cameraPage.set('camera', 'Camera permission was denied.');
+  assert.equal(cameraPage.current().message, 'Camera permission was denied.');
+
+  // ...and comes back once the fault clears, rather than being lost.
+  cameraPage.set('camera', '');
+  assert.equal(cameraPage.current().message, CDN_FALLBACK_NOTICE);
+
+  const obsSource = new StatusSlots(['camera', 'server', 'double', 'assets']);
+  obsSource.set('assets', CDN_FALLBACK_NOTICE, 'info');
+  obsSource.set('double', 'Another page is also counting reps');
+  assert.equal(obsSource.current().message, 'Another page is also counting reps');
 });
 
 test('a stopped tracker reports which source it was', () => {

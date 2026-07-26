@@ -60,6 +60,16 @@ export const CAPTURE = {
   },
 };
 
+/**
+ * What to tell someone whose MediaPipe assets came off the network.
+ *
+ * Not fatal — tracking works either way — but it means the runtime and the model
+ * are fetched the first time you hit Start, which on a live source is exactly the
+ * wrong moment to depend on the network.
+ */
+export const CDN_FALLBACK_NOTICE =
+  'MediaPipe loaded from a CDN, not from this machine. Run “npm run fetch-assets” to vendor it so a stream never waits on the network.';
+
 /** True when the vendored runtime is actually present and served. */
 async function hasLocalAssets() {
   try {
