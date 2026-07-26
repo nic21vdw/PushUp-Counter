@@ -9,6 +9,7 @@
 import { RepCounter, DEFAULT_OPTIONS, STATE } from './rep-counter.js';
 import { anglesFromLandmarks } from './pose-math.js';
 import { CounterClient } from './counter-client.js';
+import { StatusSlots } from './status-slots.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US'));
@@ -69,14 +70,17 @@ const client = new CounterClient({
   onState: (state) => {
     serverState = state;
     render();
-    if (state.countingClientId && state.countingClientId !== clientId) {
-      showBanner(
-        'The OBS tracker source is also counting reps — every push-up will be counted twice. ' +
-          'Close one of them, or open the tracker with count=0.',
-      );
-    }
+    // Cleared as soon as the other page stops: the server expires the claim,
+    // so a warning that outlives it is just noise you learn to ignore.
+    setBanner(
+      'double',
+      state.countingClientId && state.countingClientId !== clientId
+        ? 'The OBS tracker source is also counting reps — every push-up will be counted twice. ' +
+            'Close one of them, or open the tracker with count=0.'
+        : '',
+    );
   },
-  onError: showBanner,
+  onError: (message) => setBanner('report', message),
   onPending: (count) => {
     pendingReps = count;
     render();
@@ -158,9 +162,15 @@ function speak(text) {
   speechSynthesis.speak(utterance);
 }
 
-function showBanner(message) {
-  el.banner.textContent = message ?? '';
-  el.banner.hidden = !message;
+// Four writers, one banner: the camera lifecycle, the server's own error field,
+// the rep-report connection, and the double-counting check.
+const banners = new StatusSlots(['camera', 'server', 'report', 'double']);
+
+/** @param {'camera'|'server'|'report'|'double'} slot @param {string} message falsy clears */
+function setBanner(slot, message) {
+  const winner = banners.set(slot, message);
+  el.banner.textContent = winner?.message ?? '';
+  el.banner.hidden = !winner;
 }
 
 /**
@@ -193,7 +203,7 @@ function render() {
   el.pending.hidden = pendingReps === 0;
   el.pending.textContent = `${fmt(pendingReps)} rep${pendingReps === 1 ? '' : 's'} not yet saved`;
 
-  if (serverState?.error) showBanner(serverState.error);
+  setBanner('server', serverState?.error ?? '');
 }
 
 const PHASE_LABEL = {
@@ -299,7 +309,7 @@ el.toggleCamera.addEventListener('click', async () => {
     return;
   }
   el.toggleCamera.disabled = true;
-  showBanner('');
+  setBanner('camera', '');
   try {
     const active = await getTracker();
     await active.start();
@@ -310,7 +320,7 @@ el.toggleCamera.addEventListener('click', async () => {
     console.error(err);
     el.status.textContent = 'Tracking unavailable';
     el.feedback.textContent = '';
-    showBanner(describeStartFailure(err));
+    setBanner('camera', describeStartFailure(err));
   } finally {
     el.toggleCamera.disabled = false;
   }
@@ -329,7 +339,7 @@ el.undo.addEventListener('click', async () => {
     body: '{}',
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return showBanner(data.error ?? `Undo failed (${res.status})`);
+  if (!res.ok) return setBanner('report', data.error ?? `Undo failed (${res.status})`);
   serverState = data;
   render();
 });

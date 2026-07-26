@@ -11,6 +11,7 @@ import { anglesFromLandmarks } from './pose-math.js';
 import { CounterClient } from './counter-client.js';
 import { parseTrackerOptions, needsSegmentation } from './tracker-options.js';
 import { renderTrackerFrame } from './tracker-render.js';
+import { StatusSlots } from './status-slots.js';
 
 const params = new URLSearchParams(location.search);
 const options = parseTrackerOptions(params);
@@ -54,24 +55,40 @@ const client = new CounterClient({
     pendingReps = count;
     renderCount();
   },
-  onError: (message) => setStatus(message),
+  onError: (message) => setStatus('server', message),
 });
 
-function setStatus(message) {
-  statusEl.textContent = message ?? '';
-  statusEl.hidden = !message;
+// The camera lifecycle, the server connection and the double-counting check all
+// report through the one status box; slots keep them from wiping each other.
+const statuses = new StatusSlots(['camera', 'server', 'double']);
+
+/**
+ * @param {'camera'|'server'|'double'} slot
+ * @param {string} message falsy clears this slot
+ * @param {'error'|'info'} [tone] `info` is progress, not a problem
+ */
+function setStatus(slot, message, tone = 'error') {
+  const winner = statuses.set(slot, message, tone);
+  statusEl.textContent = winner?.message ?? '';
+  statusEl.hidden = !winner;
+  statusEl.dataset.tone = winner?.tone ?? 'error';
 }
 
 /**
  * Another page counting the same push-ups doubles them. The server can't tell
- * which one is wanted, so say it rather than silently picking.
+ * which one is wanted, so say it rather than silently picking — and take it
+ * back as soon as the other page stops, because the server lets the claim
+ * expire and a stale warning is worse than none.
  */
 function warnOnDoubleCounting(state) {
   if (!options.count) return;
   const other = state.countingClientId;
-  if (other && other !== clientId) {
-    setStatus('Another page is also counting reps — close the camera page, or open this one with count=0.');
-  }
+  setStatus(
+    'double',
+    other && other !== clientId
+      ? 'Another page is also counting reps — close the camera page, or open this one with count=0.'
+      : '',
+  );
 }
 
 function renderCount() {
@@ -119,17 +136,20 @@ async function start() {
     onPose: handlePose,
     onFrame,
     segmentation: needsSegmentation(options),
-    onStatus: (message) => setStatus(message === 'Tracking' ? '' : message),
+    // Loading and requesting the camera are progress, not faults — a red box
+    // for them reads as a broken source while it is still coming up.
+    onStatus: (message) => setStatus('camera', message === 'Tracking' ? '' : message, 'info'),
   });
 
   await tracker.start();
   // The canvas is sized from the video; the page scales it to the source.
-  setStatus('');
+  setStatus('camera', '');
 }
 
 start().catch((err) => {
   console.error(err);
   setStatus(
+    'camera',
     err?.name === 'NotReadableError'
       ? 'Webcam is held by another app. In OBS, remove the Video Capture Device for this camera — this browser source replaces it.'
       : `Tracker could not start: ${err?.message ?? err}`,

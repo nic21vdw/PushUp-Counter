@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,10 +19,16 @@ import { CounterClient } from '../public/js/counter-client.js';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 let nextPort = 14831;
 
+// A 'dir' symlink on Windows needs Developer Mode or an elevated shell, so the
+// whole suite fails with EPERM on a stock machine. A junction is the same thing
+// for our purposes — pointing a directory at another directory — and needs
+// neither. Everywhere else 'dir' is the right answer.
+const LINK_TYPE = process.platform === 'win32' ? 'junction' : 'dir';
+
 async function startServer(env = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pushup-count-'));
   await fs.copyFile(path.join(ROOT, 'server.js'), path.join(dir, 'server.js'));
-  await fs.symlink(path.join(ROOT, 'public'), path.join(dir, 'public'), 'dir');
+  await fs.symlink(path.join(ROOT, 'public'), path.join(dir, 'public'), LINK_TYPE);
 
   const port = nextPort++;
   const child = spawn(process.execPath, ['server.js'], {
@@ -56,8 +63,13 @@ async function startServer(env = {}) {
       return (await fetch(`${base}/api/state`)).json();
     },
     async stop() {
+      // Windows keeps the cwd handle open until the process is really gone, so
+      // removing the directory the instant after kill() returns EBUSY. Waiting
+      // for `exit` is the fix; it is a no-op everywhere else.
+      const exited = once(child, 'exit');
       child.kill('SIGKILL');
-      await fs.rm(dir, { recursive: true, force: true });
+      await exited;
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     },
   };
 }

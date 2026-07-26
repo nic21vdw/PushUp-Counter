@@ -72,6 +72,13 @@
         line-height: 1.4;
       }
 
+      /* "Loading pose model…" and "Requesting camera…" are the source coming
+         up, not a fault. Red for those trains you to ignore the red box. */
+      #status[data-tone='info'] {
+        background: rgba(16, 20, 26, 0.85);
+        color: #d5dde6;
+      }
+
       [hidden] {
         display: none !important;
       }
