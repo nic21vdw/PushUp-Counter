@@ -145,6 +145,51 @@ test('a single report cannot bank an entire session', async (t) => {
   assert.equal((await server.state()).done, 0);
 });
 
+test('the camera choice is remembered, so the OBS source can follow it', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+
+  assert.equal((await server.state()).camera, null, 'default is whatever the browser picks');
+
+  const { status, body } = await server.post('/api/camera', { camera: 'LifeCam VX-2000' });
+  assert.equal(status, 200);
+  assert.equal(body.camera, 'LifeCam VX-2000');
+
+  // Clearing it goes back to the browser default.
+  await server.post('/api/camera', { camera: null });
+  assert.equal((await server.state()).camera, null);
+});
+
+test('choosing a camera cannot touch the count', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+
+  await server.post('/api/rep', { reps: 7 });
+  const before = await server.state();
+
+  // Everything an attacker (or a bored streamer) might try to smuggle through.
+  await server.post('/api/camera', { camera: 'Brio', done: 0, reps: -50, carriedOver: 0 });
+  const after = await server.state();
+
+  assert.equal(after.done, before.done, 'done is untouched');
+  assert.equal(after.carriedOver, before.carriedOver, 'what you owe is untouched');
+  assert.equal(after.rawLeft, before.rawLeft);
+  assert.equal(after.camera, 'Brio', 'only the camera changed');
+});
+
+test('a camera name that is not a name is rejected', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+
+  for (const camera of [42, {}, ['Brio'], true]) {
+    const { status } = await server.post('/api/camera', { camera });
+    assert.equal(status, 400, `camera: ${JSON.stringify(camera)} must be rejected`);
+  }
+  // A hostile length is bounded rather than refused — it just cannot match.
+  await server.post('/api/camera', { camera: 'x'.repeat(5000) });
+  assert.equal((await server.state()).camera.length, 200);
+});
+
 test('the endpoints that could fake the count are gone', async (t) => {
   const server = await startServer();
   t.after(() => server.stop());

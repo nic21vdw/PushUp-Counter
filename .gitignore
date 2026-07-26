@@ -1,4 +1,8 @@
+# The API key lives in .env. The wildcard matters: a .env.backup or .env.old
+# made while editing is just as sensitive and would otherwise be committable.
 .env
+.env.*
+!.env.example
 state.json
 state.json.tmp
 node_modules/

@@ -30,6 +30,9 @@ const barFill = barEl.querySelector('i');
 const sublineEl = document.getElementById('subline');
 const tuneEl = document.getElementById('tune');
 const statusEl = document.getElementById('status');
+const pickerEl = document.getElementById('picker');
+const selectEl = document.getElementById('camera-select');
+const pickerNote = document.getElementById('picker-note');
 
 /* ------------------------------------------------------------------ look */
 
@@ -74,11 +77,19 @@ let serverState = null;
 let pendingReps = 0;
 let lastShown = null;
 
+/**
+ * Which camera to open. A `?camera=` in the URL is an explicit instruction and
+ * wins; otherwise the source follows whatever was chosen in the setup view, so
+ * swapping cameras does not mean re-pasting a URL into OBS.
+ */
+let activeCamera = options.camera;
+
 const client = new CounterClient({
   clientId,
   onState: (state) => {
     serverState = state;
     render();
+    if (!options.camera) followServerCamera(state.camera ?? null);
   },
   onPending: (count) => {
     pendingReps = count;
@@ -176,13 +187,41 @@ async function startCamera() {
   tracker = new PoseTracker({
     video,
     canvas,
-    camera: options.camera,
+    camera: activeCamera,
     onPose: handlePose,
     onFrame,
     onStatus: (message) => setStatus('camera', message === 'Tracking' ? '' : message, 'info'),
   });
   await tracker.start();
   setStatus('camera', '');
+}
+
+/**
+ * Swap to a different webcam without a reload. The old stream has to be
+ * released first or the new one may come back "device in use" against
+ * ourselves.
+ */
+let switching = false;
+async function switchCamera(name) {
+  if (switching) return;
+  switching = true;
+  activeCamera = name;
+  try {
+    tracker?.stop();
+    tracker = null;
+    await startCamera();
+  } catch (err) {
+    console.error(err);
+    setStatus('camera', await describeCameraFailure(err));
+  } finally {
+    switching = false;
+  }
+}
+
+/** The OBS source has no controls, so it takes the setup view's choice. */
+function followServerCamera(name) {
+  if (name === activeCamera) return;
+  switchCamera(name);
 }
 
 /**
@@ -206,7 +245,10 @@ async function describeCameraFailure(err) {
     /* nothing to add */
   }
 
-  const wanted = options.camera ? `The "${options.camera}" camera` : 'The default camera';
+  // Name the camera actually being opened, which after a switch is not the one
+  // in the URL — reporting "the default camera" while trying to open a named
+  // one sends you looking in the wrong place.
+  const wanted = activeCamera ? `The "${activeCamera}" camera` : 'The default camera';
   const problem =
     err.name === 'NotFoundError'
       ? 'was not found'
@@ -218,14 +260,66 @@ async function describeCameraFailure(err) {
   );
 }
 
-// The tile is the point of this layout, so open the camera whenever it is
-// shown — even with counting off, a display-only duplicate still wants the
-// picture. Only `video=0` skips it entirely.
-if (options.video || options.count) {
-  startCamera().catch(async (err) => {
-    console.error(err);
-    setStatus('camera', await describeCameraFailure(err));
+/* ------------------------------------------------- the setup-only picker */
+
+/**
+ * Lists the machine's cameras so you can swap without editing a URL. Setup view
+ * only: a dropdown baked into the browser source would be on stream, and the
+ * source has no one sitting in front of it to use it anyway.
+ *
+ * The choice goes to the server, which is the only thing the setup view (in
+ * Chrome) and the browser source (in OBS) both see — they are separate browsers
+ * with separate storage.
+ */
+async function buildPicker() {
+  const { listCameras } = await import('./pose-tracker.js');
+  const cameras = await listCameras();
+
+  selectEl.innerHTML = '';
+  const auto = document.createElement('option');
+  auto.value = '';
+  auto.textContent = 'Default (whatever the browser picks)';
+  selectEl.appendChild(auto);
+
+  for (const device of cameras) {
+    const option = document.createElement('option');
+    // Match by label, not deviceId: ids are rotated per browser profile, so an
+    // id chosen here would mean nothing to the OBS source.
+    option.value = device.label;
+    option.textContent = device.label || '(unnamed camera)';
+    selectEl.appendChild(option);
+  }
+
+  const current = cameras.find((d) => matches(d.label, activeCamera));
+  selectEl.value = current ? current.label : '';
+
+  selectEl.addEventListener('change', async () => {
+    const chosen = selectEl.value || null;
+    pickerNote.textContent = 'Switching…';
+    await switchCamera(chosen);
+    try {
+      await fetch('/api/camera', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camera: chosen }),
+      });
+      pickerNote.textContent = chosen
+        ? 'Saved. The OBS source will switch to this too.'
+        : 'Saved. The OBS source will use the default camera.';
+    } catch {
+      pickerNote.textContent = 'Switched here, but the server did not save it.';
+    }
   });
+
+  pickerNote.textContent = options.camera
+    ? `This page was opened with ?camera=${options.camera}, which overrides the saved choice.`
+    : 'Whatever you pick here is what the OBS source will use.';
+  pickerEl.hidden = false;
+}
+
+function matches(label, wanted) {
+  if (!label || !wanted) return false;
+  return label.toLowerCase().includes(wanted.trim().toLowerCase());
 }
 
 // OBS reloads a browser source when the scene comes back; release the camera on
@@ -235,15 +329,35 @@ window.addEventListener('pagehide', () => {
   client.stop();
 });
 
-// Paint immediately rather than showing a dash until the first event.
-fetch('/api/state')
-  .then((res) => res.json())
-  .then((state) => {
-    if (!serverState) {
-      serverState = state;
-      render();
-    }
-  })
-  .catch(() => {});
+async function boot() {
+  // Paint immediately rather than showing a dash until the first event, and
+  // learn the saved camera before opening one — starting on the default and
+  // swapping a moment later would drop and re-acquire the device for nothing.
+  try {
+    const state = await (await fetch('/api/state')).json();
+    serverState = state;
+    render();
+    if (!options.camera && state.camera) activeCamera = state.camera;
+  } catch {
+    /* the SSE connection below will fill this in */
+  }
 
-client.connect();
+  // The tile is the point of this layout, so open the camera whenever it is
+  // shown — even with counting off, a display-only duplicate still wants the
+  // picture. Only `video=0` with counting off skips it entirely.
+  if (options.video || options.count) {
+    try {
+      await startCamera();
+    } catch (err) {
+      console.error(err);
+      setStatus('camera', await describeCameraFailure(err));
+    }
+    // Labels only exist once permission has been granted, so the picker is
+    // built after the first camera attempt, failed or not.
+    if (options.setup) await buildPicker().catch((err) => console.error(err));
+  }
+
+  client.connect();
+}
+
+boot();
