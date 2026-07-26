@@ -41,6 +41,12 @@ const CONFIG = {
   apiKey: env('YOUTUBE_API_KEY'),
   channelId: env('YOUTUBE_CHANNEL_ID'),
   handle: env('YOUTUBE_HANDLE'),
+  // Without both halves there is nothing to ask YouTube, so don't ask. Counting
+  // push-ups works on its own; a setup that is deliberately key-less should not
+  // spend the whole stream showing an error about a key it never wanted.
+  get subsEnabled() {
+    return Boolean(this.apiKey && (this.channelId || this.handle));
+  },
   port: Number(env('PORT', '4747')),
   host: env('HOST', '127.0.0.1'),
   pollSeconds: Math.max(15, Number(env('POLL_SECONDS', '30'))),
@@ -197,7 +203,9 @@ function view() {
     lastRepAt: state.lastRepAt,
     countingClientId: activeCameraView(),
     pollSeconds: CONFIG.pollSeconds,
-    configured: Boolean(CONFIG.apiKey && (CONFIG.channelId || CONFIG.handle)),
+    // Whether subscribers are being watched at all. `false` is a mode, not a
+    // fault — the pages say "off" rather than showing an error.
+    subsEnabled: CONFIG.subsEnabled,
     error: lastError,
   };
 }
@@ -249,7 +257,11 @@ async function fetchSubscriberCount() {
 let streamDecisionPending = true;
 
 function shouldStartNewStream() {
-  if (state.streamStartedAt === null || state.baselineSubs === null) return true;
+  if (state.streamStartedAt === null) return true;
+  // A missing baseline only matters when subscribers are actually being
+  // counted. Without a key there is no baseline to be missing, and treating
+  // that as "start a new stream" would reset the session on every restart.
+  if (CONFIG.subsEnabled && state.baselineSubs === null) return true;
   if (CONFIG.newStreamAfterHours === Infinity) return false;
   if (!state.lastSeenAt) return true;
   const hoursDown = (Date.now() - Date.parse(state.lastSeenAt)) / 3_600_000;
@@ -257,6 +269,19 @@ function shouldStartNewStream() {
 }
 
 async function poll({ quiet = false } = {}) {
+  // Nothing configured: no request, no error, no red banner. The session still
+  // has to open, though, or the counter sits there with no stream to belong to.
+  if (!CONFIG.subsEnabled) {
+    if (streamDecisionPending) {
+      streamDecisionPending = false;
+      if (shouldStartNewStream()) startNewStream(null, null);
+      state.lastSeenAt = new Date().toISOString();
+      await saveState();
+      broadcast();
+    }
+    return;
+  }
+
   try {
     const { subs, hidden, title } = await fetchSubscriberCount();
     const previous = state.subs;
@@ -470,12 +495,19 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
   console.log(`  OBS source    ${base}/overlay.html      <- add this as a Browser Source`);
   console.log(`  Set it up     ${base}/overlay.html?setup=1   <- pick a camera, check framing`);
   console.log(`  Status        ${base}/status.html`);
-  console.log(`  ${CONFIG.perSub} push-up${CONFIG.perSub === 1 ? '' : 's'} per subscriber gained while live.`);
-  if (!CONFIG.apiKey) console.log('  ! YOUTUBE_API_KEY is missing — copy .env.example to .env.');
+  if (CONFIG.subsEnabled) {
+    const plural = CONFIG.perSub === 1 ? '' : 's';
+    console.log(`  ${CONFIG.perSub} push-up${plural} per subscriber gained while live.`);
+  } else {
+    // A mode, not a missing key. Plenty of setups never want the YouTube half.
+    console.log('  Subscribers: off. The camera counts your push-ups down; nothing adds to them.');
+    console.log('  Add YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID to .env to have subscribers add.');
+  }
   console.log('');
 
   await poll();
-  setInterval(poll, CONFIG.pollSeconds * 1000);
+  // Nothing to poll for when subscribers are off, so don't wake up to do it.
+  if (CONFIG.subsEnabled) setInterval(poll, CONFIG.pollSeconds * 1000);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
