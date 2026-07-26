@@ -111,7 +111,8 @@ function render() {
 
   // Reps in flight are already counted here but not yet in the server's total,
   // so subtract them to keep the number honest and instant.
-  const left = Math.max(0, (serverState.rawLeft ?? serverState.left ?? 0) - pendingReps);
+  const rawLeft = (serverState.rawLeft ?? serverState.left ?? 0) - pendingReps;
+  const left = Math.max(0, rawLeft);
   countEl.textContent = format(left);
 
   if (lastShown !== null && left !== lastShown) {
@@ -130,8 +131,14 @@ function render() {
     // there is simply nothing to finish.
     const fraction = owed > 0 ? Math.min(1, Math.max(0, done / owed)) : 0;
     barFill.style.width = `${(fraction * 100).toFixed(1)}%`;
-    // The bar alone cannot say how big the job is; the figures can.
-    progressText.textContent = `${format(done)} / ${format(owed)}`;
+
+    // Push-ups left bottoms out at zero, so once you are ahead the big number
+    // stops moving and every rep after that looks like nothing happened. The
+    // done figure always moves, and the credit says how far past the line you
+    // are — which is the part the zero was hiding.
+    const ahead = Math.max(0, -rawLeft);
+    progressText.textContent =
+      `${format(done)} done · ${format(owed)} owed` + (ahead ? ` · ${format(ahead)} ahead` : '');
     progressEl.hidden = false;
   }
 
