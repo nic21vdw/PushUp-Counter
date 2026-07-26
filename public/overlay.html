@@ -3,11 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Push-Up Counter — OBS overlay</title>
+    <title>Push-Up Tracker</title>
     <style>
-      /* Transparent all the way down. OBS composites this straight over the
-         scene, alpha channel and all — there is no colour to key out and no
-         custom CSS to paste into the browser source. */
+      /* Transparent all the way down. OBS composites the panel straight over
+         the scene, alpha channel and all — no chroma key, no custom CSS. */
       html,
       body {
         margin: 0;
@@ -17,8 +16,8 @@
         height: 100%;
       }
 
-      /* The camera feed is never shown on stream. It is decoded into the pose
-         model and, unless you ask for setup mode, drawn nowhere at all. */
+      /* The camera feed is decoded here and drawn into the canvas. Never shown
+         directly, so the tile can be rounded, mirrored and masked. */
       #video {
         position: absolute;
         width: 1px;
@@ -27,53 +26,87 @@
         pointer-events: none;
       }
 
-      /* Only ever visible in setup mode, so you can frame yourself once. */
-      #stage {
-        display: none;
-        position: absolute;
-        inset: 0;
-        width: 100%;
+      #panel {
         height: 100%;
-        object-fit: contain;
-      }
-      body[data-setup='1'] #stage {
-        display: block;
-      }
-
-      #readout {
-        position: absolute;
-        inset: 0;
         display: flex;
-        flex-direction: column;
-        gap: 0.1em;
-        padding: 12px 16px;
+        align-items: center;
+        gap: clamp(14px, 2.2vw, 30px);
+        padding: 14px;
         font-family: var(--font, 'Inter', 'Helvetica Neue', Arial, sans-serif);
-        font-weight: var(--weight, 800);
         color: var(--color, #ffffff);
-        text-shadow: var(--shadow, 0 2px 10px rgba(0, 0, 0, 0.75));
-        line-height: 1.05;
-        letter-spacing: -0.01em;
-        text-align: var(--align, left);
-        align-items: var(--items, flex-start);
-        justify-content: flex-start;
         -webkit-font-smoothing: antialiased;
-        /* Held back until the URL options have been applied, so the number
-           never flashes at the wrong size while the module loads. */
+        /* Held back until the URL options have been applied, so nothing flashes
+           at the wrong size while the module loads. */
         opacity: 0;
-        transition: opacity 120ms linear;
+        transition: opacity 140ms linear;
       }
-      #readout.ready {
+      #panel.ready {
         opacity: 1;
       }
+      #panel.offline {
+        opacity: 0.45;
+      }
 
-      .headline {
+      /* ---- the camera tile ---- */
+      #tile {
+        position: relative;
+        height: 100%;
+        /* Matches a 1280x720 webcam, so `object-fit: cover` has nothing to
+           crop. Capped so the tile cannot crowd the number out on a short,
+           wide browser source. */
+        aspect-ratio: 16 / 9;
+        max-width: 62%;
+        flex: none;
+        border-radius: var(--radius, 18px);
+        overflow: hidden;
+        background: rgba(8, 11, 14, 0.55);
+        box-shadow:
+          0 0 0 2px rgba(255, 255, 255, 0.16),
+          0 10px 30px rgba(0, 0, 0, 0.45);
+      }
+      #stage {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      body[data-mirror='1'] #stage {
+        transform: scaleX(-1);
+      }
+      body[data-video='0'] #tile {
+        display: none;
+      }
+
+      /* A quiet ring that pulses when a rep lands, so the tile itself
+         acknowledges the push-up rather than only the number moving. */
+      #tile::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        box-shadow: inset 0 0 0 0 rgba(74, 222, 128, 0);
+        pointer-events: none;
+        transition: box-shadow 420ms ease-out;
+      }
+      #tile.rep::after {
+        box-shadow: inset 0 0 0 5px rgba(74, 222, 128, 0.9);
+        transition: box-shadow 60ms ease-out;
+      }
+
+      /* ---- the readout ---- */
+      #readout {
         display: flex;
-        align-items: baseline;
-        gap: 0.25em;
-        font-size: var(--size, 88px);
+        flex-direction: column;
+        justify-content: center;
+        min-width: 0;
+        text-shadow: var(--shadow, 0 2px 12px rgba(0, 0, 0, 0.8));
       }
 
       #count {
+        font-size: var(--size, 88px);
+        font-weight: var(--weight, 800);
+        line-height: 1;
+        letter-spacing: -0.02em;
         font-variant-numeric: tabular-nums;
       }
       #count.bump {
@@ -84,7 +117,7 @@
           transform: scale(1);
         }
         30% {
-          transform: scale(1.16);
+          transform: scale(1.14);
           color: var(--pulse, #4ade80);
         }
         100% {
@@ -93,19 +126,22 @@
       }
 
       #label {
-        font-size: calc(var(--size, 88px) * 0.34);
+        font-size: calc(var(--size, 88px) * 0.22);
         font-weight: 700;
-        opacity: 0.95;
+        letter-spacing: 0.09em;
+        opacity: 0.92;
+        margin-top: 0.35em;
+        white-space: nowrap;
       }
 
       #bar {
-        width: calc(var(--size, 88px) * 3.6);
+        width: calc(var(--size, 88px) * 3.4);
         max-width: 100%;
-        height: calc(var(--size, 88px) * 0.09);
-        min-height: 4px;
-        margin-top: 0.28em;
+        height: calc(var(--size, 88px) * 0.085);
+        min-height: 5px;
+        margin-top: 0.55em;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.24);
+        background: rgba(255, 255, 255, 0.22);
         overflow: hidden;
       }
       #bar i {
@@ -114,38 +150,41 @@
         width: 0%;
         border-radius: 999px;
         background: var(--color, #ffffff);
-        transition: width 400ms ease-out;
+        transition: width 420ms ease-out;
       }
 
       #subline {
-        font-size: calc(var(--size, 88px) * 0.26);
+        font-size: calc(var(--size, 88px) * 0.19);
         font-weight: 600;
-        opacity: 0.85;
-        margin-top: 0.15em;
+        opacity: 0.8;
+        margin-top: 0.5em;
+        white-space: nowrap;
       }
 
-      #done-note {
-        font-size: calc(var(--size, 88px) * 0.34);
-        font-weight: 800;
+      /* ---- setup-only detector readout ---- */
+      #tune {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 7px 10px;
+        background: rgba(8, 11, 14, 0.78);
+        font-size: 12px;
+        line-height: 1.45;
+        font-variant-numeric: tabular-nums;
+        color: #d5dde6;
+      }
+      #tune b {
+        color: #fff;
       }
 
-      /* Nothing to show is better than a stale or broken number on stream. */
-      [hidden] {
-        display: none !important;
-      }
-
-      #readout.offline {
-        opacity: 0.45;
-      }
-
-      /* Faults need to be visible while you set the source up, but must never
-         be the thing your viewers see, so it stays small and out of the way.
-         Start-up progress is only shown in setup mode. */
+      /* Faults must be visible while you set the source up, but must never be
+         the thing your viewers see, so it stays small and out of the way. */
       #status {
         position: absolute;
-        left: 16px;
+        left: 14px;
         top: 12px;
-        max-width: calc(100% - 32px);
+        max-width: calc(100% - 28px);
         padding: 8px 12px;
         border-radius: 8px;
         background: rgba(120, 20, 24, 0.92);
@@ -155,15 +194,20 @@
         line-height: 1.4;
       }
       #status[data-tone='info'] {
-        background: rgba(16, 20, 26, 0.85);
+        background: rgba(16, 20, 26, 0.86);
         color: #d5dde6;
+      }
+
+      [hidden] {
+        display: none !important;
       }
 
       @media (prefers-reduced-motion: reduce) {
         #count.bump {
           animation: none;
         }
-        #bar i {
+        #bar i,
+        #tile::after {
           transition: none;
         }
       }
@@ -171,16 +215,18 @@
   </head>
   <body>
     <video id="video" playsinline muted></video>
-    <canvas id="stage"></canvas>
 
-    <div id="readout">
-      <div class="headline">
+    <div id="panel">
+      <div id="tile">
+        <canvas id="stage"></canvas>
+        <div id="tune" hidden></div>
+      </div>
+      <div id="readout">
         <span id="count">—</span>
         <span id="label">PUSH-UPS LEFT</span>
+        <div id="bar" hidden><i></i></div>
+        <div id="subline" hidden></div>
       </div>
-      <div id="bar" hidden><i></i></div>
-      <div id="subline" hidden></div>
-      <div id="done-note" hidden>ALL DONE 🎉</div>
     </div>
 
     <div id="status" hidden></div>

@@ -13,14 +13,20 @@ import { DEFAULT_OVERLAY_OPTIONS } from './overlay-options.js';
 const KEYS = [
   ['size', 'size'],
   ['color', 'color'],
-  ['align', 'align'],
   ['font', 'font'],
   ['weight', 'weight'],
   ['subs', 'subs'],
   ['bar', 'bar'],
+  ['mirror', 'mirror'],
+  ['skeleton', 'skeleton'],
+  ['video', 'video'],
+  ['radius', 'radius'],
   ['count', 'count'],
   ['camera', 'camera'],
 ];
+
+/** `shadow` is spelled as a word, not a flag, because `shadow=none` predates it. */
+const SHADOW_OFF = 'none';
 
 /**
  * Only params that differ from the page's own defaults are emitted. A URL that
@@ -54,9 +60,7 @@ export function buildOverlayUrl(origin, choices = {}) {
     params.set('label', choices.label);
   }
 
-  // `shadow` is the one option the overlay spells as a word rather than a flag,
-  // because `shadow=none` is what the README has always documented.
-  if (choices.shadow === false) params.set('shadow', 'none');
+  if (choices.shadow === false) params.set('shadow', SHADOW_OFF);
 
   return withQuery(`${origin}/overlay.html`, params);
 }

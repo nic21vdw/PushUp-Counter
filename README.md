@@ -11,8 +11,14 @@ That is the whole machine. There is no button that logs push-ups, no field that
 edits the total, and no endpoint behind either — the only way the number comes
 down is doing the push-ups in front of the camera.
 
-The source is white text on a fully transparent page, so it drops straight into
-OBS and composites over your scene with no chroma key and no custom CSS.
+The tracker is one page: a rounded tile showing your webcam with the pose
+skeleton drawn on it, and the count beside it. The page background is fully
+transparent, so OBS composites the whole panel over your scene with no chroma
+key and no custom CSS — you add it as a single Browser Source and you are done.
+
+It wants **its own webcam**, separate from anything OBS has as a Video Capture
+Device. On most machines the first app to open a camera keeps it, so a camera
+OBS already holds is a camera this cannot have.
 
 **Only subscribers gained while you are live count.** Growth between streams is
 free — otherwise the number runs away from you overnight. Starting the server
@@ -53,16 +59,29 @@ npm start
 ```
   Push-up counter is running.
   OBS source    http://127.0.0.1:4747/overlay.html      <- add this as a Browser Source
-  Frame it up   http://127.0.0.1:4747/overlay.html?setup=1
+  Set it up     http://127.0.0.1:4747/overlay.html?setup=1   <- pick a camera, check framing
   Status        http://127.0.0.1:4747/status.html
   1 push-up per subscriber gained while live.
 ```
 
-## 4. Frame yourself
+## 4. Pick your camera and frame yourself
 
-Open **`/overlay.html?setup=1`** in a browser. That is the same page you are
-about to put in OBS, with the camera picture and the pose skeleton drawn on so
-you can see what the detector sees.
+Open **`/overlay.html?setup=1`** in a browser. That is exactly the page you are
+about to put in OBS, plus a live readout of your elbow angle under the picture
+so you can see what the detector sees.
+
+Streaming machines usually have several cameras — a webcam or two, a
+phone-as-webcam bridge, OBS's own virtual camera. The page takes whatever the
+browser calls the default, which is very often the one OBS has already claimed.
+Name the one you want:
+
+```
+/overlay.html?setup=1&camera=Brio
+```
+
+Any part of the camera's name works, case-insensitive. If it can't find it, or
+the camera is busy, the error names every camera on the machine so you know what
+to type. The status page lists them too.
 
 Off to your side, chest height, 2–3 m back, whole body in frame from hands to
 feet. Joint angles come from the model's metric 3D landmarks, so a head-on or
@@ -71,33 +90,22 @@ three-quarter camera works too — side-on is just the most reliable.
 **Close this tab before you go live.** Two pages with the camera open will fight
 over it, and two pages counting would bank every push-up twice.
 
-### If you have more than one camera
-
-Streaming machines usually do — a webcam or two, a phone-as-webcam bridge, OBS's
-own virtual camera. The page takes whatever the browser calls the default, which
-is very often the one OBS has already claimed. Name the one you want:
-
-```
-/overlay.html?setup=1&camera=Brio
-```
-
-Any part of the camera's name works, case-insensitive. If it can't find it, the
-error names every camera it can see, so you know what to type.
-
 ## 5. Add it to OBS
 
 **Sources → + → Browser**, then:
 
-| Field  | Value                                    |
-| ------ | ---------------------------------------- |
-| URL    | `http://127.0.0.1:4747/overlay.html`     |
-| Width  | `900`                                    |
-| Height | `220`                                    |
+| Field  | Value                                                |
+| ------ | ---------------------------------------------------- |
+| URL    | `http://127.0.0.1:4747/overlay.html?camera=Brio`     |
+| Width  | `1100`                                               |
+| Height | `340`                                                |
 
-Leave the custom CSS box alone — the page is already transparent.
+Leave the custom CSS box alone — the page is already transparent. Any size works;
+the camera tile is 16:9 and grows with the height you give it, and is capped at
+62% of the width so it can never crowd the number out.
 
-**Untick "Shutdown source when not visible."** This one source is also the thing
-doing the counting, so the camera has to stay open while you are doing push-ups
+**Untick "Shutdown source when not visible."** This source *is* the thing doing
+the counting, so the camera has to stay open while you are doing push-ups
 off-scene. If you shut it down between scenes, nothing counts.
 
 Then **remove any Video Capture Device using the same camera** from your scenes.
@@ -105,32 +113,35 @@ On most machines the first app to open a camera keeps it.
 
 ### Making it look right
 
-| Param    | Example              | What it does                              |
-| -------- | -------------------- | ----------------------------------------- |
-| `size`   | `size=120`           | Font size of the number, in px            |
-| `color`  | `color=%23ffffff`    | Text colour (URL-encode `#` as `%23`)     |
-| `label`  | `label=TO GO`        | Text after the number; `label=` hides it  |
-| `align`  | `align=right`        | `left` (default), `center`, `right`       |
-| `font`   | `font=Impact`        | Any font installed on the machine         |
-| `weight` | `weight=900`         | Font weight                               |
-| `shadow` | `shadow=none`        | Drop the text shadow                      |
-| `bar`    | `bar=1`              | Progress bar: how much of it you have done|
-| `subs`   | `subs=1`             | Second line with the subscriber count     |
+| Param      | Example              | What it does                                |
+| ---------- | -------------------- | ------------------------------------------- |
+| `size`     | `size=120`           | Font size of the number, in px              |
+| `color`    | `color=%23ffffff`    | Text colour (URL-encode `#` as `%23`)       |
+| `label`    | `label=TO GO`        | Text under the number; `label=` hides it    |
+| `font`     | `font=Impact`        | Any font installed on the machine           |
+| `weight`   | `weight=900`         | Font weight                                 |
+| `shadow`   | `shadow=none`        | Drop the text shadow                        |
+| `bar`      | `bar=0`              | Hide the progress bar (on by default)       |
+| `subs`     | `subs=1`             | Extra line with the subscriber count        |
+| `radius`   | `radius=0`           | Square off the camera tile's corners        |
+| `mirror`   | `mirror=0`           | Stop flipping the picture                   |
+| `skeleton` | `skeleton=0`         | Hide the pose skeleton, keep the picture    |
+| `video`    | `video=0`            | Hide the tile — number only, still counting |
 
-Example: `overlay.html?size=140&align=center&bar=1&subs=1`
+Example: `overlay.html?camera=Brio&size=140&subs=1&radius=8`
 
 The status page shows the finished URL for you.
 
 ### Other options
 
-| Param    | Example         | What it does                                       |
-| -------- | --------------- | -------------------------------------------------- |
-| `camera` | `camera=Brio`   | Which webcam to open (part of its name)            |
-| `setup`  | `setup=1`       | Draw the camera and skeleton. Never use on stream  |
-| `count`  | `count=0`       | Display only — does not open the camera at all     |
+| Param    | Example         | What it does                                        |
+| -------- | --------------- | --------------------------------------------------- |
+| `camera` | `camera=Brio`   | Which webcam to open (part of its name)             |
+| `setup`  | `setup=1`       | Add the detector readout. Never use on stream       |
+| `count`  | `count=0`       | Display only — shows the picture but banks nothing  |
 
-`count=0` is there for a second screen showing the same number. Only ever run
-**one** counting source, or every push-up lands twice.
+`count=0` is there for a second source showing the same thing on another scene.
+Only ever run **one** counting source, or every push-up lands twice.
 
 ## 6. Check it is working
 
@@ -173,8 +184,9 @@ phantom reps. On top of that:
 
 ### Tuning it to you
 
-Range of motion varies. Watch the skeleton in `?setup=1`, do one slow rep, and
-if it misses reps or double-counts, adjust with URL params:
+Range of motion varies. Open `?setup=1`, do one slow rep watching the live elbow
+angle under the picture, note what you actually hit at the top and the bottom,
+and set the thresholds just inside that range:
 
 | Param       | Default | What it does                                      |
 | ----------- | ------- | ------------------------------------------------- |

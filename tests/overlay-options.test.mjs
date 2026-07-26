@@ -19,11 +19,13 @@ import {
 const parse = (query) => parseOverlayOptions(new URLSearchParams(query));
 const detection = (query) => parseDetectionOptions(new URLSearchParams(query));
 
-test('a bare URL gives a counting, transparent, white overlay', () => {
+test('a bare URL gives a counting tracker with the camera tile showing', () => {
   const options = parse('');
   assert.deepEqual(options, DEFAULT_OVERLAY_OPTIONS);
-  assert.equal(options.count, true, 'the source counts by default — that is the whole point');
-  assert.equal(options.setup, false, 'and never shows the camera unless asked');
+  assert.equal(options.count, true, 'it counts by default — that is the whole point');
+  assert.equal(options.video, true, 'and shows the camera, because that is what OBS displays');
+  assert.equal(options.mirror, true, 'a selfie view reads as a mirror, not a photograph');
+  assert.equal(options.setup, false, 'the tuning readout stays off stream');
   assert.equal(options.color, '#ffffff');
 });
 
@@ -67,10 +69,16 @@ test('size and weight fall back for junk and zero', () => {
   assert.equal(parse('weight=900').weight, 900);
 });
 
-test('alignment only accepts the three it can actually do', () => {
-  assert.equal(parse('align=center').align, 'center');
-  assert.equal(parse('align=RIGHT').align, 'right');
-  assert.equal(parse('align=diagonal').align, 'left');
+test('the tile can be squared off, and zero radius is a real choice', () => {
+  assert.equal(parse('radius=0').radius, 0, 'square corners are not "no value given"');
+  assert.equal(parse('radius=40').radius, 40);
+  assert.equal(parse('radius=round').radius, DEFAULT_OVERLAY_OPTIONS.radius);
+});
+
+test('the picture can be turned off without turning the counting off', () => {
+  const options = parse('video=0');
+  assert.equal(options.video, false, 'just the number, no tile');
+  assert.equal(options.count, true, 'still watching you and still counting');
 });
 
 test('shadow=none is still the documented spelling', () => {

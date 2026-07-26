@@ -468,7 +468,7 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
   console.log('');
   console.log('  Push-up counter is running.');
   console.log(`  OBS source    ${base}/overlay.html      <- add this as a Browser Source`);
-  console.log(`  Frame it up   ${base}/overlay.html?setup=1`);
+  console.log(`  Set it up     ${base}/overlay.html?setup=1   <- pick a camera, check framing`);
   console.log(`  Status        ${base}/status.html`);
   console.log(`  ${CONFIG.perSub} push-up${CONFIG.perSub === 1 ? '' : 's'} per subscriber gained while live.`);
   if (!CONFIG.apiKey) console.log('  ! YOUTUBE_API_KEY is missing — copy .env.example to .env.');

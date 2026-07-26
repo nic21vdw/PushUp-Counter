@@ -1,13 +1,13 @@
 /**
- * The whole thing, as one OBS browser source.
+ * The push-up tracker, as one thing OBS displays.
  *
  * Subscribers arriving while you are live push the number up (the server does
- * that, off the YouTube API). The webcam watching you push the number down.
- * Nothing else moves it — there is no button here, and no endpoint behind one.
+ * that, off the YouTube API). The webcam watching you pushes it down. Nothing
+ * else moves it — there is no button here, and no endpoint behind one.
  *
- * On stream the camera is opened but never drawn: the page stays transparent
- * and shows only the number. `?setup=1` draws the picture and the skeleton so
- * you can frame yourself once, then you take it back out of the URL.
+ * The page draws a rounded camera tile with the pose skeleton on it and the
+ * count beside it, on a transparent background, so the whole panel composites
+ * over your scene as a single browser source.
  */
 
 import { RepCounter, DEFAULT_OPTIONS } from './rep-counter.js';
@@ -21,33 +21,31 @@ const options = parseOverlayOptions(params);
 
 const video = document.getElementById('video');
 const canvas = document.getElementById('stage');
-const readout = document.getElementById('readout');
+const panel = document.getElementById('panel');
+const tile = document.getElementById('tile');
 const countEl = document.getElementById('count');
 const labelEl = document.getElementById('label');
 const barEl = document.getElementById('bar');
 const barFill = barEl.querySelector('i');
 const sublineEl = document.getElementById('subline');
-const doneNote = document.getElementById('done-note');
+const tuneEl = document.getElementById('tune');
 const statusEl = document.getElementById('status');
 
 /* ------------------------------------------------------------------ look */
 
-if (options.setup) document.body.dataset.setup = '1';
+document.body.dataset.mirror = options.mirror ? '1' : '0';
+document.body.dataset.video = options.video ? '1' : '0';
 
-readout.style.setProperty('--size', `${options.size}px`);
-readout.style.setProperty('--color', options.color);
-readout.style.setProperty('--weight', String(options.weight));
-if (options.font) readout.style.setProperty('--font', options.font);
-if (!options.shadow) readout.style.setProperty('--shadow', 'none');
-readout.style.setProperty('--align', options.align);
-readout.style.setProperty(
-  '--items',
-  options.align === 'center' ? 'center' : options.align === 'right' ? 'flex-end' : 'flex-start',
-);
+panel.style.setProperty('--size', `${options.size}px`);
+panel.style.setProperty('--color', options.color);
+panel.style.setProperty('--weight', String(options.weight));
+panel.style.setProperty('--radius', `${options.radius}px`);
+if (options.font) panel.style.setProperty('--font', options.font);
+if (!options.shadow) panel.style.setProperty('--shadow', 'none');
 
 labelEl.textContent = options.label;
 labelEl.hidden = options.label === '';
-readout.classList.add('ready');
+panel.classList.add('ready');
 
 /* ---------------------------------------------------------------- status */
 
@@ -68,7 +66,7 @@ function setStatus(slot, message, tone = 'error') {
 
 // Identifies this page to the server, so two of them counting the same
 // push-ups shows up as a warning instead of a silently doubled total.
-const clientId = `overlay-${Math.random().toString(36).slice(2, 10)}`;
+const clientId = `tracker-${Math.random().toString(36).slice(2, 10)}`;
 
 const counter = new RepCounter({ ...DEFAULT_OPTIONS, ...parseDetectionOptions(params) });
 
@@ -88,7 +86,7 @@ const client = new CounterClient({
   },
   onError: (message) => setStatus('server', message),
   // A number that stopped updating is worse than an obviously dimmed one.
-  onConnection: (up) => readout.classList.toggle('offline', !up),
+  onConnection: (up) => panel.classList.toggle('offline', !up),
 });
 
 const format = (n) => Number(n).toLocaleString('en-US');
@@ -108,8 +106,6 @@ function render() {
     countEl.classList.add('bump');
   }
   lastShown = left;
-
-  doneNote.hidden = left !== 0;
 
   if (options.bar) {
     const owed = serverState.owed ?? 0;
@@ -132,20 +128,22 @@ function render() {
   }
 }
 
-/* ----------------------------------------------------------- the counting */
+/* --------------------------------------------------------------- drawing */
 
 let tracker = null;
 
-/**
- * On stream nothing is drawn: clearing the canvas and returning leaves it fully
- * transparent. Handing PoseTracker a frame callback at all is what stops it
- * painting its own skeleton over your scene.
- */
 function onFrame({ ctx, canvas: c, video: v, landmarks }) {
-  if (!options.setup) return;
   ctx.drawImage(v, 0, 0, c.width, c.height);
-  tracker?.drawSkeleton(landmarks);
+  if (options.skeleton) tracker?.drawSkeleton(landmarks);
 }
+
+/** Acknowledge a counted rep on the tile, for when you cannot see the number. */
+function flashRep() {
+  tile.classList.add('rep');
+  setTimeout(() => tile.classList.remove('rep'), 240);
+}
+
+/* -------------------------------------------------------------- counting */
 
 function handlePose({ landmarks, worldLandmarks, timestamp }) {
   const { elbowAngle, plankAngle } = anglesFromLandmarks(
@@ -154,9 +152,22 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     counter.options.minVisibility,
   );
   const result = counter.update({ elbowAngle, plankAngle, timestamp });
+
+  if (options.setup) {
+    // The numbers you need to set the thresholds, where you can see them while
+    // doing the movement. Off on stream.
+    tuneEl.hidden = false;
+    tuneEl.innerHTML =
+      `elbow <b>${result.angle === null ? '—' : Math.round(result.angle)}°</b> · ` +
+      `plank <b>${result.plankAngle === null ? '—' : Math.round(result.plankAngle)}°</b> · ` +
+      `<b>${result.state}</b> · ${result.feedback}`;
+  }
+
+  if (!options.count) return;
   if (result.repCompleted) {
     client.reportReps(1);
     tracker?.flash();
+    flashRep();
   }
 }
 
@@ -175,29 +186,42 @@ async function startCamera() {
 }
 
 /**
- * A blank source is the worst thing that can happen mid-stream, so say which
+ * A blank tile is the worst thing that can happen mid-stream, so say which
  * camera it wanted and which ones it can see. "Device in use" on a machine with
  * four video inputs is not a diagnosis on its own.
  */
 async function describeCameraFailure(err) {
-  if (err?.name !== 'NotReadableError') return `Camera could not start: ${err?.message ?? err}`;
+  if (err?.name !== 'NotReadableError' && err?.name !== 'NotFoundError') {
+    return `Camera could not start: ${err?.message ?? err}`;
+  }
 
   let names = '';
   try {
     const { listCameras } = await import('./pose-tracker.js');
-    names = (await listCameras()).map((d) => d.label).filter(Boolean).join(', ');
+    names = (await listCameras())
+      .map((d) => d.label)
+      .filter(Boolean)
+      .join(', ');
   } catch {
     /* nothing to add */
   }
 
+  const wanted = options.camera ? `The "${options.camera}" camera` : 'The default camera';
+  const problem =
+    err.name === 'NotFoundError'
+      ? 'was not found'
+      : 'is already in use — remove any Video Capture Device for it from your OBS scenes';
+
   return (
-    `The ${options.camera ? `"${options.camera}" ` : ''}webcam is already in use — ` +
-    'close the setup tab, and remove any Video Capture Device for it from your OBS scenes.' +
+    `${wanted} ${problem}.` +
     (names ? ` Cameras on this machine: ${names}. Pick one with ?camera=NAME.` : '')
   );
 }
 
-if (options.count) {
+// The tile is the point of this layout, so open the camera whenever it is
+// shown — even with counting off, a display-only duplicate still wants the
+// picture. Only `video=0` skips it entirely.
+if (options.video || options.count) {
   startCamera().catch(async (err) => {
     console.error(err);
     setStatus('camera', await describeCameraFailure(err));

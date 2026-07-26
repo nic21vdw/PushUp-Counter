@@ -223,15 +223,22 @@
     <section>
       <h2>The OBS browser source</h2>
       <p class="muted" style="margin-top: 0">
-        One source does everything: it shows the number and watches you at the same time. Add it at
-        <b>900×220</b>, and leave <b>“Shutdown source when not visible”</b> switched
+        One source is the whole tracker: your camera with the pose skeleton on it, and the count
+        beside it, on a transparent background so it composites over your scene. Add it at
+        <b>1100×340</b>, and leave <b>“Shutdown source when not visible”</b> switched
         <b>off</b> — the camera has to stay open while you are doing push-ups off-scene.
       </p>
       <code id="overlay-url"></code>
       <p class="muted" style="margin-top: 12px">
-        To frame yourself, open <a id="setup-link" href="/overlay.html?setup=1">the setup view</a>
-        first and close it before you go live. Two pages with the camera open will fight over it,
-        and two pages counting would bank every push-up twice.
+        Give it its own webcam — not one OBS has as a Video Capture Device, or they will fight over
+        it. Pick which with <b>?camera=NAME</b>; any part of the name works.
+        <span id="camera-list"></span>
+      </p>
+      <p class="muted" style="margin-top: 10px">
+        To check your framing and tune the detector, open
+        <a id="setup-link" href="/overlay.html?setup=1">the setup view</a> — it adds a live readout
+        of your elbow angle under the picture. Close it before you go live: two pages counting would
+        bank every push-up twice.
       </p>
     </section>
 
@@ -255,7 +262,19 @@
       const $ = (id) => document.getElementById(id);
       const fmt = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US'));
 
-      $('overlay-url').textContent = buildOverlayUrl(location.origin, { subs: true, bar: true });
+      $('overlay-url').textContent = buildOverlayUrl(location.origin, { subs: true });
+
+      // Naming the cameras beats describing them. Labels need camera permission,
+      // which this page never asks for, so an empty list is normal here.
+      navigator.mediaDevices
+        ?.enumerateDevices()
+        .then((devices) => {
+          const names = devices
+            .filter((d) => d.kind === 'videoinput' && d.label)
+            .map((d) => d.label);
+          if (names.length) $('camera-list').textContent = `Seen on this machine: ${names.join(', ')}.`;
+        })
+        .catch(() => {});
 
       const ago = (iso) => {
         if (!iso) return null;

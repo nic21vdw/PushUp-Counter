@@ -29,14 +29,15 @@ test('choices that match the defaults are left out of the URL', () => {
 });
 
 test('the built URL parses back to the options that were asked for', () => {
-  const url = buildOverlayUrl(ORIGIN, { size: 140, align: 'center', subs: true, bar: true });
+  const url = buildOverlayUrl(ORIGIN, { size: 140, subs: true, mirror: false, radius: 0 });
   const options = optionsOf(url);
 
   assert.equal(options.size, 140);
-  assert.equal(options.align, 'center');
   assert.equal(options.subs, true);
-  assert.equal(options.bar, true);
+  assert.equal(options.mirror, false);
+  assert.equal(options.radius, 0);
   assert.equal(options.count, true, 'still counting — never turned off by accident');
+  assert.equal(options.video, true, 'and still showing the camera');
 });
 
 test('a colour keeps its hash out of the URL', () => {
