@@ -293,11 +293,17 @@
 
         $('left').textContent = fmt(state.left);
         $('gained').textContent =
-          state.subs === null ? '—' : `${state.subsGained > 0 ? '+' : ''}${fmt(state.subsGained)}`;
+          !state.subsEnabled || state.subs === null
+            ? '—'
+            : `${state.subsGained > 0 ? '+' : ''}${fmt(state.subsGained)}`;
         $('done').textContent = fmt(state.done);
         $('owed').textContent = fmt(state.owed);
-        $('subs').textContent = state.hiddenSubscriberCount ? 'hidden' : fmt(state.subs);
-        $('rule-up').textContent = `+${state.perSub}`;
+        $('subs').textContent = !state.subsEnabled
+          ? 'off'
+          : state.hiddenSubscriberCount
+            ? 'hidden'
+            : fmt(state.subs);
+        $('rule-up').textContent = state.subsEnabled ? `+${state.perSub}` : 'off';
 
         const fraction = state.owed > 0 ? Math.min(1, Math.max(0, state.done / state.owed)) : 0;
         $('bar').style.width = `${(fraction * 100).toFixed(1)}%`;
@@ -313,14 +319,23 @@
           : 'Waiting for the first subscriber count…';
 
         // --- is it working ---
+        // Three states, not two: connected, broken, and deliberately off.
         const apiOk = state.subs !== null && !state.error;
-        $('dot-api').className = `dot ${apiOk ? 'ok' : 'bad'}`;
-        $('txt-api').textContent = apiOk
-          ? `YouTube connected — ${state.channelTitle || 'channel'}`
-          : 'YouTube is not answering';
-        $('sub-api').textContent = apiOk
-          ? `${fmt(state.subs)} subs, updated ${ago(state.subsUpdatedAt) ?? 'just now'}. Polling every ${state.pollSeconds}s.`
-          : (state.error ?? 'Set YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID in .env, then restart.');
+        if (!state.subsEnabled) {
+          $('dot-api').className = 'dot';
+          $('txt-api').textContent = 'Subscribers are off';
+          $('sub-api').textContent =
+            'Nothing is adding push-ups — the camera only counts them down. ' +
+            'Add YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID to .env and restart to turn this on.';
+        } else {
+          $('dot-api').className = `dot ${apiOk ? 'ok' : 'bad'}`;
+          $('txt-api').textContent = apiOk
+            ? `YouTube connected — ${state.channelTitle || 'channel'}`
+            : 'YouTube is not answering';
+          $('sub-api').textContent = apiOk
+            ? `${fmt(state.subs)} subs, updated ${ago(state.subsUpdatedAt) ?? 'just now'}. Polling every ${state.pollSeconds}s.`
+            : (state.error ?? 'Check YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID in .env, then restart.');
+        }
 
         const counting = Boolean(state.countingClientId);
         $('dot-cam').className = `dot ${counting ? 'ok' : ''}`;
