@@ -173,6 +173,51 @@
         white-space: nowrap;
       }
 
+      /* ---- fill layout: the picture is the source, number laid over it ----
+         This is what you want when the point of the source is watching
+         yourself. The tile stops being a tile and becomes the whole frame. */
+      body[data-layout='fill'] #panel {
+        display: block;
+        padding: 0;
+        position: relative;
+      }
+      body[data-layout='fill'] #tile {
+        position: absolute;
+        inset: 0;
+        height: 100%;
+        width: 100%;
+        max-width: none;
+        aspect-ratio: auto;
+        box-shadow: none;
+      }
+      body[data-layout='fill'] #readout {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 2.2em 1.1em 0.9em;
+        /* Footage is unpredictable; without a scrim the number lands on a
+           bright patch sooner or later and stops being readable. */
+        background: linear-gradient(to top, rgba(6, 9, 12, 0.82), rgba(6, 9, 12, 0));
+        z-index: 2;
+        pointer-events: none;
+      }
+      body[data-layout='fill'] #picker {
+        pointer-events: auto;
+      }
+      /* With the picture filling the frame, the detector readout would land on
+         top of the number. Put it at the other end. */
+      body[data-layout='fill'] #tune {
+        top: 0;
+        bottom: auto;
+      }
+      /* With no picture there is nothing to lay the number over. */
+      body[data-layout='fill'][data-video='0'] #readout {
+        position: static;
+        background: none;
+        padding: 14px;
+      }
+
       /* ---- setup-only camera picker ---- */
       #picker {
         display: flex;

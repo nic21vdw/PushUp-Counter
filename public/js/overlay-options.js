@@ -42,6 +42,16 @@ export const DEFAULT_OVERLAY_OPTIONS = {
   skeleton: true,
   /** Show the camera tile at all. Off leaves just the number. */
   video: true,
+  /**
+   * How the picture and the number are arranged:
+   *
+   *   'fill'  the camera fills the whole source, number overlaid in a corner.
+   *   'side'  a camera tile with the number beside it, on transparent space.
+   *
+   * `fill` by default: this source is how you watch yourself, and a preview you
+   * cannot make out is not worth the space it takes.
+   */
+  layout: 'fill',
   /** Corner radius of the camera tile, in px. */
   radius: 18,
   /** Open the webcam and count reps. Off is a display-only duplicate. */
@@ -67,6 +77,7 @@ export const DETECTION_PARAMS = [
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 const FALSY = new Set(['0', 'false', 'no', 'off']);
+const LAYOUTS = new Set(['fill', 'side']);
 
 function bool(raw, fallback) {
   if (raw === null) return fallback;
@@ -124,6 +135,9 @@ export function parseOverlayOptions(params) {
     mirror: bool(params.get('mirror'), d.mirror),
     skeleton: bool(params.get('skeleton'), d.skeleton),
     video: bool(params.get('video'), d.video),
+    layout: LAYOUTS.has((params.get('layout') ?? '').trim().toLowerCase())
+      ? params.get('layout').trim().toLowerCase()
+      : d.layout,
     radius: nonNegative(params.get('radius'), d.radius),
     count: bool(params.get('count'), d.count),
     camera: params.get('camera')?.trim() || d.camera,

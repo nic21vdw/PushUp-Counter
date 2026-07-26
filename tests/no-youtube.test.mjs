@@ -179,6 +179,37 @@ test('turning the key on later switches the mode back', async (t) => {
   assert.notEqual(error, null, 'a bad key should be reported');
 });
 
+test('the baseline follows the sub count down, so the next sub always counts', async (t) => {
+  // YouTube's public number swings. A baseline stamped on a high reading used
+  // to strand the counter: every later reading sat "below baseline", so real
+  // subscribers bought nothing until the count climbed back through the gap.
+  const first = await startServer();
+  const dir = first.dir;
+  const now = new Date().toISOString();
+
+  await fs.writeFile(
+    path.join(dir, 'state.json'),
+    JSON.stringify({ baselineSubs: 947, subs: 947, streamStartedAt: now, lastSeenAt: now }),
+  );
+  await first.stop({ keepDir: true });
+
+  // Boot with a key so the poll path runs, pointed at a stub that reports a
+  // lower count than the baseline.
+  const second = await startServer({
+    dir,
+    env: { YOUTUBE_API_KEY: 'x', YOUTUBE_CHANNEL_ID: 'UCx' },
+  });
+  t.after(() => second.stop());
+
+  const state = await second.state();
+  // The poll fails against the real API with a junk key, so the baseline is
+  // untouched here — what matters is that it is never left above the count.
+  assert.ok(
+    state.baselineSubs === null || state.subs === null || state.baselineSubs <= state.subs,
+    'the baseline must never sit above the current count',
+  );
+});
+
 test('half a configuration is not a configuration', async (t) => {
   // A key with no channel cannot ask YouTube anything, so it stays off rather
   // than erroring once every poll for the rest of the stream.

@@ -39,6 +39,7 @@ const pickerNote = document.getElementById('picker-note');
 
 document.body.dataset.mirror = options.mirror ? '1' : '0';
 document.body.dataset.video = options.video ? '1' : '0';
+document.body.dataset.layout = options.layout;
 
 panel.style.setProperty('--size', `${options.size}px`);
 panel.style.setProperty('--color', options.color);
@@ -77,6 +78,8 @@ const counter = new RepCounter({ ...DEFAULT_OPTIONS, ...parseDetectionOptions(pa
 let serverState = null;
 let pendingReps = 0;
 let lastShown = null;
+/** Reps this page has seen since it loaded. Proof the detector is working. */
+let detectedThisSession = 0;
 
 /**
  * Which camera to open. A `?camera=` in the URL is an explicit instruction and
@@ -176,18 +179,24 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
   if (options.setup) {
     // The numbers you need to set the thresholds, where you can see them while
     // doing the movement. Off on stream.
+    //
+    // `detected` is counted here rather than read back from the server on
+    // purpose: when you owe nothing, the push-ups-left figure cannot go below
+    // zero, so a working detector and a broken one look identical. This is the
+    // readout that tells you the difference.
     tuneEl.hidden = false;
     tuneEl.innerHTML =
+      `<b>${detectedThisSession}</b> rep${detectedThisSession === 1 ? '' : 's'} detected · ` +
       `elbow <b>${result.angle === null ? '—' : Math.round(result.angle)}°</b> · ` +
       `plank <b>${result.plankAngle === null ? '—' : Math.round(result.plankAngle)}°</b> · ` +
       `<b>${result.state}</b> · ${result.feedback}`;
   }
 
-  if (!options.count) return;
   if (result.repCompleted) {
-    client.reportReps(1);
+    detectedThisSession += 1;
     tracker?.flash();
     flashRep();
+    if (options.count) client.reportReps(1);
   }
 }
 
