@@ -167,11 +167,18 @@ The status page shows the finished URL for you.
 | Param    | Example         | What it does                                        |
 | -------- | --------------- | --------------------------------------------------- |
 | `camera` | `camera=Brio`   | Which webcam to open (part of its name)             |
-| `setup`  | `setup=1`       | Add the detector readout. Never use on stream       |
+| `setup`  | `setup=1`       | Add the detector readout and the fault box. Never use on stream |
 | `count`  | `count=0`       | Display only — shows the picture but banks nothing  |
 
 `count=0` is there for a second source showing the same thing on another scene.
 Only ever run **one** counting source, or every push-up lands twice.
+
+Faults — a camera that will not open, a server that stopped answering — are only
+painted onto the source under `?setup=1`. A red banner across your scene tells
+the audience about a problem only you can fix. The reason still goes to the
+browser console — open the same URL in Chrome and look at DevTools, or reload
+the source with `?setup=1` to see it on the page. A source that has gone quiet
+and blank is a source with something in that log.
 
 ## 6. Check it is working
 
