@@ -21,6 +21,13 @@ export const DEFAULT_TRACKER_OPTIONS = {
   count: false,
   /** Flip horizontally, to match a mirrored camera in your scene. */
   mirror: false,
+  /**
+   * Paint faults into a box on the source. Off by default: this page is on
+   * stream, and a red banner across the scene tells the audience about a
+   * problem only the streamer can fix. Failures still reach the console, and
+   * camera.html reports them properly. Turn it on while you are setting up.
+   */
+  status: false,
   /** Height of the baked-in counter text, in px. */
   size: 64,
   /** Colour of that text. */
@@ -65,6 +72,7 @@ export function parseTrackerOptions(params) {
     counter: bool(params.get('counter'), d.counter),
     count: bool(params.get('count'), d.count),
     mirror: bool(params.get('mirror'), d.mirror),
+    status: bool(params.get('status'), d.status),
     size: Number.isFinite(size) && size > 0 ? size : d.size,
     color: normalizeColor(params.get('color'), d.color),
   };

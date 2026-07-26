@@ -70,6 +70,16 @@ const statuses = new StatusSlots(['camera', 'server', 'double', 'assets']);
  */
 function setStatus(slot, message, tone = 'error') {
   const winner = statuses.set(slot, message, tone);
+
+  // Faults always reach the console, whether or not they are painted — `?status`
+  // controls what the audience sees, not whether the problem is recorded.
+  if (message && tone === 'error') console.error(`[${slot}] ${message}`);
+
+  if (!options.status) {
+    statusEl.hidden = true;
+    return;
+  }
+
   statusEl.textContent = winner?.message ?? '';
   statusEl.hidden = !winner;
   statusEl.dataset.tone = winner?.tone ?? 'error';

@@ -40,6 +40,11 @@ without a reason that outweighs losing `git clone && npm start`.
   say so (`CDN_FALLBACK_NOTICE`). The notice is persistent on `camera.html` but
   time-limited on `tracker.html`, because that page *is* the stream overlay — do
   not make it permanent there. Note that populating it also un-skips a test.
+- **`tracker.html` paints no faults by default** (`?status=1` opts in). It is a
+  stream source: a red banner over the scene tells the audience about a problem
+  only the streamer can fix. Failures go to the console, and `camera.html` — the
+  operator page — reports them with what to do about each. Don't "fix" a silent
+  tracker by making the box unconditional again.
 - **Only one page should count reps at a time.** The server tracks a counting
   client id so `camera.html` and a `tracker.html?count=1` OBS source don't both
   subtract from the same push-up.

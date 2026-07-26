@@ -95,9 +95,13 @@
         opacity: 0.45;
       }
 
-      #done-note {
-        font-size: calc(var(--size, 88px) * 0.34);
-        font-weight: 800;
+      #progress {
+        margin-top: 0.35em;
+        font-size: calc(var(--size, 88px) * 0.17);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.9;
+        white-space: nowrap;
       }
     </style>
   </head>
@@ -105,10 +109,10 @@
     <div id="stage">
       <div class="headline">
         <span id="count">—</span>
-        <span class="label" id="label">PUSH-UPS LEFT</span>
+        <span class="label" id="label">PUSH-UPS TO DO</span>
       </div>
+      <div id="progress" hidden></div>
       <div class="subline" id="subline" hidden></div>
-      <div id="done-note" hidden>ALL DONE 🎉</div>
     </div>
 
     <script>
@@ -117,7 +121,7 @@
       const countEl = document.getElementById('count');
       const labelEl = document.getElementById('label');
       const sublineEl = document.getElementById('subline');
-      const doneNote = document.getElementById('done-note');
+      const progressEl = document.getElementById('progress');
 
       // ---- look & feel, all driven by URL query params -------------------
       const styleVars = {
@@ -165,7 +169,19 @@
         }
         lastRemaining = remaining;
 
-        doneNote.hidden = !(remaining === 0 && !numberOnly);
+        // Push-ups left bottoms out at zero, so once you are caught up the big
+        // number stops moving and every rep after that looks like nothing
+        // happened. The done figure always moves, and the credit says how far
+        // past the line you are — which is the part the zero was hiding.
+        if (numberOnly) {
+          progressEl.hidden = true;
+        } else {
+          const ahead = Math.max(0, -state.rawRemaining);
+          progressEl.textContent =
+            `${format(state.done)} done · ${format(state.total)} owed` +
+            (ahead ? ` · ${format(ahead)} ahead` : '');
+          progressEl.hidden = false;
+        }
 
         if (showSubs && state.subs !== null) {
           const gained = state.subsGained;

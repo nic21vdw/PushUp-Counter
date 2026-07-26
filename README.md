@@ -87,6 +87,10 @@ Append query params to the overlay URL:
 
 Example: `overlay.html?size=140&label=PUSH-UPS%20TO%20GO&align=center&subs=1`
 
+Under the number sits a quiet `497 done · 500 owed` line, gaining `· 2 ahead` once
+you are past the target. The big number bottoms out at zero, so without that line
+every rep after you catch up looks like nothing happened. `numberonly=1` hides it.
+
 ## 3. Use it on stream
 
 Open the control page (`/control.html`) — it's built for a phone, so you can
@@ -282,6 +286,12 @@ The page is transparent, so it composites like the text overlay.
 | `size` | `size=72` | Size of the baked-in number, in px |
 | `color` | `color=%23ffffff` | Colour of that number |
 | `label` | `label=TO GO` | Text after the number |
+| `status` | `status=1` | Paint faults into a box on the source. **Off by default** |
+
+`status=1` while you set the source up. Leave it off on stream: a red banner
+across the scene tells your audience about a problem only you can fix, and the
+failure still reaches the browser console either way. `camera.html` reports the
+same faults properly, with what to do about each one.
 
 `cutout=1` is the one worth trying first: the pose model returns a body-shaped
 mask, so the background is removed and you appear over your scene with no

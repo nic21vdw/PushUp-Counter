@@ -19,6 +19,11 @@ test('the OBS source does not count reps unless asked', () => {
   assert.equal(parse('count=1').count, true);
 });
 
+test('a fault is not painted across the scene unless asked', () => {
+  assert.equal(parse('').status, false);
+  assert.equal(parse('status=1').status, true);
+});
+
 test('booleans accept the spellings people actually type', () => {
   for (const on of ['1', 'true', 'yes', 'on', 'TRUE', '']) {
     assert.equal(parse(`cutout=${on}`).cutout, true, `cutout=${on}`);
