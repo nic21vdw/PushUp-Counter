@@ -100,6 +100,10 @@ const DEFAULT_STATE = {
   // When the camera last banked a rep — the status page uses it to say whether
   // anything is actually counting.
   lastRepAt: null,
+  // Which webcam to watch, by name. Lives here rather than in the browser
+  // because the setup view and the OBS source are two different browsers with
+  // separate storage — the server is the only thing they both see.
+  camera: null,
 };
 
 let state = { ...DEFAULT_STATE };
@@ -201,6 +205,7 @@ function view() {
     channelTitle: state.channelTitle,
     streamStartedAt: state.streamStartedAt,
     lastRepAt: state.lastRepAt,
+    camera: state.camera,
     countingClientId: activeCameraView(),
     pollSeconds: CONFIG.pollSeconds,
     // Whether subscribers are being watched at all. `false` is a mode, not a
@@ -213,6 +218,24 @@ function view() {
 // ---------------------------------------------------------------------------
 // YouTube Data API v3
 // ---------------------------------------------------------------------------
+
+/**
+ * Strip the API key out of anything on its way to a screen.
+ *
+ * `lastError` is broadcast to every page and rendered on the status page, which
+ * on a streaming machine may well be captured. The key travels as a query
+ * param, so any error that quotes the request URL would put it on air. Nothing
+ * currently does — this is here so nothing ever can.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function redactSecrets(text) {
+  let safe = String(text);
+  if (CONFIG.apiKey) safe = safe.split(CONFIG.apiKey).join('***');
+  // Belt and braces: any `key=` in a quoted URL, whatever its value.
+  return safe.replace(/([?&]key=)[^&\s'")]+/gi, '$1***');
+}
 
 async function fetchSubscriberCount() {
   if (!CONFIG.apiKey) throw new Error('YOUTUBE_API_KEY is not set (see .env.example)');
@@ -325,7 +348,10 @@ async function poll({ quiet = false } = {}) {
     await saveState();
     broadcast();
   } catch (err) {
-    const message = err.name === 'TimeoutError' ? 'YouTube API request timed out' : err.message;
+    const raw = err.name === 'TimeoutError' ? 'YouTube API request timed out' : err.message;
+    // Redacted before it is stored, not just before it is shown — `lastError`
+    // goes out over SSE to every page, including ones that are on stream.
+    const message = redactSecrets(raw);
     if (lastError !== message) console.error(`[youtube] ${message}`);
     lastError = message;
     broadcast();
@@ -467,7 +493,29 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, view());
   }
 
-  // `/api/rep` is the only endpoint that writes. Anything else under /api/ is
+  // Which webcam to watch. This is a preference, not a score: it cannot reach
+  // `done`, `carriedOver` or anything else the count is made of, so it stays a
+  // control you are allowed to have.
+  if (url.pathname === '/api/camera' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+
+    if (body.camera !== null && typeof body.camera !== 'string') {
+      return sendJson(res, 400, { error: 'camera must be a device name, or null for the default' });
+    }
+    const camera = body.camera === null ? null : body.camera.trim().slice(0, 200) || null;
+
+    state.camera = camera;
+    await saveState();
+    broadcast();
+    return sendJson(res, 200, view());
+  }
+
+  // `/api/rep` is the only endpoint that writes the count. Anything else under /api/ is
   // gone on purpose — say so plainly rather than letting it fall through to the
   // static handler and come back as a confusing 405.
   if (url.pathname.startsWith('/api/')) {

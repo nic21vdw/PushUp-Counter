@@ -71,9 +71,18 @@ about to put in OBS, plus a live readout of your elbow angle under the picture
 so you can see what the detector sees.
 
 Streaming machines usually have several cameras — a webcam or two, a
-phone-as-webcam bridge, OBS's own virtual camera. The page takes whatever the
-browser calls the default, which is very often the one OBS has already claimed.
-Name the one you want:
+phone-as-webcam bridge, OBS's own virtual camera. **The setup view has a
+dropdown** listing all of them: pick one and the picture switches straight
+away, with no reload.
+
+That choice is saved on the server, not in the browser, because the setup view
+(in Chrome) and the browser source (in OBS) are two different browsers with
+separate storage. So changing the camera here changes it in OBS too — you never
+have to re-paste a URL. The dropdown only appears in setup mode; it would be on
+stream otherwise.
+
+If you would rather pin a camera to a particular source, name it in the URL and
+that wins over the saved choice:
 
 ```
 /overlay.html?setup=1&camera=Brio
