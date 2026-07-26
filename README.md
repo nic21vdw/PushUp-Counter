@@ -111,6 +111,27 @@ off-scene. If you shut it down between scenes, nothing counts.
 Then **remove any Video Capture Device using the same camera** from your scenes.
 On most machines the first app to open a camera keeps it.
 
+Also **untick "Refresh browser when scene becomes active."** Reloading the page
+drops the camera and re-acquires it every time you cut to the scene, which
+stalls the tracker for a second or two each cut.
+
+## 5a. Keeping it always on
+
+The browser source only works while the server is running, so for a scene you
+leave up permanently, start the server with Windows:
+
+1. Double-click **`start-counter.cmd`** in the project folder to check it runs.
+   It leaves a window open; closing that window stops the counter.
+2. Right-click it → **Show more options → Create shortcut**.
+3. Press <kbd>Win</kbd>+<kbd>R</kbd>, type `shell:startup`, press Enter.
+4. Drag the shortcut into that folder.
+
+The counter is now up from login, and the OBS source finds it every time. To
+stop it, close its window; to start it again, run the shortcut.
+
+If you would rather not have a console window sitting in the taskbar, set the
+shortcut's **Run** to **Minimized** in its Properties.
+
 ### Making it look right
 
 | Param      | Example              | What it does                                |
