@@ -44,7 +44,13 @@ const CONFIG = {
   port: Number(env('PORT', '4747')),
   host: env('HOST', '127.0.0.1'),
   pollSeconds: Math.max(15, Number(env('POLL_SECONDS', '30'))),
-  controlToken: env('CONTROL_TOKEN'),
+  // One subscriber, one push-up. Configurable because the arithmetic stops
+  // being survivable somewhere north of a few hundred subs a stream, but it is
+  // a number you set once in .env — not something a page can move.
+  perSub: (() => {
+    const value = Number(env('PUSHUPS_PER_SUB', '1'));
+    return Number.isFinite(value) && value > 0 ? value : 1;
+  })(),
   // Restarting after this long counts as a new stream. Short gaps (a crash, a
   // reboot, closing the laptop between scenes) resume the session in progress.
   // "off" never starts one automatically; "0" always does.
@@ -58,28 +64,36 @@ const CONFIG = {
 
 // ---------------------------------------------------------------------------
 // State
+//
+// Two numbers move it, and nothing else can:
+//   a subscriber arrives while you are live  ->  you owe one more
+//   the camera sees a push-up                ->  you owe one less
+//
+// There is deliberately no endpoint that sets `done` or the amount owed. The
+// whole point is that the number is earned, so the only writer is the pose
+// detector reporting a rep it actually saw.
 // ---------------------------------------------------------------------------
 
 const DEFAULT_STATE = {
-  // Push-ups you owe on top of anything subscribers add (sponsor pledges, dares...).
-  pledged: 500,
-  // How many push-ups each new subscriber costs you.
-  perSub: 1,
-  // Subscriber count that "zero subscriber push-ups" is measured from.
+  // Push-ups still owed from previous streams. Only ever written by the
+  // start-of-stream rollover, so a debt survives but cannot be edited away.
+  carriedOver: 0,
+  // Subscriber count this stream is measured from.
   baselineSubs: null,
-  // Push-ups you have actually knocked out.
+  // Push-ups the camera has counted this stream.
   done: 0,
   // Last successful reading from the YouTube API.
   subs: null,
   subsUpdatedAt: null,
   hiddenSubscriberCount: false,
   channelTitle: '',
-  // Recent mutations, newest first, so the control page can undo mistakes.
-  history: [],
   // When the current stream session began, and when the server last ran. The
   // gap between the two is how we tell "crashed mid-stream" from "next stream".
   streamStartedAt: null,
   lastSeenAt: null,
+  // When the camera last banked a rep — the status page uses it to say whether
+  // anything is actually counting.
+  lastRepAt: null,
 };
 
 let state = { ...DEFAULT_STATE };
@@ -106,22 +120,11 @@ function saveState() {
   return saveQueue;
 }
 
-function pushHistory(entry) {
-  state.history.unshift({ ...entry, at: new Date().toISOString() });
-  state.history = state.history.slice(0, 25);
-}
-
-// Webcam reps arrive one at a time, so a 40-rep set would push everything else
-// out of the 25-entry history and leave Undo able to take back only the last
-// rep. Instead, consecutive detected reps roll up into one entry, which keeps
-// the log readable and makes Undo mean "throw out that set".
-const CAMERA_MERGE_WINDOW_MS = 90_000;
-
 /**
- * Which camera page last reported a rep, and when. Two pages counting at once
- * (the camera page left open behind the OBS source, say) would double every
- * push-up, so the most recent counter is broadcast and the others say so.
- * Deliberately advisory: refusing reps outright would lose real push-ups.
+ * Which camera page last reported a rep, and when. Only one page should be
+ * counting; if two are, every push-up lands twice. The most recent counter is
+ * broadcast so the other page can say so, and the status page can tell you
+ * whether anything is counting at all.
  */
 let activeCamera = null;
 const CAMERA_ACTIVE_MS = 30_000;
@@ -132,34 +135,19 @@ function activeCameraView() {
   return activeCamera.id;
 }
 
-function recordDone(amount, source, clientId = null) {
-  state.done += amount;
-  if (source === 'camera' && clientId) activeCamera = { id: clientId, at: Date.now() };
-
-  const newest = state.history[0];
-  const mergeable =
-    source === 'camera' &&
-    newest?.type === 'done' &&
-    newest.source === 'camera' &&
-    Date.now() - Date.parse(newest.at) < CAMERA_MERGE_WINDOW_MS;
-
-  if (!mergeable) {
-    pushHistory({ type: 'done', amount, source });
-    return;
-  }
-
-  newest.amount += amount;
-  newest.at = new Date().toISOString();
-  // Corrections can cancel a run out entirely; don't leave a 0 behind.
-  if (newest.amount === 0) state.history.shift();
+/** Bank push-ups the camera actually saw. The only way `done` ever moves. */
+function recordReps(reps, clientId = null) {
+  state.done += reps;
+  state.lastRepAt = new Date().toISOString();
+  if (clientId) activeCamera = { id: clientId, at: Date.now() };
 }
 
 /**
  * Begin a fresh stream session.
  *
  * Only subscribers gained from this moment on add push-ups. Whatever you still
- * owed at the end of the last stream carries over as the new base, so the
- * number on screen never jumps — it just stops counting yesterday's growth.
+ * owed at the end of the last stream carries over, so the number on screen
+ * never jumps — it just stops counting yesterday's growth.
  *
  * `closingSubs` is the count the *previous* stream ended on, which is not the
  * same as `subs` when the server was off overnight. Settling up against the
@@ -169,14 +157,13 @@ function recordDone(amount, source, clientId = null) {
 function startNewStream(subs, closingSubs = subs) {
   const gained =
     closingSubs !== null && state.baselineSubs !== null ? closingSubs - state.baselineSubs : 0;
-  const carriedOver = Math.max(0, state.pledged + gained * state.perSub - state.done);
+  const stillOwed = Math.max(0, state.carriedOver + gained * CONFIG.perSub - state.done);
 
-  state.pledged = carriedOver;
+  state.carriedOver = stillOwed;
   state.done = 0;
   state.baselineSubs = subs ?? state.subs;
   state.streamStartedAt = new Date().toISOString();
-  state.history = [];
-  return carriedOver;
+  return stillOwed;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,27 +173,28 @@ function startNewStream(subs, closingSubs = subs) {
 function view() {
   const subs = state.subs;
   const baseline = state.baselineSubs;
-  const gained = subs !== null && baseline !== null ? subs - baseline : 0;
-  const fromSubs = gained * state.perSub;
-  const total = state.pledged + fromSubs;
-  const rawRemaining = total - state.done;
+  const subsGained = subs !== null && baseline !== null ? subs - baseline : 0;
+  const fromSubs = subsGained * CONFIG.perSub;
+  const owed = state.carriedOver + fromSubs;
+  const rawLeft = owed - state.done;
 
   return {
-    remaining: Math.max(0, rawRemaining),
-    rawRemaining,
-    total,
+    // What the overlay shows. Never negative: getting ahead banks nothing.
+    left: Math.max(0, rawLeft),
+    rawLeft,
+    owed,
     done: state.done,
-    pledged: state.pledged,
-    perSub: state.perSub,
+    carriedOver: state.carriedOver,
+    perSub: CONFIG.perSub,
     subs,
     baselineSubs: baseline,
-    subsGained: gained,
+    subsGained,
     fromSubs,
     subsUpdatedAt: state.subsUpdatedAt,
     hiddenSubscriberCount: state.hiddenSubscriberCount,
     channelTitle: state.channelTitle,
-    history: state.history,
     streamStartedAt: state.streamStartedAt,
+    lastRepAt: state.lastRepAt,
     countingClientId: activeCameraView(),
     pollSeconds: CONFIG.pollSeconds,
     configured: Boolean(CONFIG.apiKey && (CONFIG.channelId || CONFIG.handle)),
@@ -280,13 +268,11 @@ async function poll({ quiet = false } = {}) {
     lastError = null;
 
     // Only subscribers gained during this stream count toward push-ups.
-    let opened = false;
     if (streamDecisionPending) {
       streamDecisionPending = false;
       if (shouldStartNewStream()) {
         // `previous` is where the last stream left off — see startNewStream.
         const carried = startNewStream(subs, previous);
-        opened = true;
         console.log(
           `[stream] new session at ${subs} subs` +
             (carried ? ` — ${carried} push-ups carried over from last time` : ''),
@@ -294,7 +280,7 @@ async function poll({ quiet = false } = {}) {
       } else {
         console.log(
           `[stream] resuming the session from ${new Date(state.streamStartedAt).toLocaleString()}` +
-            ` (${view().remaining} push-ups left)`,
+            ` (${view().left} push-ups left)`,
         );
       }
     }
@@ -303,7 +289,7 @@ async function poll({ quiet = false } = {}) {
       const delta = subs - previous;
       console.log(
         `[youtube] ${previous} -> ${subs} subs (${delta > 0 ? '+' : ''}${delta}) ` +
-          `= ${view().remaining} push-ups left`,
+          `= ${view().left} push-ups left`,
       );
     }
 
@@ -376,21 +362,13 @@ async function readJsonBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-function authorized(req, url) {
-  if (!CONFIG.controlToken) return true;
-  const header = req.headers.authorization ?? '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
-  return bearer === CONFIG.controlToken || url.searchParams.get('token') === CONFIG.controlToken;
-}
-
-/** Only accept a finite number; everything else is a client mistake. */
-function num(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
+// A rep report can carry more than one because the overlay holds reps while the
+// server is unreachable and flushes them when it comes back. The ceiling is
+// just a sanity bound — nobody banks 50 push-ups inside one network blip.
+const MAX_REPS_PER_REPORT = 50;
 
 async function serveStatic(req, res, url) {
-  const requested = url.pathname === '/' ? '/control.html' : url.pathname;
+  const requested = url.pathname === '/' ? '/status.html' : url.pathname;
   const filePath = path.join(PUBLIC_DIR, path.normalize(requested));
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403).end('Forbidden');
@@ -403,7 +381,7 @@ async function serveStatic(req, res, url) {
       'Content-Length': body.length,
       'Cache-Control': 'no-store',
     });
-    // HEAD gets the headers only — the camera page uses it to check whether the
+    // HEAD gets the headers only — the overlay uses it to check whether the
     // pose model has been vendored before deciding to fall back to the CDN.
     res.end(req.method === 'HEAD' ? undefined : body);
   } catch {
@@ -437,10 +415,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- mutations -----------------------------------------------------------
-  if (url.pathname.startsWith('/api/') && req.method === 'POST') {
-    if (!authorized(req, url)) return sendJson(res, 401, { error: 'Bad or missing control token' });
-
+  // --- the one thing that writes -------------------------------------------
+  //
+  // Push-ups the camera saw. Whole positive numbers only: there is no way to
+  // hand back a rep, and no other endpoint touches the count.
+  if (url.pathname === '/api/rep' && req.method === 'POST') {
     let body;
     try {
       body = await readJsonBody(req);
@@ -448,74 +427,26 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: err.message });
     }
 
-    switch (url.pathname) {
-      // "Okay, I did 50 push-ups." `source: 'camera'` marks a detected rep.
-      case '/api/done': {
-        const amount = num(body.amount);
-        if (amount === null || amount === 0) {
-          return sendJson(res, 400, { error: 'amount must be a non-zero number' });
-        }
-        const clientId = typeof body.clientId === 'string' ? body.clientId.slice(0, 64) : null;
-        recordDone(amount, body.source === 'camera' ? 'camera' : 'manual', clientId);
-        break;
-      }
-
-      // Add (or remove) push-ups that did not come from subscribers.
-      case '/api/pledge': {
-        const amount = num(body.amount);
-        if (amount === null || amount === 0) {
-          return sendJson(res, 400, { error: 'amount must be a non-zero number' });
-        }
-        state.pledged += amount;
-        pushHistory({ type: 'pledge', amount });
-        break;
-      }
-
-      case '/api/undo': {
-        const last = state.history.shift();
-        if (!last) return sendJson(res, 400, { error: 'Nothing to undo' });
-        if (last.type === 'done') state.done -= last.amount;
-        else if (last.type === 'pledge') state.pledged -= last.amount;
-        else if (last.type === 'settings') Object.assign(state, last.before);
-        break;
-      }
-
-      // Going live: only subscribers from here on add push-ups. Whatever is
-      // still owed carries over, so the number on screen does not jump.
-      case '/api/new-stream': {
-        if (state.subs === null) return sendJson(res, 400, { error: 'No subscriber count yet' });
-        startNewStream(state.subs);
-        break;
-      }
-
-      case '/api/settings': {
-        const before = {};
-        const next = {};
-        for (const key of ['pledged', 'perSub', 'done', 'baselineSubs']) {
-          if (!(key in body)) continue;
-          const value = num(body[key]);
-          if (value === null) return sendJson(res, 400, { error: `${key} must be a number` });
-          before[key] = state[key];
-          next[key] = value;
-        }
-        if (!Object.keys(next).length) return sendJson(res, 400, { error: 'Nothing to change' });
-        Object.assign(state, next);
-        pushHistory({ type: 'settings', before });
-        break;
-      }
-
-      case '/api/refresh': {
-        await poll({ quiet: true });
-        return sendJson(res, 200, view());
-      }
-
-      default:
-        return sendJson(res, 404, { error: 'Unknown endpoint' });
+    const reps = body.reps === undefined ? 1 : Number(body.reps);
+    if (!Number.isInteger(reps) || reps < 1 || reps > MAX_REPS_PER_REPORT) {
+      return sendJson(res, 400, {
+        error: `reps must be a whole number between 1 and ${MAX_REPS_PER_REPORT}`,
+      });
     }
+
+    const clientId = typeof body.clientId === 'string' ? body.clientId.slice(0, 64) : null;
+    recordReps(reps, clientId);
 
     await saveState();
     broadcast();
     return sendJson(res, 200, view());
+  }
+
+  // `/api/rep` is the only endpoint that writes. Anything else under /api/ is
+  // gone on purpose — say so plainly rather than letting it fall through to the
+  // static handler and come back as a confusing 405.
+  if (url.pathname.startsWith('/api/')) {
+    return sendJson(res, 404, { error: 'Unknown endpoint' });
   }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -536,15 +467,10 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
   const base = `http://${CONFIG.host === '0.0.0.0' ? 'localhost' : CONFIG.host}:${CONFIG.port}`;
   console.log('');
   console.log('  Push-up counter is running.');
-  // The camera source is the one people come looking for, so it is printed
-  // here rather than left to be found in the README.
-  const trackerQuery = CONFIG.controlToken
-    ? `?count=1&token=${encodeURIComponent(CONFIG.controlToken)}`
-    : '?count=1';
-  console.log(`  Control page  ${base}/control.html`);
-  console.log(`  OBS overlay   ${base}/overlay.html`);
-  console.log(`  OBS camera    ${base}/tracker.html${trackerQuery}`);
-  if (CONFIG.controlToken) console.log('  Control token required for edits (CONTROL_TOKEN is set).');
+  console.log(`  OBS source    ${base}/overlay.html      <- add this as a Browser Source`);
+  console.log(`  Set it up     ${base}/overlay.html?setup=1   <- pick a camera, check framing`);
+  console.log(`  Status        ${base}/status.html`);
+  console.log(`  ${CONFIG.perSub} push-up${CONFIG.perSub === 1 ? '' : 's'} per subscriber gained while live.`);
   if (!CONFIG.apiKey) console.log('  ! YOUTUBE_API_KEY is missing — copy .env.example to .env.');
   console.log('');
 

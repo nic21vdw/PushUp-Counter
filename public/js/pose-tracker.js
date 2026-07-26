@@ -6,8 +6,9 @@
  *
  * Assets (the WASM runtime and the pose model) load from public/vendor when it
  * has been populated by `npm run fetch-assets`, and from a CDN otherwise. This
- * module is imported lazily by camera.js so an asset failure degrades to the
- * manual buttons instead of taking the whole page down.
+ * module is imported lazily by overlay.js, so a failure to load the model
+ * leaves the number on screen and reports why, rather than taking the whole
+ * browser source down mid-stream.
  */
 
 const CDN_VERSION = '0.10.14';
@@ -36,6 +37,29 @@ async function hasLocalAssets() {
   }
 }
 
+/**
+ * Video inputs, with labels. Labels are blank until the origin has been granted
+ * camera permission at least once, so prime it with a throwaway request first —
+ * without labels there is nothing to match a name against.
+ */
+export async function listCameras() {
+  const videoInputs = async () =>
+    (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+
+  let cameras = await videoInputs();
+  if (cameras.length && cameras.every((d) => !d.label)) {
+    try {
+      const priming = await navigator.mediaDevices.getUserMedia({ video: true });
+      for (const track of priming.getTracks()) track.stop();
+      cameras = await videoInputs();
+    } catch {
+      // Permission refused, or every camera is busy. Fall through with what we
+      // have; the caller reports the real failure.
+    }
+  }
+  return cameras;
+}
+
 export class PoseTracker {
   /**
    * @param {{video: HTMLVideoElement, canvas: HTMLCanvasElement,
@@ -44,12 +68,24 @@ export class PoseTracker {
    *          segmentation?: boolean,
    *          onFrame?: ((frame: object) => void)|null}} config
    */
-  constructor({ video, canvas, onPose, onStatus = () => {}, segmentation = false, onFrame = null }) {
+  constructor({
+    video,
+    canvas,
+    onPose,
+    onStatus = () => {},
+    segmentation = false,
+    onFrame = null,
+    camera = null,
+  }) {
     this.video = video;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onPose = onPose;
     this.onStatus = onStatus;
+    // Which webcam to open: part of a device label, or a full deviceId. Null
+    // takes whatever the browser calls the default — fine on a laptop, wrong on
+    // a streaming machine where the default is usually the one OBS already has.
+    this.camera = camera;
     // Body-shaped alpha mask, for cutting the background out of the OBS view.
     // Costs GPU work, so it is only requested when a page actually draws it.
     this.segmentation = segmentation;
@@ -117,7 +153,7 @@ export class PoseTracker {
 
     this.onStatus('Requesting camera…');
     this.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+      video: await this.#videoConstraints(),
       audio: false,
     });
     this.video.srcObject = this.stream;
@@ -131,6 +167,31 @@ export class PoseTracker {
     this.running = true;
     this.onStatus('Tracking');
     this.#loop();
+  }
+
+  /**
+   * Resolve `camera` to a constraint. A streaming machine usually has several
+   * video inputs — a real webcam or two, a phone-as-webcam bridge, OBS's own
+   * virtual camera — and whichever the browser considers default is often the
+   * one OBS has already taken. Naming the camera is how you avoid that.
+   */
+  async #videoConstraints() {
+    const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    if (!this.camera) return { ...size, facingMode: 'user' };
+
+    const cameras = await listCameras();
+    const needle = this.camera.trim().toLowerCase();
+    const match =
+      cameras.find((d) => d.deviceId === this.camera) ??
+      cameras.find((d) => d.label.toLowerCase().includes(needle));
+
+    if (!match) {
+      const names = cameras.map((d) => d.label || d.deviceId.slice(0, 8)).join(', ');
+      throw new Error(
+        `No camera matching "${this.camera}". This machine has: ${names || 'none'}`,
+      );
+    }
+    return { ...size, deviceId: { exact: match.deviceId } };
   }
 
   stop() {

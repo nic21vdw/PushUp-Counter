@@ -1,73 +1,82 @@
+/**
+ * The URL the status page hands you to paste into OBS.
+ *
+ * There is one browser source now, so there is one URL. It has to round-trip
+ * through the overlay's own parser — a link that reads back as something else
+ * is how you end up live with a source that quietly counts nothing.
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildTrackerUrl, buildOverlayUrl, redactToken } from '../public/js/obs-link.js';
-import { parseTrackerOptions } from '../public/js/tracker-options.js';
+import { buildOverlayUrl } from '../public/js/obs-link.js';
+import { parseOverlayOptions, DEFAULT_OVERLAY_OPTIONS } from '../public/js/overlay-options.js';
 
 const ORIGIN = 'http://127.0.0.1:4747';
-const query = (url) => new URLSearchParams(new URL(url).search);
+const optionsOf = (url) => parseOverlayOptions(new URL(url).searchParams);
 
 test('no choices gives the bare page', () => {
-  assert.equal(buildTrackerUrl(ORIGIN), `${ORIGIN}/tracker.html`);
   assert.equal(buildOverlayUrl(ORIGIN), `${ORIGIN}/overlay.html`);
 });
 
 test('choices that match the defaults are left out of the URL', () => {
-  const url = buildTrackerUrl(ORIGIN, { video: true, skeleton: true, counter: true, size: 64 });
-  assert.equal(url, `${ORIGIN}/tracker.html`);
-});
-
-test('turning a default-on feature off is emitted', () => {
-  assert.equal(query(buildTrackerUrl(ORIGIN, { video: false })).get('video'), '0');
-  assert.equal(query(buildTrackerUrl(ORIGIN, { skeleton: false })).get('skeleton'), '0');
+  const url = buildOverlayUrl(ORIGIN, {
+    size: DEFAULT_OVERLAY_OPTIONS.size,
+    color: DEFAULT_OVERLAY_OPTIONS.color,
+    count: true,
+  });
+  assert.equal(url, `${ORIGIN}/overlay.html`, 'a URL that restates the defaults pins them forever');
 });
 
 test('the built URL parses back to the options that were asked for', () => {
-  const choices = { count: true, cutout: true, mirror: true, counter: false, size: 96 };
-  const parsed = parseTrackerOptions(query(buildTrackerUrl(ORIGIN, choices)));
-  for (const [key, value] of Object.entries(choices)) {
-    assert.equal(parsed[key], value, key);
-  }
+  const url = buildOverlayUrl(ORIGIN, { size: 140, subs: true, mirror: false, radius: 0 });
+  const options = optionsOf(url);
+
+  assert.equal(options.size, 140);
+  assert.equal(options.subs, true);
+  assert.equal(options.mirror, false);
+  assert.equal(options.radius, 0);
+  assert.equal(options.count, true, 'still counting — never turned off by accident');
+  assert.equal(options.video, true, 'and still showing the camera');
 });
 
 test('a colour keeps its hash out of the URL', () => {
-  // A raw `#` would start a fragment and truncate the query at the colour.
-  const url = buildTrackerUrl(ORIGIN, { color: '#ff0044', background: '#00ff00' });
-  assert.ok(!url.includes('#'), url);
-  assert.equal(query(url).get('color'), 'ff0044');
-  assert.equal(query(url).get('bg'), '00ff00');
+  const url = buildOverlayUrl(ORIGIN, { color: '#00ff00' });
+  assert.ok(!url.includes('#'), 'a raw # would truncate the URL at the colour');
+  assert.equal(optionsOf(url).color, '#00ff00');
 });
 
-test('an empty label is kept — it is how you hide the word after the number', () => {
-  assert.equal(query(buildTrackerUrl(ORIGIN, { label: '' })).get('label'), '');
-  assert.equal(query(buildOverlayUrl(ORIGIN, { label: '' })).get('label'), '');
+test('an empty label survives the round trip', () => {
+  const url = buildOverlayUrl(ORIGIN, { label: '' });
+  assert.equal(optionsOf(url).label, '', 'it is how you show only the digits');
 });
 
 test('spaces in a label survive as spaces, not plus signs', () => {
-  const url = buildOverlayUrl(ORIGIN, { label: 'PUSH-UPS TO GO' });
-  assert.ok(!url.includes('+'), url);
-  assert.equal(query(url).get('label'), 'PUSH-UPS TO GO');
+  const url = buildOverlayUrl(ORIGIN, { label: 'TO GO' });
+  assert.ok(!url.includes('+'), 'some OBS builds paste a literal plus');
+  assert.equal(optionsOf(url).label, 'TO GO');
 });
 
-test('the token rides along only when the source counts', () => {
-  assert.equal(query(buildTrackerUrl(ORIGIN, { count: true }, 'sekrit')).get('token'), 'sekrit');
-  // Display-only sources never write, so they have no reason to carry it.
-  assert.equal(query(buildTrackerUrl(ORIGIN, { count: false }, 'sekrit')).get('token'), null);
-  assert.equal(query(buildTrackerUrl(ORIGIN, { count: true }, null)).get('token'), null);
+test('turning counting off is emitted, because it is not the default', () => {
+  const url = buildOverlayUrl(ORIGIN, { count: false });
+  assert.match(url, /count=0/);
+  assert.equal(optionsOf(url).count, false);
 });
 
-test('a token is hidden for display without mangling the rest', () => {
-  const shown = redactToken(`${ORIGIN}/tracker.html?count=1&token=sekrit`);
-  assert.ok(!shown.includes('sekrit'), shown);
-  assert.ok(shown.includes('count=1'), shown);
+test('shadow is emitted the way the overlay reads it', () => {
+  const url = buildOverlayUrl(ORIGIN, { shadow: false });
+  assert.match(url, /shadow=none/);
+  assert.equal(optionsOf(url).shadow, false);
 });
 
-test('overlay options are emitted only when set', () => {
-  assert.equal(buildOverlayUrl(ORIGIN, { subs: false, numberonly: false }), `${ORIGIN}/overlay.html`);
-  const url = buildOverlayUrl(ORIGIN, { size: 120, align: 'center', subs: true });
-  assert.deepEqual([...query(url).entries()], [
-    ['size', '120'],
-    ['align', 'center'],
-    ['subs', '1'],
-  ]);
+test('a named camera survives the round trip, spaces and all', () => {
+  const url = buildOverlayUrl(ORIGIN, { camera: 'Brio 100' });
+  assert.ok(!url.includes('+'), 'a literal plus would not match the device name');
+  assert.equal(optionsOf(url).camera, 'Brio 100');
+});
+
+test('the URL points at the overlay, and carries no token', () => {
+  const url = buildOverlayUrl(ORIGIN, { subs: true, bar: true });
+  assert.ok(url.startsWith(`${ORIGIN}/overlay.html?`));
+  assert.ok(!/token/i.test(url), 'there is no token in this app any more');
 });

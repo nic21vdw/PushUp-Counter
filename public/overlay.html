@@ -3,209 +3,234 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Push-Up Counter Overlay</title>
+    <title>Push-Up Tracker</title>
     <style>
-      /* Transparent all the way down — OBS composites this straight over the scene. */
+      /* Transparent all the way down. OBS composites the panel straight over
+         the scene, alpha channel and all — no chroma key, no custom CSS. */
       html,
       body {
         margin: 0;
         padding: 0;
         background: transparent;
         overflow: hidden;
+        height: 100%;
       }
 
+      /* The camera feed is decoded here and drawn into the canvas. Never shown
+         directly, so the tile can be rounded, mirrored and masked. */
+      #video {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #panel {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        gap: clamp(14px, 2.2vw, 30px);
+        padding: 14px;
+        font-family: var(--font, 'Inter', 'Helvetica Neue', Arial, sans-serif);
+        color: var(--color, #ffffff);
+        -webkit-font-smoothing: antialiased;
+        /* Held back until the URL options have been applied, so nothing flashes
+           at the wrong size while the module loads. */
+        opacity: 0;
+        transition: opacity 140ms linear;
+      }
+      #panel.ready {
+        opacity: 1;
+      }
+      #panel.offline {
+        opacity: 0.45;
+      }
+
+      /* ---- the camera tile ---- */
+      #tile {
+        position: relative;
+        height: 100%;
+        /* Matches a 1280x720 webcam, so `object-fit: cover` has nothing to
+           crop. Capped so the tile cannot crowd the number out on a short,
+           wide browser source. */
+        aspect-ratio: 16 / 9;
+        max-width: 62%;
+        flex: none;
+        border-radius: var(--radius, 18px);
+        overflow: hidden;
+        background: rgba(8, 11, 14, 0.55);
+        box-shadow:
+          0 0 0 2px rgba(255, 255, 255, 0.16),
+          0 10px 30px rgba(0, 0, 0, 0.45);
+      }
       #stage {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      body[data-mirror='1'] #stage {
+        transform: scaleX(-1);
+      }
+      body[data-video='0'] #tile {
+        display: none;
+      }
+
+      /* A quiet ring that pulses when a rep lands, so the tile itself
+         acknowledges the push-up rather than only the number moving. */
+      #tile::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        box-shadow: inset 0 0 0 0 rgba(74, 222, 128, 0);
+        pointer-events: none;
+        transition: box-shadow 420ms ease-out;
+      }
+      #tile.rep::after {
+        box-shadow: inset 0 0 0 5px rgba(74, 222, 128, 0.9);
+        transition: box-shadow 60ms ease-out;
+      }
+
+      /* ---- the readout ---- */
+      #readout {
         display: flex;
         flex-direction: column;
-        gap: 0.1em;
-        padding: 12px 16px;
-        font-family: var(--font, 'Inter', 'Helvetica Neue', Arial, sans-serif);
-        font-weight: var(--weight, 800);
-        color: var(--color, #ffffff);
-        text-shadow: var(--shadow, 0 2px 10px rgba(0, 0, 0, 0.75));
-        line-height: 1.05;
-        letter-spacing: -0.01em;
-        text-align: var(--align, left);
-        align-items: var(--items, flex-start);
-        -webkit-font-smoothing: antialiased;
+        justify-content: center;
+        min-width: 0;
+        text-shadow: var(--shadow, 0 2px 12px rgba(0, 0, 0, 0.8));
       }
 
-      .headline {
-        display: flex;
-        align-items: baseline;
-        gap: 0.25em;
-        font-size: var(--size, 88px);
-      }
-
-      /* The count itself gets a quick pop whenever it changes. */
       #count {
+        font-size: var(--size, 88px);
+        font-weight: var(--weight, 800);
+        line-height: 1;
+        letter-spacing: -0.02em;
         font-variant-numeric: tabular-nums;
-        transition: transform 180ms ease-out;
-        transform-origin: center;
       }
-      #count.bump-up {
-        animation: bump-up 520ms ease-out;
+      #count.bump {
+        animation: bump 520ms ease-out;
       }
-      #count.bump-down {
-        animation: bump-down 520ms ease-out;
-      }
-      @keyframes bump-up {
+      @keyframes bump {
         0% {
           transform: scale(1);
         }
         30% {
-          transform: scale(1.16);
-          color: var(--up-color, #ff5a5a);
-        }
-        100% {
-          transform: scale(1);
-        }
-      }
-      @keyframes bump-down {
-        0% {
-          transform: scale(1);
-        }
-        30% {
-          transform: scale(1.16);
-          color: var(--down-color, #4ade80);
+          transform: scale(1.14);
+          color: var(--pulse, #4ade80);
         }
         100% {
           transform: scale(1);
         }
       }
 
-      .label {
-        font-size: calc(var(--size, 88px) * 0.34);
+      #label {
+        font-size: calc(var(--size, 88px) * 0.22);
         font-weight: 700;
-        opacity: 0.95;
+        letter-spacing: 0.09em;
+        opacity: 0.92;
+        margin-top: 0.35em;
+        white-space: nowrap;
       }
 
-      .subline {
-        font-size: calc(var(--size, 88px) * 0.26);
+      #bar {
+        width: calc(var(--size, 88px) * 3.4);
+        max-width: 100%;
+        height: calc(var(--size, 88px) * 0.085);
+        min-height: 5px;
+        margin-top: 0.55em;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+        overflow: hidden;
+      }
+      #bar i {
+        display: block;
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: var(--color, #ffffff);
+        transition: width 420ms ease-out;
+      }
+
+      #subline {
+        font-size: calc(var(--size, 88px) * 0.19);
         font-weight: 600;
-        opacity: 0.85;
+        opacity: 0.8;
+        margin-top: 0.5em;
+        white-space: nowrap;
       }
 
-      /* Nothing to show is better than a stale or broken number on stream. */
+      /* ---- setup-only detector readout ---- */
+      #tune {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 7px 10px;
+        background: rgba(8, 11, 14, 0.78);
+        font-size: 12px;
+        line-height: 1.45;
+        font-variant-numeric: tabular-nums;
+        color: #d5dde6;
+      }
+      #tune b {
+        color: #fff;
+      }
+
+      /* Faults must be visible while you set the source up, but must never be
+         the thing your viewers see, so it stays small and out of the way. */
+      #status {
+        position: absolute;
+        left: 14px;
+        top: 12px;
+        max-width: calc(100% - 28px);
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: rgba(120, 20, 24, 0.92);
+        color: #ffdcdc;
+        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      #status[data-tone='info'] {
+        background: rgba(16, 20, 26, 0.86);
+        color: #d5dde6;
+      }
+
       [hidden] {
         display: none !important;
       }
 
-      #stage.offline {
-        opacity: 0.45;
-      }
-
-      #done-note {
-        font-size: calc(var(--size, 88px) * 0.34);
-        font-weight: 800;
+      @media (prefers-reduced-motion: reduce) {
+        #count.bump {
+          animation: none;
+        }
+        #bar i,
+        #tile::after {
+          transition: none;
+        }
       }
     </style>
   </head>
   <body>
-    <div id="stage">
-      <div class="headline">
-        <span id="count">—</span>
-        <span class="label" id="label">PUSH-UPS LEFT</span>
+    <video id="video" playsinline muted></video>
+
+    <div id="panel">
+      <div id="tile">
+        <canvas id="stage"></canvas>
+        <div id="tune" hidden></div>
       </div>
-      <div class="subline" id="subline" hidden></div>
-      <div id="done-note" hidden>ALL DONE 🎉</div>
+      <div id="readout">
+        <span id="count">—</span>
+        <span id="label">PUSH-UPS LEFT</span>
+        <div id="bar" hidden><i></i></div>
+        <div id="subline" hidden></div>
+      </div>
     </div>
 
-    <script>
-      const params = new URLSearchParams(location.search);
-      const stage = document.getElementById('stage');
-      const countEl = document.getElementById('count');
-      const labelEl = document.getElementById('label');
-      const sublineEl = document.getElementById('subline');
-      const doneNote = document.getElementById('done-note');
+    <div id="status" hidden></div>
 
-      // ---- look & feel, all driven by URL query params -------------------
-      const styleVars = {
-        size: (v) => (/^\d+$/.test(v) ? `${v}px` : v),
-        color: (v) => v,
-        font: (v) => v,
-        weight: (v) => v,
-        align: (v) => v,
-        shadow: (v) => (v === 'none' ? 'none' : v),
-        'up-color': (v) => v,
-        'down-color': (v) => v,
-      };
-      for (const [key, normalize] of Object.entries(styleVars)) {
-        const value = params.get(key);
-        if (value) stage.style.setProperty(`--${key}`, normalize(value));
-      }
-      if (params.get('align') === 'center') stage.style.setProperty('--items', 'center');
-      if (params.get('align') === 'right') stage.style.setProperty('--items', 'flex-end');
-
-      const labelText = params.get('label');
-      if (labelText !== null) {
-        labelEl.textContent = labelText;
-        labelEl.hidden = labelText === '';
-      }
-
-      const showSubs = params.get('subs') === '1';
-      const numberOnly = params.get('numberonly') === '1';
-      if (numberOnly) labelEl.hidden = true;
-
-      const format = (n) => n.toLocaleString('en-US');
-
-      let lastRemaining = null;
-
-      function render(state) {
-        stage.classList.remove('offline');
-
-        const remaining = state.remaining;
-        countEl.textContent = format(remaining);
-
-        if (lastRemaining !== null && remaining !== lastRemaining) {
-          const cls = remaining > lastRemaining ? 'bump-up' : 'bump-down';
-          countEl.classList.remove('bump-up', 'bump-down');
-          void countEl.offsetWidth; // restart the animation
-          countEl.classList.add(cls);
-        }
-        lastRemaining = remaining;
-
-        doneNote.hidden = !(remaining === 0 && !numberOnly);
-
-        if (showSubs && state.subs !== null) {
-          const gained = state.subsGained;
-          sublineEl.textContent =
-            `${format(state.subs)} subs` +
-            (gained ? ` · ${gained > 0 ? '+' : ''}${format(gained)} this stream` : '');
-          sublineEl.hidden = false;
-        } else {
-          sublineEl.hidden = true;
-        }
-      }
-
-      // ---- live updates over server-sent events ---------------------------
-      let source;
-      let retry;
-
-      // Paint immediately rather than showing a dash until the first event.
-      fetch('/api/state')
-        .then((res) => res.json())
-        .then((state) => {
-          if (lastRemaining === null) render(state);
-        })
-        .catch(() => {});
-
-      function connect() {
-        source = new EventSource('/api/events');
-        source.onmessage = (event) => {
-          clearTimeout(retry);
-          render(JSON.parse(event.data));
-        };
-        source.onerror = () => {
-          // The server restarted or OBS lost the page — dim it and retry.
-          source.close();
-          stage.classList.add('offline');
-          clearTimeout(retry);
-          retry = setTimeout(connect, 2000);
-        };
-      }
-
-      connect();
-    </script>
+    <script type="module" src="/js/overlay.js"></script>
   </body>
 </html>
