@@ -39,6 +39,13 @@ test('mirroring can be turned back on for a head-on camera', () => {
   assert.equal(parse('mirror=1').mirror, true);
 });
 
+test('the camera fills the source unless you ask for the side layout', () => {
+  assert.equal(parse('').layout, 'fill', 'a preview you cannot make out is not worth the space');
+  assert.equal(parse('layout=side').layout, 'side');
+  assert.equal(parse('layout=SIDE').layout, 'side');
+  assert.equal(parse('layout=diagonal').layout, 'fill', 'junk falls back rather than breaking');
+});
+
 test('booleans accept the spellings people actually type', () => {
   for (const on of ['1', 'true', 'yes', 'on', '']) {
     assert.equal(parse(`setup=${on}`).setup, true, `setup=${on}`);

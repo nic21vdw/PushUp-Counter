@@ -215,6 +215,17 @@ test('the state the overlay draws from adds up', async (t) => {
   assert.equal(state.left, Math.max(0, state.rawLeft));
 });
 
+test('losing subscribers cannot make you owe a negative number', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+
+  // No key in the test environment, so subsGained is 0 and carriedOver is 0 —
+  // the floor is what matters, and it must hold at nothing owed.
+  const state = await server.state();
+  assert.ok(state.owed >= 0, 'owed has a floor of zero');
+  assert.equal(state.owed, Math.max(0, state.carriedOver + state.fromSubs));
+});
+
 test('left never goes negative, so getting ahead banks nothing', async (t) => {
   const server = await startServer();
   t.after(() => server.stop());

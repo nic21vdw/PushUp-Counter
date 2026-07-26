@@ -185,7 +185,10 @@ function view() {
   const baseline = state.baselineSubs;
   const subsGained = subs !== null && baseline !== null ? subs - baseline : 0;
   const fromSubs = subsGained * CONFIG.perSub;
-  const owed = state.carriedOver + fromSubs;
+  // Losing subscribers mid-stream makes `subsGained` negative, which used to
+  // drag the total owed below zero and put "3 / -11" on screen. You cannot owe
+  // a negative number of push-ups; the floor is nothing owed.
+  const owed = Math.max(0, state.carriedOver + fromSubs);
   const rawLeft = owed - state.done;
 
   return {
@@ -339,6 +342,19 @@ async function poll({ quiet = false } = {}) {
         `[youtube] ${previous} -> ${subs} subs (${delta > 0 ? '+' : ''}${delta}) ` +
           `= ${view().left} push-ups left`,
       );
+    }
+
+    // The baseline ratchets down, never up.
+    //
+    // It is captured from one reading, and YouTube's public number is not
+    // stable — it lags, caches, and swings by a dozen or more either way. If
+    // the baseline gets stamped on a high reading, every later reading is
+    // "below baseline" and the next real subscriber adds nothing, because the
+    // count has to climb back through the phantom deficit first. Following the
+    // count downward keeps the next subscriber worth exactly one push-up.
+    if (state.baselineSubs !== null && subs < state.baselineSubs) {
+      console.log(`[stream] sub count fell to ${subs}; baseline follows it down`);
+      state.baselineSubs = subs;
     }
 
     // Written every poll, not just on a change: this timestamp is what tells a

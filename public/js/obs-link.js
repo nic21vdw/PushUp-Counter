@@ -20,6 +20,7 @@ const KEYS = [
   ['mirror', 'mirror'],
   ['skeleton', 'skeleton'],
   ['video', 'video'],
+  ['layout', 'layout'],
   ['radius', 'radius'],
   ['count', 'count'],
   ['camera', 'camera'],
