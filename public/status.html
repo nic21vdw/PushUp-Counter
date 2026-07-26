@@ -308,9 +308,13 @@
         const fraction = state.owed > 0 ? Math.min(1, Math.max(0, state.done / state.owed)) : 0;
         $('bar').style.width = `${(fraction * 100).toFixed(1)}%`;
 
+        // Once you are ahead, `left` sticks at zero and the sum stops making
+        // sense on its own — say how far past the line you are.
+        const ahead = Math.max(0, -state.rawLeft);
         $('sum').innerHTML =
           `${fmt(state.carriedOver)} carried over + ${fmt(state.subsGained)} subs × ${state.perSub}` +
-          ` − ${fmt(state.done)} done = <b>${fmt(state.left)}</b>`;
+          ` − ${fmt(state.done)} done = <b>${fmt(state.left)}</b>` +
+          (ahead ? ` &nbsp;·&nbsp; ${fmt(ahead)} ahead` : '');
 
         $('stream-since').textContent = state.streamStartedAt
           ? `Stream started ${new Date(state.streamStartedAt).toLocaleString()} at ${fmt(
