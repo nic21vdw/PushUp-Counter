@@ -38,6 +38,9 @@ const fileEnv = loadDotEnv();
 const env = (key, fallback = '') => process.env[key] ?? fileEnv[key] ?? fallback;
 
 const CONFIG = {
+  // All three are optional. Without them the counter simply has no subscriber
+  // feed: you set the target yourself and the reps come off it. That is the
+  // common case — see subsEnabled below.
   apiKey: env('YOUTUBE_API_KEY'),
   channelId: env('YOUTUBE_CHANNEL_ID'),
   handle: env('YOUTUBE_HANDLE'),
@@ -55,6 +58,16 @@ const CONFIG = {
     return Number.isFinite(hours) && hours >= 0 ? hours : 6;
   })(),
 };
+
+/**
+ * Whether to talk to YouTube at all.
+ *
+ * Polling an unconfigured server used to throw every `pollSeconds` and park the
+ * message in the `error` field, which every page shows — so a setup that was
+ * working exactly as intended looked broken. No credentials now means no poll
+ * and no error.
+ */
+const subsEnabled = Boolean(CONFIG.apiKey && (CONFIG.channelId || CONFIG.handle));
 
 // ---------------------------------------------------------------------------
 // State
@@ -209,7 +222,7 @@ function view() {
     streamStartedAt: state.streamStartedAt,
     countingClientId: activeCameraView(),
     pollSeconds: CONFIG.pollSeconds,
-    configured: Boolean(CONFIG.apiKey && (CONFIG.channelId || CONFIG.handle)),
+    configured: subsEnabled,
     error: lastError,
   };
 }
@@ -505,7 +518,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       case '/api/refresh': {
-        await poll({ quiet: true });
+        // Nothing to refresh from without credentials, and polling anyway would
+        // plant an error on a server that is working fine.
+        if (subsEnabled) await poll({ quiet: true });
         return sendJson(res, 200, view());
       }
 
@@ -545,8 +560,22 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
   console.log(`  OBS overlay   ${base}/overlay.html`);
   console.log(`  OBS camera    ${base}/tracker.html${trackerQuery}`);
   if (CONFIG.controlToken) console.log('  Control token required for edits (CONTROL_TOKEN is set).');
-  if (!CONFIG.apiKey) console.log('  ! YOUTUBE_API_KEY is missing — copy .env.example to .env.');
   console.log('');
+
+  if (!subsEnabled) {
+    // Not a warning: this is the normal way to run it. Set the target on the
+    // control page and the reps come off it.
+    console.log(`  Subscriber tracking is off — ${view().remaining} push-ups on the board.`);
+    console.log('  Add a YouTube key to .env if you want subs to add push-ups. See .env.example.');
+    console.log('');
+    // Without a poll to trigger it, the session would otherwise never open.
+    if (state.streamStartedAt === null) {
+      startNewStream(null);
+      await saveState();
+      broadcast();
+    }
+    return;
+  }
 
   await poll();
   setInterval(poll, CONFIG.pollSeconds * 1000);

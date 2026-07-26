@@ -417,16 +417,29 @@
 
         $('remaining').textContent = fmt(state.remaining);
         $('channel').textContent = state.channelTitle ? `· ${state.channelTitle}` : '';
-        $('subs').textContent = state.hiddenSubscriberCount ? 'hidden' : fmt(state.subs);
+        // Without credentials there is no sub feed at all, so say so once rather
+        // than showing em-dashes that read like something failed.
+        $('subs').textContent = state.configured
+          ? state.hiddenSubscriberCount
+            ? 'hidden'
+            : fmt(state.subs)
+          : 'off';
         $('gained').textContent =
-          state.subs === null ? '—' : `${state.subsGained > 0 ? '+' : ''}${fmt(state.subsGained)}`;
+          !state.configured || state.subs === null
+            ? '—'
+            : `${state.subsGained > 0 ? '+' : ''}${fmt(state.subsGained)}`;
         $('done').textContent = fmt(state.done);
         $('total').textContent = fmt(state.total);
-        $('stream-since').textContent = state.streamStartedAt
-          ? `Stream started ${new Date(state.streamStartedAt).toLocaleString()} at ${fmt(
-              state.baselineSubs,
-            )} subs.`
-          : 'Waiting for the first subscriber count…';
+        $('stream-since').textContent = !state.configured
+          ? state.streamStartedAt
+            ? `Session started ${new Date(state.streamStartedAt).toLocaleString()}. Subscriber tracking is off — set the target yourself.`
+            : 'Subscriber tracking is off — set the target yourself.'
+          : state.streamStartedAt
+            ? `Stream started ${new Date(state.streamStartedAt).toLocaleString()} at ${fmt(
+                state.baselineSubs,
+              )} subs.`
+            : 'Waiting for the first subscriber count…';
+        $('refresh').hidden = !state.configured;
 
         for (const [id, value] of [
           ['pledged', state.pledged],

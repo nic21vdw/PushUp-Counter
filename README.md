@@ -1,50 +1,38 @@
 # Push-Up Counter
 
-A live push-up counter for streams. It watches your YouTube subscriber count
-(YouTube Data API v3), adds push-ups as subscribers roll in, and renders the
-number left as white text on a fully transparent page you can drop straight into
-OBS as a browser source.
+A live push-up counter for streams. It renders the number of push-ups you owe as
+white text on a fully transparent page you can drop straight into OBS as a
+browser source, and counts your reps down as you do them.
 
-To bring the number down, either tap a button after a set — or point a webcam at
-yourself and let it count your reps automatically, one subtracted per push-up as
-you do it. See [Counting with the webcam](#6-counting-with-the-webcam).
+You set the target. To bring it down, either tap a button after a set, or let the
+camera count for you — one push-up subtracted per rep, automatically. The video
+it watches can be **your webcam** or **a screen or window you share**, so you can
+point it at the window OBS is already showing your camera in. See
+[Counting from video](#4-counting-from-video).
+
+**No API keys, no accounts, no dependencies, no build step, no `npm install`.**
+Just Node 18+ and a camera.
+
+```
+left to do = target − done
+```
+
+## Optionally: make subscribers add push-ups
+
+If you want new YouTube subscribers to *add* to the number while you are live,
+you can give it a YouTube Data API v3 key and it will poll your subscriber count.
+This is entirely optional and off by default — without it, nothing is polled and
+nothing complains. See [Subscriber tracking](#6-optional-subscriber-tracking).
 
 ```
 left to do = base owed + (subs gained this stream × push-ups per sub) − done this stream
 ```
 
-**Only subscribers gained while you are live count.** Growth between streams is
-free — otherwise the number runs away from you overnight. Starting the server
-begins a new stream automatically; whatever you still owed carries over as the
-new base, so the overlay number never jumps.
-
-No dependencies, no build step, no `npm install`. Just Node 18+ (and a webcam if
-you want the automatic counting).
-
 ---
 
-## 1. Get a YouTube API key
+## 1. Run
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create
-   a project (or pick an existing one).
-2. **APIs & Services → Library →** search "YouTube Data API v3" → **Enable**.
-3. **APIs & Services → Credentials → Create credentials → API key.** Copy it.
-4. Optional but recommended: click the key, and under **API restrictions** limit
-   it to YouTube Data API v3.
-
-You also need your channel ID — the `UC...` string at
-[youtube.com/account_advanced](https://www.youtube.com/account_advanced).
-(Your `@handle` works too, via `YOUTUBE_HANDLE`.)
-
-## 2. Configure
-
-```bash
-cp .env.example .env
-```
-
-Fill in `YOUTUBE_API_KEY` and `YOUTUBE_CHANNEL_ID`.
-
-## 3. Run
+There is nothing to configure and nothing to install.
 
 ```bash
 npm start
@@ -55,16 +43,20 @@ npm start
   Control page  http://127.0.0.1:4747/control.html
   OBS overlay   http://127.0.0.1:4747/overlay.html
   OBS camera    http://127.0.0.1:4747/tracker.html?count=1
+
+  Subscriber tracking is off — 500 push-ups on the board.
+  Add a YouTube key to .env if you want subs to add push-ups. See .env.example.
 ```
 
-Those last two are the links you paste into OBS as Browser Sources — the number
+Those two OBS links are what you paste into OBS as Browser Sources — the number
 on its own, and the camera-with-skeleton that counts your reps.
 
-The webcam counter lives at `/camera.html`, linked from the top of the control
-page, and the OBS-ready version of it at `/tracker.html` — see
-[Putting the tracker on stream](#7-putting-the-tracker-on-stream).
+Open the control page and set the target to whatever you have committed to. The
+counter page lives at `/camera.html`, linked from the top of the control page, and
+the OBS-ready version of it at `/tracker.html` — see
+[Putting the tracker on stream](#5-putting-the-tracker-on-stream).
 
-## 4. Add it to OBS
+## 2. Add it to OBS
 
 **Sources → + → Browser**, then:
 
@@ -95,7 +87,7 @@ Append query params to the overlay URL:
 
 Example: `overlay.html?size=140&label=PUSH-UPS%20TO%20GO&align=center&subs=1`
 
-## 5. Use it on stream
+## 3. Use it on stream
 
 Open the control page (`/control.html`) — it's built for a phone, so you can
 leave it open next to you on the floor.
@@ -104,21 +96,56 @@ leave it open next to you on the floor.
   instantly, no refresh.
 - **Custom amount** for anything else.
 - **Undo last** if you fat-finger it.
-- **Base owed** — what you carried in from last time, plus any pledge or dare.
-  This stream's subscribers add on top of it.
-- **Push-ups per sub** — `1` for "+1 subscriber = +1 push-up". Decimals work, so
-  `0.5` is one push-up per two subs if the growth gets out of hand.
+- **Base owed** — the target. What you carried in from last time, plus any pledge
+  or dare. This is the whole number unless subscriber tracking is on, in which
+  case this stream's subscribers add on top of it.
+- **Push-ups per sub** — only used with subscriber tracking on: `1` for
+  "+1 subscriber = +1 push-up". Decimals work, so `0.5` is one push-up per two
+  subs if the growth gets out of hand.
 - **Start new stream** — only needed if you go live twice in one day. Starting
   the server already does this for you.
 
 The counter survives a restart: everything lives in `state.json` next to the
 server, written after every change.
 
-## 6. Counting with the webcam
+## 4. Counting from video
 
-Open **`/camera.html`** (there's a button at the top of the control page), hit
-**Start camera**, and get into a push-up position. Every rep it sees is sent to
-the server as you do it, so the OBS overlay counts down live — no tapping.
+Open **`/camera.html`** (there's a button at the top of the control page), pick a
+video source, hit **Start**, and get into a push-up position. Every rep it sees is
+sent to the server as you do it, so the OBS overlay counts down live — no tapping.
+
+There are two sources, and the detection is identical either way — the model only
+needs a body somewhere in the frame:
+
+| Source | What it does | When to use it |
+| --- | --- | --- |
+| **Webcam** | Opens this machine's camera directly. | The default. Lowest latency, best image. |
+| **Screen or window** | Shares a screen, window or tab and counts the push-ups in it. | When something else already owns the camera — OBS, most often. |
+
+### Sharing a screen instead of opening the camera
+
+Pick **Screen or window**, hit **Start screen share**, and choose from the
+browser's picker. Nothing is preselected, so you can share a whole screen, a
+single window, or another tab.
+
+This exists mainly because **OBS and the browser cannot both hold the webcam**.
+If OBS has your camera as a source, `getUserMedia` fails with "device in use" —
+so instead you share the window OBS is displaying the camera in, and count from
+that.
+
+Two things worth knowing:
+
+- **Share the camera window, not OBS's full program output.** The overlay is
+  drawn into that output, so capturing it feeds the counter back into its own
+  frame, and the body ends up smaller and harder to track.
+- **It costs a little accuracy.** The frame makes an extra encode → decode hop
+  before the model sees it, which adds latency and softens the image compared to
+  reading the webcam directly. If nothing else needs the camera, use the webcam.
+
+Sharing stops from the browser's own "Stop sharing" bar as well as from the page,
+and the page notices either way.
+
+### Vendoring the pose model
 
 Optional one-off, worth doing: vendor the pose model locally so nothing is
 downloaded at stream time.
@@ -202,7 +229,7 @@ after each rep.
   page won't be able to open it.
 - Video is processed entirely in the browser and never leaves the machine.
 
-## 7. Putting the tracker on stream
+## 5. Putting the tracker on stream
 
 `/camera.html` is the page you tune on — sliders, readouts, a big control panel.
 You don't want that on stream, and you can't point OBS's Video Capture Device at
@@ -287,7 +314,58 @@ recently, and the other one says so — but it can't guess which you meant, so
 close the camera page before you go live, or run the source with `count=0` and
 keep counting from the camera page.
 
-## Streams, and why the count resets
+## 6. Optional: subscriber tracking
+
+Everything above works without any of this. Set it up only if you want new
+subscribers to **add** push-ups while you are live.
+
+**Get a key:**
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create
+   a project (or pick an existing one).
+2. **APIs & Services → Library →** search "YouTube Data API v3" → **Enable**.
+3. **APIs & Services → Credentials → Create credentials → API key.** Copy it.
+4. Optional but recommended: click the key, and under **API restrictions** limit
+   it to YouTube Data API v3.
+
+You also need your channel ID — the `UC...` string at
+[youtube.com/account_advanced](https://www.youtube.com/account_advanced).
+(Your `@handle` works too, via `YOUTUBE_HANDLE`.)
+
+**Then configure it:**
+
+```bash
+cp .env.example .env
+```
+
+Fill in `YOUTUBE_API_KEY` and either `YOUTUBE_CHANNEL_ID` or `YOUTUBE_HANDLE`.
+Both halves are required — a key with no channel leaves tracking switched off.
+Restart the server and the banner will stop saying tracking is off.
+
+**Only subscribers gained while you are live count.** Growth between streams is
+free — otherwise the number runs away from you overnight. Starting the server
+begins a new stream automatically; whatever you still owed carries over as the new
+base, so the overlay number never jumps.
+
+### Notes on the API
+
+- Polling is every 30s by default (`POLL_SECONDS`). Each poll costs 1 quota
+  unit, so a 24h stream uses ~2,880 of the free 10,000/day. Stop the server when
+  you go off air and it costs nothing at all.
+- **YouTube rounds public subscriber counts once you pass 1,000** (1,010 → shows
+  as "1.01K", and the API returns `1010`; past 10,000 it rounds to 3
+  significant figures). Below 1,000 the count is exact. Above that, expect the
+  counter to move in jumps rather than one at a time — that's YouTube, not this
+  app.
+- If your channel has subscriber count hidden, the API returns
+  `hiddenSubscriberCount` and no usable number; the control page will say so.
+- If the API errors or the network drops, the overlay keeps showing the last
+  known number and dims slightly, rather than blanking out mid-stream.
+
+### Streams, and why the count resets
+
+This only applies with subscriber tracking on. Without it there is nothing to
+reset — the target and the reps done simply persist until you change them.
 
 Push-ups only accrue from subscribers gained **during a stream**. When a stream
 ends, the counter stops moving until the next one starts.
@@ -321,21 +399,6 @@ CONTROL_TOKEN=some-long-random-string
 Then open `http://<your-computer-ip>:4747/control.html?token=some-long-random-string`.
 The overlay stays readable without a token; only changes require it.
 
-## Notes on the YouTube API
-
-- Polling is every 30s by default (`POLL_SECONDS`). Each poll costs 1 quota
-  unit, so a 24h stream uses ~2,880 of the free 10,000/day. Stop the server when
-  you go off air and it costs nothing at all.
-- **YouTube rounds public subscriber counts once you pass 1,000** (1,010 → shows
-  as "1.01K", and the API returns `1010`; past 10,000 it rounds to 3
-  significant figures). Below 1,000 the count is exact. Above that, expect the
-  counter to move in jumps rather than one at a time — that's YouTube, not this
-  app.
-- If your channel has subscriber count hidden, the API returns
-  `hiddenSubscriberCount` and no usable number; the control page will say so.
-- If the API errors or the network drops, the overlay keeps showing the last
-  known number and dims slightly, rather than blanking out mid-stream.
-
 ## Tests
 
 ```bash
@@ -344,5 +407,6 @@ npm test
 
 No dependencies to install. Covers the rep-counting state machine and pose
 geometry against synthetic angle sequences (clean reps, partial reps, jitter at
-the threshold, dropped poses, sagging hips, double-count debounce), and the
-server's `/api/done` behaviour over real HTTP.
+the threshold, dropped poses, sagging hips, double-count debounce), the capture
+source selection, and the server's `/api/done` behaviour — plus a bare server with
+no credentials — over real HTTP.

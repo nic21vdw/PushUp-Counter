@@ -113,6 +113,51 @@
         letter-spacing: 0.08em;
       }
 
+      /* --- source picker --- */
+      .sources {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 1fr;
+        margin-bottom: 14px;
+      }
+      @media (min-width: 620px) {
+        .sources {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .source {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        background: #0f1318;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+        cursor: pointer;
+      }
+      .source:has(input:checked) {
+        border-color: var(--accent);
+      }
+      .source input {
+        margin-top: 3px;
+        accent-color: var(--accent);
+        flex: none;
+      }
+      .source b {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 3px;
+      }
+      .source span {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .source:has(input:disabled) {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
       /* --- camera stage --- */
       .stage {
         position: relative;
@@ -132,6 +177,15 @@
         /* Mirror the preview so it reads like a mirror. Both layers get the same
            transform, so the skeleton stays lined up with the video. */
         transform: scaleX(-1);
+      }
+      /* A shared screen is not a mirror — flipping it reverses all its text. And
+         a captured window can be any shape, so it is letterboxed rather than
+         cropped, which would cut the body out of frame. Both layers get the same
+         treatment so the skeleton stays registered with the video. */
+      .stage.no-mirror video,
+      .stage.no-mirror canvas {
+        transform: none;
+        object-fit: contain;
       }
       .hud {
         position: absolute;
@@ -332,8 +386,26 @@
     </section>
 
     <section>
-      <h2>Camera</h2>
-      <div class="stage">
+      <h2>Video source</h2>
+      <div class="sources">
+        <label class="source">
+          <input type="radio" name="source" value="camera" checked />
+          <span>
+            <b>Webcam</b>
+            This machine's camera, straight from the browser.
+          </span>
+        </label>
+        <label class="source">
+          <input type="radio" name="source" value="screen" />
+          <span>
+            <b>Screen or window</b>
+            Share a window and count the push-ups it shows — point it at the window OBS
+            displays your camera in.
+          </span>
+        </label>
+      </div>
+
+      <div id="stage" class="stage">
         <video id="video" playsinline muted></video>
         <canvas id="overlay"></canvas>
         <div class="hud">
@@ -355,7 +427,7 @@
       </div>
 
       <p id="feedback" class="feedback">
-        Hit “Start camera”, then get into a push-up position with your whole body in frame.
+        Hit “Start”, then get into a push-up position with your whole body in frame.
       </p>
 
       <div class="grid">
@@ -420,10 +492,16 @@
           confirms the rep landed; the voice reads out how many you have to go.
         </p>
         <h2 style="margin-top: 18px">Camera placement</h2>
-        <p class="muted" style="margin-bottom: 0">
+        <p class="muted">
           Off to your side, chest height, 2–3 m back, whole body in frame from hands to feet. Angles
           come from the model's 3D landmarks, so a head-on camera also works — side-on is just the
           most reliable.
+        </p>
+        <h2 style="margin-top: 18px">Sharing a screen instead</h2>
+        <p class="muted" style="margin-bottom: 0">
+          Pick the window OBS shows your camera in, not OBS's full program output — capturing the
+          output that the overlay is drawn into feeds the counter back into its own frame, and the
+          body ends up smaller and harder to track.
         </p>
       </section>
     </div>

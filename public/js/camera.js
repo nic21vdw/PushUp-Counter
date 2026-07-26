@@ -17,6 +17,8 @@ const fmt = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleSt
 const el = {
   video: $('video'),
   canvas: $('overlay'),
+  stage: $('stage'),
+  sources: document.querySelectorAll('input[name="source"]'),
   remaining: $('remaining'),
   remainingLabel: $('remaining-label'),
   subs: $('subs'),
@@ -196,7 +198,13 @@ function render() {
           ? 'all square'
           : 'push-ups banked';
 
-  el.subs.textContent = serverState?.hiddenSubscriberCount ? 'hidden' : fmt(serverState?.subs);
+  el.subs.textContent = !serverState
+    ? '—'
+    : !serverState.configured
+      ? 'off'
+      : serverState.hiddenSubscriberCount
+        ? 'hidden'
+        : fmt(serverState.subs);
   el.done.textContent = fmt((serverState?.done ?? 0) + pendingReps);
   el.sessionReps.textContent = fmt(sessionReps);
 
@@ -239,9 +247,11 @@ function renderFrame(result) {
  * page still works.
  */
 let tracker = null;
+let capture = null;
 async function getTracker() {
   if (tracker) return tracker;
-  const { PoseTracker } = await import('./pose-tracker.js');
+  const { PoseTracker, CAPTURE } = await import('./pose-tracker.js');
+  capture = CAPTURE;
   tracker = new PoseTracker({
     video: el.video,
     canvas: el.canvas,
@@ -249,8 +259,20 @@ async function getTracker() {
     onStatus: (msg) => {
       el.status.textContent = msg;
     },
+    // Sharing can be stopped from the browser's own bar, which leaves the page
+    // thinking it is still counting.
+    onEnded: () => {
+      showStopped();
+      setBanner('camera', 'Screen sharing stopped. Hit Start to pick a window again.');
+    },
   });
   return tracker;
+}
+
+/** Which radio is selected. @returns {'camera'|'screen'} */
+function selectedSource() {
+  for (const input of el.sources) if (input.checked) return input.value;
+  return 'camera';
 }
 
 function handlePose({ landmarks, worldLandmarks, timestamp }) {
@@ -279,24 +301,64 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
   renderFrame(result);
 }
 
-/** Turn a start-up exception into something actionable. */
-function describeStartFailure(err) {
-  switch (err?.name) {
-    case 'NotAllowedError':
-    case 'SecurityError':
-      return 'Camera permission was denied. Allow it in your browser’s site settings, then try again.';
-    case 'NotFoundError':
-    case 'OverconstrainedError':
-      return 'No webcam found. Plug one in, or log sets from the control page.';
-    case 'NotReadableError':
-      return 'The webcam is in use by another app (OBS may have it). Close it and try again.';
-    default:
-      break;
-  }
-  if (!window.isSecureContext) {
-    return 'Cameras need a secure origin. Open this page as http://127.0.0.1:4747/camera.html on the machine itself, not over your LAN IP.';
+/**
+ * Turn a start-up exception into something actionable. The same DOMException
+ * names mean different things for the two sources — a denied getDisplayMedia is
+ * usually just someone closing the picker, not a permission to go and fix.
+ *
+ * @param {unknown} err
+ * @param {'camera'|'screen'} source
+ */
+function describeStartFailure(err, source) {
+  const name = err?.name;
+  if (source === 'screen') {
+    switch (name) {
+      case 'NotAllowedError':
+        return 'No window was picked. Hit Start again and choose the window showing your camera.';
+      case 'NotFoundError':
+        return 'Nothing was available to capture. Open the window you want to count from, then try again.';
+      case 'NotSupportedError':
+      case 'TypeError':
+        return 'This browser cannot share a screen from here. Chrome, Edge or Firefox on the desktop can.';
+      default:
+        break;
+    }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      return 'Screen sharing needs a secure origin. Open this page as http://127.0.0.1:4747/camera.html on the machine itself, not over your LAN IP.';
+    }
+  } else {
+    switch (name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return 'Camera permission was denied. Allow it in your browser’s site settings, then try again.';
+      case 'NotFoundError':
+      case 'OverconstrainedError':
+        return 'No webcam found. Plug one in, share a screen instead, or log sets from the control page.';
+      case 'NotReadableError':
+        return 'The webcam is in use by another app (OBS may have it). Either close it, or switch to sharing the window OBS shows the camera in.';
+      default:
+        break;
+    }
+    if (!window.isSecureContext) {
+      return 'Cameras need a secure origin. Open this page as http://127.0.0.1:4747/camera.html on the machine itself, not over your LAN IP.';
+    }
   }
   return `Could not start tracking (${err?.message ?? 'unknown error'}). The pose model may have failed to download — run “npm run fetch-assets” to vendor it locally.`;
+}
+
+/* --------------------------------------------------------- source lifecycle */
+
+/** Reflect "counting" in the button and lock the source while it runs. */
+function showLive(source) {
+  el.toggleCamera.textContent = source === 'screen' ? 'Stop sharing' : 'Stop camera';
+  el.toggleCamera.classList.add('is-live');
+  for (const input of el.sources) input.disabled = true;
+}
+
+function showStopped() {
+  el.toggleCamera.textContent = selectedSource() === 'screen' ? 'Start screen share' : 'Start camera';
+  el.toggleCamera.classList.remove('is-live');
+  for (const input of el.sources) input.disabled = false;
 }
 
 /* ----------------------------------------------------------------- wiring */
@@ -304,27 +366,38 @@ function describeStartFailure(err) {
 el.toggleCamera.addEventListener('click', async () => {
   if (tracker?.running) {
     tracker.stop();
-    el.toggleCamera.textContent = 'Start camera';
-    el.toggleCamera.classList.remove('is-live');
+    showStopped();
     return;
   }
+  const source = selectedSource();
   el.toggleCamera.disabled = true;
   setBanner('camera', '');
   try {
     const active = await getTracker();
-    await active.start();
-    el.toggleCamera.textContent = 'Stop camera';
-    el.toggleCamera.classList.add('is-live');
-    el.feedback.textContent = 'Get into a push-up position with your whole body in frame.';
+    await active.start({ source });
+    // Only known once a stream exists, and only correct per source.
+    el.stage.classList.toggle('no-mirror', !capture[source].mirror);
+    showLive(source);
+    el.feedback.textContent =
+      source === 'screen'
+        ? 'Counting from the shared window — get into a push-up position with your whole body in it.'
+        : 'Get into a push-up position with your whole body in frame.';
   } catch (err) {
     console.error(err);
     el.status.textContent = 'Tracking unavailable';
     el.feedback.textContent = '';
-    setBanner('camera', describeStartFailure(err));
+    setBanner('camera', describeStartFailure(err, source));
   } finally {
     el.toggleCamera.disabled = false;
   }
 });
+
+// Keep the button honest about what it will do before anything is running.
+for (const input of el.sources) {
+  input.addEventListener('change', () => {
+    if (!tracker?.running) showStopped();
+  });
+}
 
 // Take back a rep the camera counted that you didn't actually do.
 el.correct.addEventListener('click', () => {
@@ -395,5 +468,8 @@ window.addEventListener('beforeunload', (e) => {
 
 counter.configure({ ...DEFAULT_OPTIONS, ...loadSettings() });
 syncSliderUI();
+// Browsers restore radio state across a reload, so the label is derived rather
+// than assumed to still be the markup's default.
+showStopped();
 render();
 client.connect();

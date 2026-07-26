@@ -1,8 +1,13 @@
 /**
- * Webcam + MediaPipe Pose plumbing.
+ * Video capture + MediaPipe Pose plumbing.
  *
- * Owns the camera stream, the PoseLandmarker, and the requestAnimationFrame
+ * Owns the capture stream, the PoseLandmarker, and the requestAnimationFrame
  * loop. Hands each detected pose to a callback and draws the skeleton overlay.
+ *
+ * The stream comes from a webcam or from a shared screen/window — see CAPTURE.
+ * Detection is source-agnostic: the model only needs a body somewhere in the
+ * frame, so watching the camera feed as OBS renders it counts the same reps as
+ * reading the webcam directly.
  *
  * Assets (the WASM runtime and the pose model) load from public/vendor when it
  * has been populated by `npm run fetch-assets`, and from a CDN otherwise. This
@@ -21,6 +26,38 @@ const CDN = {
   wasm: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${CDN_VERSION}/wasm`,
   model:
     'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+};
+
+/**
+ * Where the video comes from. Both entries resolve to a MediaStream, so nothing
+ * downstream of here cares which was picked.
+ *
+ * The screen grab deliberately passes no `displaySurface` preference: the
+ * browser picker then offers screens, windows and tabs with none preselected,
+ * which is what you want when the useful target — the window OBS shows the
+ * camera in — differs from setup to setup.
+ */
+export const CAPTURE = {
+  camera: {
+    label: 'Webcam',
+    getStream: () =>
+      navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: false,
+      }),
+    // A webcam preview reads like a mirror; a captured screen must not be
+    // flipped or every caption in it comes out backwards.
+    mirror: true,
+  },
+  screen: {
+    label: 'Screen or window',
+    getStream: () =>
+      navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30 } },
+        audio: false,
+      }),
+    mirror: false,
+  },
 };
 
 /** True when the vendored runtime is actually present and served. */
@@ -42,9 +79,18 @@ export class PoseTracker {
    *          onPose: (pose: {landmarks: Array|null, worldLandmarks: Array|null, timestamp: number}) => void,
    *          onStatus?: (message: string) => void,
    *          segmentation?: boolean,
-   *          onFrame?: ((frame: object) => void)|null}} config
+   *          onFrame?: ((frame: object) => void)|null,
+   *          onEnded?: (() => void)|null}} config
    */
-  constructor({ video, canvas, onPose, onStatus = () => {}, segmentation = false, onFrame = null }) {
+  constructor({
+    video,
+    canvas,
+    onPose,
+    onStatus = () => {},
+    segmentation = false,
+    onFrame = null,
+    onEnded = null,
+  }) {
     this.video = video;
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -56,6 +102,12 @@ export class PoseTracker {
     // Replaces the built-in skeleton drawing when a page wants to compose the
     // frame itself. Receives everything needed to paint one frame.
     this.onFrame = onFrame;
+    // Screen sharing has its own stop button, outside the page. When it is used,
+    // the track ends under us and the page has to notice rather than sit there
+    // claiming to be live.
+    this.onEnded = onEnded;
+    /** @type {'camera'|'screen'} */
+    this.source = 'camera';
     this.landmarker = null;
     this.drawingUtils = null;
     this.connections = null;
@@ -111,15 +163,30 @@ export class PoseTracker {
     this.connections = PoseLandmarker.POSE_CONNECTIONS;
   }
 
-  async start() {
+  /** @param {{source?: 'camera'|'screen'}} [options] */
+  async start({ source = 'camera' } = {}) {
     if (this.running) return;
+    const capture = CAPTURE[source];
+    if (!capture) throw new Error(`unknown capture source: ${source}`);
+    this.source = source;
+
+    // Load the model first: a picker that appears and then dies on a model
+    // failure is worse than a short wait before anything is asked of you.
     await this.load();
 
-    this.onStatus('Requesting camera…');
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-      audio: false,
-    });
+    this.onStatus(source === 'screen' ? 'Waiting for you to pick a window…' : 'Requesting camera…');
+    this.stream = await capture.getStream();
+
+    // Fires when sharing is stopped from the browser's own bar, or when the
+    // captured window closes.
+    for (const track of this.stream.getVideoTracks()) {
+      track.addEventListener('ended', () => {
+        if (!this.running) return;
+        this.stop();
+        this.onEnded?.();
+      });
+    }
+
     this.video.srcObject = this.stream;
     await this.video.play();
     if (this.video.videoWidth === 0) {
@@ -146,7 +213,7 @@ export class PoseTracker {
     this.video.srcObject = null;
     this.lastVideoTime = -1;
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.onStatus('Camera off');
+    this.onStatus(this.source === 'screen' ? 'Sharing stopped' : 'Camera off');
   }
 
   /** Briefly tint the skeleton to acknowledge a counted rep. */
@@ -164,6 +231,16 @@ export class PoseTracker {
     // Only run inference when the decoder has actually produced a new frame.
     if (this.video.currentTime === this.lastVideoTime) return;
     this.lastVideoTime = this.video.currentTime;
+
+    // A shared window can be resized mid-stream, which changes the frame size
+    // under us. Left alone, the overlay canvas keeps the old dimensions and the
+    // skeleton drifts off the body.
+    if (this.canvas.width !== this.video.videoWidth || this.canvas.height !== this.video.videoHeight) {
+      if (this.video.videoWidth > 0) {
+        this.canvas.width = this.video.videoWidth;
+        this.canvas.height = this.video.videoHeight;
+      }
+    }
 
     const timestamp = performance.now();
     let result;
