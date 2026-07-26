@@ -1,8 +1,8 @@
 /**
- * The tracker source and the camera page each have one status line and several
- * independent writers. These cover the precedence between them, and the case
- * that caused the bug: a warning that fires once has to be able to take itself
- * back, without wiping a message another writer still cares about.
+ * The overlay has one status line and two independent writers: the camera
+ * lifecycle and the server connection. These cover the precedence between them,
+ * and the case that caused the original bug — a message has to be able to take
+ * itself back without wiping one another writer still cares about.
  */
 
 import test from 'node:test';
@@ -10,59 +10,45 @@ import assert from 'node:assert/strict';
 
 import { StatusSlots } from '../public/js/status-slots.js';
 
-const TRACKER_SLOTS = ['camera', 'server', 'double'];
+// The order the overlay uses: a dead camera is more urgent than a dropped
+// connection, because a dead camera means nothing is being counted at all.
+const SLOTS = ['camera', 'server'];
 
 test('nothing set shows nothing', () => {
-  const slots = new StatusSlots(TRACKER_SLOTS);
+  const slots = new StatusSlots(SLOTS);
   assert.equal(slots.current(), null);
 });
 
 test('the most urgent occupied slot wins regardless of who spoke last', () => {
-  const slots = new StatusSlots(TRACKER_SLOTS);
+  const slots = new StatusSlots(SLOTS);
 
-  slots.set('double', 'two pages are counting');
-  assert.equal(slots.current().message, 'two pages are counting');
+  slots.set('server', 'Lost the server — reps are being held');
+  assert.equal(slots.current().message, 'Lost the server — reps are being held');
 
-  // Camera outranks it even though it arrived afterwards.
+  // The camera outranks it even though it arrived afterwards.
   slots.set('camera', 'Webcam is held by another app');
   assert.equal(slots.current().message, 'Webcam is held by another app');
 
-  // ...and still outranks it when a lower slot speaks again.
-  slots.set('server', 'Lost the server');
+  // ...and still outranks it when the lower slot speaks again.
+  slots.set('server', 'Server error (500) — retrying');
   assert.equal(slots.current().message, 'Webcam is held by another app');
 });
 
-test('a slot clears itself without wiping the others', () => {
-  const slots = new StatusSlots(TRACKER_SLOTS);
+test('a slot clears itself without wiping the other', () => {
+  const slots = new StatusSlots(SLOTS);
   slots.set('camera', 'Requesting camera…', 'info');
-  slots.set('double', 'two pages are counting');
+  slots.set('server', 'Lost the server');
 
-  // The camera comes up; the double-count warning must survive.
+  // The camera comes up; the server problem is still real and must survive.
   slots.set('camera', '');
-  assert.equal(slots.current().message, 'two pages are counting');
-});
-
-test('the double-count warning goes away when the other page stops', () => {
-  // The regression. The server expires its "who is counting" claim after 30s,
-  // but the old code had no branch for the claim going away, so the red box
-  // stayed on the OBS source for the rest of the stream.
-  const slots = new StatusSlots(TRACKER_SLOTS);
-
-  const otherIsCounting = (counting) =>
-    slots.set('double', counting ? 'Another page is also counting reps' : '');
-
-  otherIsCounting(true);
-  assert.equal(slots.current().message, 'Another page is also counting reps');
-
-  otherIsCounting(false);
-  assert.equal(slots.current(), null, 'the warning must clear itself');
+  assert.equal(slots.current().message, 'Lost the server');
 });
 
 test('a cleared top slot uncovers a real error underneath', () => {
-  const slots = new StatusSlots(TRACKER_SLOTS);
+  const slots = new StatusSlots(SLOTS);
   slots.set('server', 'Lost the server — reps are being held');
-  slots.set('camera', 'Requesting camera…', 'info');
-  assert.equal(slots.current().message, 'Requesting camera…');
+  slots.set('camera', 'Loading pose model…', 'info');
+  assert.equal(slots.current().message, 'Loading pose model…');
 
   slots.set('camera', '');
   assert.equal(
@@ -72,23 +58,25 @@ test('a cleared top slot uncovers a real error underneath', () => {
   );
 });
 
-test('tone rides along so progress is not painted as failure', () => {
-  const slots = new StatusSlots(TRACKER_SLOTS);
+test('everything clear leaves the line empty rather than stuck on the last message', () => {
+  const slots = new StatusSlots(SLOTS);
+  slots.set('camera', 'Requesting camera…', 'info');
+  slots.set('server', 'Lost the server');
+
+  slots.set('server', '');
+  slots.set('camera', '');
+  assert.equal(slots.current(), null, 'a stale status box on stream is worse than none');
+});
+
+test('tone rides along so start-up progress is not painted as failure', () => {
+  const slots = new StatusSlots(SLOTS);
+  // The overlay only draws `info` while you are setting the source up; on
+  // stream a visible box always means something is genuinely wrong.
   assert.equal(slots.set('camera', 'Loading pose model…', 'info').tone, 'info');
-  assert.equal(slots.set('camera', 'Tracker could not start').tone, 'error');
+  assert.equal(slots.set('camera', 'Camera could not start').tone, 'error');
 });
 
 test('an unknown slot is a programming mistake, not a silent no-op', () => {
-  const slots = new StatusSlots(TRACKER_SLOTS);
+  const slots = new StatusSlots(SLOTS);
   assert.throws(() => slots.set('typo', 'hello'), /unknown status slot/);
-});
-
-test('the camera page ranks its four writers the same way', () => {
-  const slots = new StatusSlots(['camera', 'server', 'report', 'double']);
-  slots.set('report', 'Undo failed (400)');
-  slots.set('double', 'the tracker source is also counting');
-  assert.equal(slots.current().message, 'Undo failed (400)');
-
-  slots.set('report', '');
-  assert.equal(slots.current().message, 'the tracker source is also counting');
 });
