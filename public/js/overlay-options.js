@@ -20,8 +20,12 @@ export const DEFAULT_OVERLAY_OPTIONS = {
   size: 88,
   /** Colour of the number. White on transparent is the OBS default for a reason. */
   color: '#ffffff',
-  /** Text under the number. An empty string hides it. */
-  label: 'PUSH-UPS LEFT',
+  /**
+   * Text under the number. An empty string hides it. "To do" rather than
+   * "left": the figure is work outstanding, and leftovers are what you have
+   * when you are finished.
+   */
+  label: 'PUSH-UPS TO DO',
   /** Any font installed on the machine; null keeps the built-in stack. */
   font: null,
   /** Font weight of the number. */
