@@ -56,12 +56,19 @@ panel.classList.add('ready');
 
 // The camera lifecycle and the server connection both report here; slots stop
 // them wiping each other, and let a message be taken back when it stops being
-// true. Start-up chatter is only worth showing while you are setting up.
+// true. Nothing is painted outside `?setup`: this source is on stream, and a
+// banner across the scene tells the audience about a problem only you can fix.
 const statuses = new StatusSlots(['camera', 'server']);
 
 function setStatus(slot, message, tone = 'error') {
   const winner = statuses.set(slot, message, tone);
-  const show = winner && (winner.tone === 'error' || options.setup);
+
+  // The fault is recorded either way — `setup` decides who is shown it, not
+  // whether a dead camera goes unnoticed. This is the log you open when the
+  // tile is blank and the source is saying nothing about why.
+  if (message && tone === 'error') console.error(`[${slot}] ${message}`);
+
+  const show = winner && options.setup;
   statusEl.textContent = show ? winner.message : '';
   statusEl.hidden = !show;
   statusEl.dataset.tone = winner?.tone ?? 'error';
