@@ -134,12 +134,24 @@
         white-space: nowrap;
       }
 
+      #progress {
+        display: flex;
+        align-items: center;
+        gap: 0.6em;
+        margin-top: 0.55em;
+        font-size: calc(var(--size, 88px) * 0.17);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.9;
+        white-space: nowrap;
+      }
+
       #bar {
-        width: calc(var(--size, 88px) * 3.4);
+        width: calc(var(--size, 88px) * 2.6);
         max-width: 100%;
         height: calc(var(--size, 88px) * 0.085);
         min-height: 5px;
-        margin-top: 0.55em;
+        flex: none;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.22);
         overflow: hidden;
@@ -262,7 +274,10 @@
       <div id="readout">
         <span id="count">—</span>
         <span id="label">PUSH-UPS LEFT</span>
-        <div id="bar" hidden><i></i></div>
+        <div id="progress" hidden>
+          <div id="bar"><i></i></div>
+          <span id="progress-text"></span>
+        </div>
         <div id="subline" hidden></div>
         <!-- Setup only. Never rendered on stream. -->
         <div id="picker" hidden>

@@ -28,12 +28,16 @@ export const DEFAULT_OVERLAY_OPTIONS = {
   weight: 800,
   /** Drop shadow, so white text survives a light scene behind it. */
   shadow: true,
-  /** Progress bar showing how much of what you owe is done. */
+  /** Progress bar toward the number you owe, with the done/owed figures. */
   bar: true,
-  /** Second line with the subscriber count. */
-  subs: false,
-  /** Flip the picture, so it reads like a mirror rather than a photograph. */
-  mirror: true,
+  /** Line showing how many push-ups this stream's subscribers have cost you. */
+  subs: true,
+  /**
+   * Flip the picture horizontally. Off by default: a selfie view wants
+   * mirroring, but this camera is side-on to a push-up, and mirroring reverses
+   * any text behind you.
+   */
+  mirror: false,
   /** Draw the pose skeleton over the picture. */
   skeleton: true,
   /** Show the camera tile at all. Off leaves just the number. */

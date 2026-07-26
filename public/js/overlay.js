@@ -25,8 +25,9 @@ const panel = document.getElementById('panel');
 const tile = document.getElementById('tile');
 const countEl = document.getElementById('count');
 const labelEl = document.getElementById('label');
-const barEl = document.getElementById('bar');
-const barFill = barEl.querySelector('i');
+const progressEl = document.getElementById('progress');
+const progressText = document.getElementById('progress-text');
+const barFill = document.getElementById('bar').querySelector('i');
 const sublineEl = document.getElementById('subline');
 const tuneEl = document.getElementById('tune');
 const statusEl = document.getElementById('status');
@@ -118,21 +119,29 @@ function render() {
   }
   lastShown = left;
 
+  const owed = serverState.owed ?? 0;
+  const done = (serverState.done ?? 0) + pendingReps;
+
   if (options.bar) {
-    const owed = serverState.owed ?? 0;
-    const done = (serverState.done ?? 0) + pendingReps;
     // Nothing owed yet is an empty bar, not a full one — you have not finished,
     // there is simply nothing to finish.
     const fraction = owed > 0 ? Math.min(1, Math.max(0, done / owed)) : 0;
     barFill.style.width = `${(fraction * 100).toFixed(1)}%`;
-    barEl.hidden = false;
+    // The bar alone cannot say how big the job is; the figures can.
+    progressText.textContent = `${format(done)} / ${format(owed)}`;
+    progressEl.hidden = false;
   }
 
-  if (options.subs && serverState.subs !== null) {
+  // What this stream's subscribers have actually cost you, in push-ups. That is
+  // the number the chat is responsible for, so it is the one worth showing them
+  // — the raw subscriber total is a vanity figure by comparison.
+  if (options.subs && serverState.subsEnabled) {
     const gained = serverState.subsGained ?? 0;
+    const fromSubs = serverState.fromSubs ?? 0;
     sublineEl.textContent =
-      `${format(serverState.subs)} subs` +
-      (gained ? ` · ${gained > 0 ? '+' : ''}${format(gained)} this stream` : '');
+      gained > 0
+        ? `+${format(fromSubs)} from ${format(gained)} sub${gained === 1 ? '' : 's'} this stream`
+        : 'No subs yet this stream';
     sublineEl.hidden = false;
   } else {
     sublineEl.hidden = true;

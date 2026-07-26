@@ -76,7 +76,13 @@ test('a named camera survives the round trip, spaces and all', () => {
 });
 
 test('the URL points at the overlay, and carries no token', () => {
-  const url = buildOverlayUrl(ORIGIN, { subs: true, bar: true });
+  const url = buildOverlayUrl(ORIGIN, { size: 140, camera: 'Brio' });
   assert.ok(url.startsWith(`${ORIGIN}/overlay.html?`));
   assert.ok(!/token/i.test(url), 'there is no token in this app any more');
+});
+
+test('the everyday source needs no query string at all', () => {
+  // The bar and the subscriber line are on by default, and the camera comes
+  // from the picker, so the URL you paste into OBS is just the page.
+  assert.equal(buildOverlayUrl(ORIGIN, { subs: true, bar: true }), `${ORIGIN}/overlay.html`);
 });
