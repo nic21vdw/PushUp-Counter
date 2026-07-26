@@ -24,9 +24,19 @@ test('a bare URL gives a counting tracker with the camera tile showing', () => {
   assert.deepEqual(options, DEFAULT_OVERLAY_OPTIONS);
   assert.equal(options.count, true, 'it counts by default — that is the whole point');
   assert.equal(options.video, true, 'and shows the camera, because that is what OBS displays');
-  assert.equal(options.mirror, true, 'a selfie view reads as a mirror, not a photograph');
+  assert.equal(
+    options.mirror,
+    false,
+    'side-on to a push-up is not a selfie, and mirroring reverses text behind you',
+  );
+  assert.equal(options.bar, true, 'progress toward what you owe is the point of the thing');
+  assert.equal(options.subs, true, 'and so is what the subs cost you');
   assert.equal(options.setup, false, 'the tuning readout stays off stream');
   assert.equal(options.color, '#ffffff');
+});
+
+test('mirroring can be turned back on for a head-on camera', () => {
+  assert.equal(parse('mirror=1').mirror, true);
 });
 
 test('booleans accept the spellings people actually type', () => {
