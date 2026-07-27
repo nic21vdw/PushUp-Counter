@@ -198,11 +198,19 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     // purpose: when you owe nothing, the push-ups-left figure cannot go below
     // zero, so a working detector and a broken one look identical. This is the
     // readout that tells you the difference.
+    //
+    // The sample rate is here because it is the first thing to look at when fast
+    // reps go missing: below about 25/s a half-second rep is only a handful of
+    // samples wide, and no threshold will save it. The last rep's range is the
+    // second thing — it says whether you are actually reaching `down` and `up`.
+    const deg = (value) => (value === null ? '—' : `${Math.round(value)}°`);
     tuneEl.hidden = false;
     tuneEl.innerHTML =
       `<b>${detectedThisSession}</b> rep${detectedThisSession === 1 ? '' : 's'} detected · ` +
-      `elbow <b>${result.angle === null ? '—' : Math.round(result.angle)}°</b> · ` +
-      `plank <b>${result.plankAngle === null ? '—' : Math.round(result.plankAngle)}°</b> · ` +
+      `elbow <b>${deg(result.angle)}</b> · ` +
+      `plank <b>${deg(result.plankAngle)}</b> · ` +
+      `last <b>${deg(result.lastRepDepth)}→${deg(result.lastRepTop)}</b> · ` +
+      `<b>${Math.round(tracker?.sampleRate ?? 0)}</b>/s · ` +
       `<b>${result.state}</b> · ${result.feedback}`;
   }
 

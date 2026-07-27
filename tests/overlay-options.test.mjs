@@ -125,4 +125,12 @@ test('a junk threshold is ignored rather than wrecking the detector', () => {
   assert.deepEqual(detection('down=nope'), {});
   assert.deepEqual(detection('up=0'), {}, 'zero would make every frame a completed rep');
   assert.deepEqual(detection('smoothing=-1'), {});
+  assert.deepEqual(detection('uptol=-5'), {}, 'a negative tolerance is not stricter, it is broken');
+});
+
+test('the fast-rep settings are tunable, and zero is a real answer for them', () => {
+  assert.deepEqual(detection('uptol=10&reversal=15'), { upTolerance: 10, reversalDeg: 15 });
+  assert.deepEqual(detection('uptol=0'), { upTolerance: 0 }, 'zero is how you demand a lockout');
+  assert.deepEqual(detection('gap=0&plankgrace=0'), { maxGapMs: 0, plankGraceMs: 0 });
+  assert.deepEqual(detection('minrep=150&minphase=40'), { minRepMs: 150, minPhaseMs: 40 });
 });
