@@ -79,6 +79,33 @@
         color: #d5dde6;
       }
 
+      #settings-link {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 2;
+        padding: 10px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        border-radius: 10px;
+        background: rgba(16, 20, 26, 0.82);
+        color: #f4f7fa;
+        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+        text-decoration: none;
+        backdrop-filter: blur(8px);
+      }
+
+      #settings-link:hover {
+        background: rgba(32, 39, 48, 0.94);
+      }
+
+      #settings-link:focus-visible {
+        outline: 2px solid #7dd3fc;
+        outline-offset: 3px;
+      }
+
       [hidden] {
         display: none !important;
       }
@@ -94,6 +121,7 @@
     </div>
 
     <div id="status" hidden></div>
+    <a id="settings-link" href="camera.html" hidden>Settings</a>
 
     <script type="module">
       // Apply the text options before the module loads, so the counter never

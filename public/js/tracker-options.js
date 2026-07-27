@@ -28,6 +28,8 @@ export const DEFAULT_TRACKER_OPTIONS = {
    * camera.html reports them properly. Turn it on while you are setting up.
    */
   status: false,
+  /** Show browser-only navigation controls. Off keeps the OBS source clean. */
+  controls: false,
   /** Height of the baked-in counter text, in px. */
   size: 64,
   /** Colour of that text. */
@@ -73,6 +75,7 @@ export function parseTrackerOptions(params) {
     count: bool(params.get('count'), d.count),
     mirror: bool(params.get('mirror'), d.mirror),
     status: bool(params.get('status'), d.status),
+    controls: bool(params.get('controls'), d.controls),
     size: Number.isFinite(size) && size > 0 ? size : d.size,
     color: normalizeColor(params.get('color'), d.color),
   };
