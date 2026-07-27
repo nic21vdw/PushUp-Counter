@@ -66,3 +66,20 @@ not:
 Several agents often work on this repo at once. Check `git status` before editing
 — an in-progress tree is a sign someone else is mid-task. Prefer a worktree or a
 separate clone over editing a checkout another session is writing to.
+
+Note this repo is cloned twice on the streaming machine, and an OBS scene can
+composite browser sources from **both** at once — so one screenshot may mix code
+from two branches. Grep for the on-screen string across both clones before
+deciding which to edit, and never `git checkout` in a clone whose server is live
+on port 4747; add a worktree instead.
+
+## Response format
+
+End every substantive response with a short recap section, set off by a heading.
+It reads as a standalone summary for someone who skipped the body: what you
+concluded or changed, what it means, and what is left open or needs a decision.
+A few lines or a tight bullet list — not a replay of the response.
+
+Skip it when the whole response is already a few lines, or the answer is a
+single fact. When a change ends in a pull request, the branch name and PR URL
+go inside the recap, on their own line at the very end.
