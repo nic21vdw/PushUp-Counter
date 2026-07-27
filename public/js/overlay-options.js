@@ -78,13 +78,25 @@ export const DEFAULT_OVERLAY_OPTIONS = {
   setup: false,
 };
 
-/** Detector thresholds, overridable per machine without a settings panel. */
+/**
+ * Detector thresholds, overridable per machine without a settings panel.
+ *
+ * The third entry says whether zero is a real answer. Mostly it is not — an up
+ * threshold of zero would make every frame a completed rep — but a tolerance
+ * turned all the way off is a meaningful setting, and rejecting it would leave
+ * no way to ask for a strict full lockout.
+ */
 export const DETECTION_PARAMS = [
-  ['down', 'downAngle'],
-  ['up', 'upAngle'],
-  ['plank', 'minPlankAngle'],
-  ['smoothing', 'smoothing'],
-  ['minrep', 'minRepMs'],
+  ['down', 'downAngle', false],
+  ['up', 'upAngle', false],
+  ['uptol', 'upTolerance', true],
+  ['reversal', 'reversalDeg', false],
+  ['plank', 'minPlankAngle', false],
+  ['smoothing', 'smoothing', false],
+  ['minrep', 'minRepMs', true],
+  ['minphase', 'minPhaseMs', true],
+  ['gap', 'maxGapMs', true],
+  ['plankgrace', 'plankGraceMs', true],
 ];
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
@@ -177,10 +189,10 @@ export function parseOverlayOptions(params) {
  */
 export function parseDetectionOptions(params) {
   const patch = {};
-  for (const [key, option] of DETECTION_PARAMS) {
+  for (const [key, option, zeroAllowed] of DETECTION_PARAMS) {
     if (!params.has(key)) continue;
     const value = Number(params.get(key));
-    if (Number.isFinite(value) && value > 0) patch[option] = value;
+    if (Number.isFinite(value) && (zeroAllowed ? value >= 0 : value > 0)) patch[option] = value;
   }
   return patch;
 }
