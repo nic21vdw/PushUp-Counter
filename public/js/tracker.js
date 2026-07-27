@@ -23,6 +23,12 @@ const countEl = document.getElementById('count');
 const labelEl = document.getElementById('label');
 const readout = document.getElementById('readout');
 const statusEl = document.getElementById('status');
+const settingsLink = document.getElementById('settings-link');
+
+if (options.controls) {
+  settingsLink.hidden = false;
+  if (token) settingsLink.href = `camera.html?token=${encodeURIComponent(token)}`;
+}
 
 // Detection settings are tuned on the camera page; reuse them so the numbers
 // don't change just because the reps are being counted somewhere else.

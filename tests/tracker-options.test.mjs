@@ -24,6 +24,11 @@ test('a fault is not painted across the scene unless asked', () => {
   assert.equal(parse('status=1').status, true);
 });
 
+test('browser controls are opt-in so OBS stays clean', () => {
+  assert.equal(parse('').controls, false);
+  assert.equal(parse('controls=1').controls, true);
+});
+
 test('booleans accept the spellings people actually type', () => {
   for (const on of ['1', 'true', 'yes', 'on', 'TRUE', '']) {
     assert.equal(parse(`cutout=${on}`).cutout, true, `cutout=${on}`);

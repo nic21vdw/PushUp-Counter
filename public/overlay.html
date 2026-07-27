@@ -18,6 +18,8 @@
         display: flex;
         flex-direction: column;
         gap: 0.1em;
+        box-sizing: border-box;
+        width: 100%;
         padding: 12px 16px;
         font-family: var(--font, 'Inter', 'Helvetica Neue', Arial, sans-serif);
         font-weight: var(--weight, 800);
@@ -33,7 +35,9 @@
       .headline {
         display: flex;
         align-items: baseline;
+        justify-content: space-between;
         gap: 0.25em;
+        width: 100%;
         font-size: var(--size, 88px);
       }
 
@@ -97,11 +101,19 @@
 
       #progress {
         margin-top: 0.35em;
-        font-size: calc(var(--size, 88px) * 0.17);
+        display: flex;
+        justify-content: space-between;
+        gap: 1em;
+        width: 100%;
+        font-size: calc(var(--size, 88px) * 0.26);
         font-weight: 700;
         font-variant-numeric: tabular-nums;
         opacity: 0.9;
         white-space: nowrap;
+      }
+
+      #owed-progress {
+        text-align: right;
       }
     </style>
   </head>
@@ -111,7 +123,10 @@
         <span id="count">—</span>
         <span class="label" id="label">PUSH-UPS TO DO</span>
       </div>
-      <div id="progress" hidden></div>
+      <div id="progress" hidden>
+        <span id="done-progress"></span>
+        <span id="owed-progress"></span>
+      </div>
       <div class="subline" id="subline" hidden></div>
     </div>
 
@@ -122,6 +137,8 @@
       const labelEl = document.getElementById('label');
       const sublineEl = document.getElementById('subline');
       const progressEl = document.getElementById('progress');
+      const doneProgressEl = document.getElementById('done-progress');
+      const owedProgressEl = document.getElementById('owed-progress');
 
       // ---- look & feel, all driven by URL query params -------------------
       const styleVars = {
@@ -177,9 +194,9 @@
           progressEl.hidden = true;
         } else {
           const ahead = Math.max(0, -state.rawRemaining);
-          progressEl.textContent =
-            `${format(state.done)} done · ${format(state.total)} owed` +
-            (ahead ? ` · ${format(ahead)} ahead` : '');
+          doneProgressEl.textContent = `${format(state.done)} done`;
+          owedProgressEl.textContent =
+            `${format(state.total)} owed` + (ahead ? ` · ${format(ahead)} ahead` : '');
           progressEl.hidden = false;
         }
 
