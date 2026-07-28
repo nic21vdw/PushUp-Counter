@@ -100,6 +100,11 @@ export class PoseTracker {
     this.assetSource = null;
     this.lastVideoTime = -1;
     this.frameHandle = null;
+    this.frameReader = null;
+    // Where frames land when they are pulled off the track instead of read out
+    // of the video element. Created on first use.
+    this.surface = null;
+    this.surfaceCtx = null;
     this.highlight = false;
   }
 
@@ -166,7 +171,69 @@ export class PoseTracker {
     this.canvas.height = this.video.videoHeight;
     this.running = true;
     this.onStatus('Tracking');
+    this.#startFrames();
+  }
+
+  /**
+   * Start pulling frames, off the track itself where that is possible.
+   *
+   * requestAnimationFrame stops dead the moment the tab is not being painted —
+   * backgrounded, minimised, or (on Windows) simply covered by OBS. That is the
+   * normal state of this page while someone is actually doing push-ups, and a
+   * frozen loop counts nothing while the camera happily keeps streaming.
+   * MediaStreamTrackProcessor is driven by the track, so frames keep arriving no
+   * matter what is on top of the window.
+   */
+  #startFrames() {
+    const track = this.stream?.getVideoTracks?.()[0];
+    if (track && typeof window.MediaStreamTrackProcessor === 'function') {
+      this.#readTrack(track);
+      return;
+    }
     this.#loop();
+  }
+
+  async #readTrack(track) {
+    let processor;
+    try {
+      processor = new MediaStreamTrackProcessor({ track });
+      this.frameReader = processor.readable.getReader();
+    } catch (err) {
+      // No frame reader — fall back to the paint loop rather than not counting.
+      console.warn('track frame reader unavailable, falling back to rAF', err);
+      this.#loop();
+      return;
+    }
+
+    this.surface ??= document.createElement('canvas');
+    this.surfaceCtx ??= this.surface.getContext('2d', { willReadFrequently: false });
+
+    while (this.running) {
+      let frame;
+      try {
+        const { value, done } = await this.frameReader.read();
+        if (done) break;
+        frame = value;
+      } catch {
+        break;
+      }
+
+      try {
+        if (!this.running) continue;
+        const width = frame.displayWidth;
+        const height = frame.displayHeight;
+        if (this.surface.width !== width || this.surface.height !== height) {
+          this.surface.width = width;
+          this.surface.height = height;
+        }
+        this.surfaceCtx.drawImage(frame, 0, 0, width, height);
+      } finally {
+        // VideoFrames hold decoder buffers; a missed close stalls the track.
+        frame?.close?.();
+      }
+
+      this.#detect(this.surface, this.surface.width, this.surface.height);
+    }
   }
 
   /**
@@ -200,6 +267,10 @@ export class PoseTracker {
       cancelAnimationFrame(this.frameHandle);
       this.frameHandle = null;
     }
+    if (this.frameReader) {
+      this.frameReader.cancel().catch(() => {});
+      this.frameReader = null;
+    }
     if (this.stream) {
       for (const track of this.stream.getTracks()) track.stop();
       this.stream = null;
@@ -226,10 +297,22 @@ export class PoseTracker {
     if (this.video.currentTime === this.lastVideoTime) return;
     this.lastVideoTime = this.video.currentTime;
 
+    this.#detect(this.video, this.video.videoWidth, this.video.videoHeight);
+  }
+
+  /** Run the model over one frame and hand the pose on. */
+  #detect(source, width, height) {
+    if (!this.running) return;
+
+    if (width > 0 && (this.canvas.width !== width || this.canvas.height !== height)) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
+
     const timestamp = performance.now();
     let result;
     try {
-      result = this.landmarker.detectForVideo(this.video, timestamp);
+      result = this.landmarker.detectForVideo(source, timestamp);
     } catch (err) {
       // A single bad frame shouldn't kill the loop.
       console.warn('pose detection frame failed', err);
@@ -241,7 +324,7 @@ export class PoseTracker {
     const mask = result?.segmentationMasks?.[0] ?? null;
 
     try {
-      this.#draw(landmarks, mask);
+      this.#draw(landmarks, mask, source);
       this.onPose({ landmarks, worldLandmarks, timestamp });
     } finally {
       // Masks hold GPU/WASM memory that is not garbage collected. Skipping this
@@ -250,7 +333,7 @@ export class PoseTracker {
     }
   }
 
-  #draw(landmarks, mask) {
+  #draw(landmarks, mask, source = this.video) {
     const { ctx, canvas } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -258,7 +341,7 @@ export class PoseTracker {
       this.onFrame({
         ctx,
         canvas,
-        video: this.video,
+        video: source,
         landmarks,
         mask,
         highlight: this.highlight,
