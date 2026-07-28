@@ -63,6 +63,14 @@ test('turning counting off is emitted, because it is not the default', () => {
   assert.equal(optionsOf(url).count, false);
 });
 
+test('muting a source survives the round trip, silence included', () => {
+  assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: false })).sound, false);
+
+  const quiet = buildOverlayUrl(ORIGIN, { volume: 0 });
+  assert.match(quiet, /volume=0/, 'zero is a choice, not an absent value');
+  assert.equal(optionsOf(quiet).volume, 0);
+});
+
 test('shadow is emitted the way the overlay reads it', () => {
   const url = buildOverlayUrl(ORIGIN, { shadow: false });
   assert.match(url, /shadow=none/);
