@@ -169,9 +169,30 @@ The status page shows the finished URL for you.
 | `camera` | `camera=Brio`   | Which webcam to open (part of its name)             |
 | `setup`  | `setup=1`       | Add the detector readout and the fault box. Never use on stream |
 | `count`  | `count=0`       | Display only — shows the picture but banks nothing  |
+| `sound`  | `sound=0`       | Stop the chirp on every counted rep                 |
+| `volume` | `volume=0.2`    | How loud that chirp is, `0` to `1`                  |
 
 `count=0` is there for a second source showing the same thing on another scene.
 Only ever run **one** counting source, or every push-up lands twice.
+
+### The rep chirp
+
+Every counted rep plays a short rising beep. Halfway through a set your head is
+at the floor and the number is off to the side, so the beep is the confirmation
+you can actually take in — no beep means the rep did not count, without looking
+up to find that out.
+
+Only the counting source makes it: a `count=0` duplicate is watching the same
+push-up, and two of them would answer each one twice.
+
+In OBS, tick **Control audio via OBS** in the browser source's properties if you
+want the beep on the stream and in your monitor mix; leave it off and it comes
+out of the machine's default output, which you hear in the room but your viewers
+do not. Either way, `volume=0.2` if it is louder than you want next to a mic.
+
+In a normal browser tab the beep stays silent until you click the page once —
+autoplay rules, not a fault. `?setup=1` says which it is: the readout ends with
+`sound running`, `suspended` (click the page), `off`, or `blocked`.
 
 Faults — a camera that will not open, a server that stopped answering — are only
 painted onto the source under `?setup=1`. A red banner across your scene tells

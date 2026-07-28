@@ -111,6 +111,23 @@ test('a camera can be named, because the default is often the one OBS has', () =
   assert.equal(parse('camera=%20%20').camera, null, 'whitespace is not a camera name');
 });
 
+test('a rep makes a noise unless you ask it not to', () => {
+  assert.equal(parse('').sound, true, 'head down mid-set, the chirp is the only feedback you get');
+  assert.equal(parse('').volume, 0.5);
+  assert.equal(parse('sound=0').sound, false);
+  assert.equal(parse('sound=off').sound, false);
+  assert.equal(parse('sound=maybe').sound, true, 'junk leaves the confirmation on');
+});
+
+test('volume is clamped, and zero is a real answer rather than a missing one', () => {
+  assert.equal(parse('volume=0').volume, 0, 'muting one source is not the same as not saying');
+  assert.equal(parse('volume=0.25').volume, 0.25);
+  assert.equal(parse('volume=5').volume, 1, 'as loud as the tab goes, and no louder');
+  assert.equal(parse('volume=-1').volume, DEFAULT_OVERLAY_OPTIONS.volume);
+  assert.equal(parse('volume=loud').volume, DEFAULT_OVERLAY_OPTIONS.volume);
+  assert.equal(parse('volume=').volume, DEFAULT_OVERLAY_OPTIONS.volume);
+});
+
 test('detection thresholds are only returned when actually asked for', () => {
   assert.deepEqual(detection(''), {}, 'the RepCounter keeps its own defaults');
   assert.deepEqual(detection('down=110'), { downAngle: 110 });

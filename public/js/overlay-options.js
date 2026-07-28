@@ -66,6 +66,14 @@ export const DEFAULT_OVERLAY_OPTIONS = {
    * has already claimed.
    */
   camera: null,
+  /**
+   * Chirp on every counted rep. On by default: mid-set your head is down and
+   * the number is off to the side, so the sound is the only confirmation you
+   * actually get.
+   */
+  sound: true,
+  /** How loud that chirp is, 0 to 1. */
+  volume: 0.5,
   /** Show the detector's live readout while you tune. Never use on stream. */
   setup: false,
 };
@@ -107,6 +115,15 @@ function positive(raw, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function fraction(raw, fallback) {
+  // Silence is a real answer — `volume=0` is how you mute one source without
+  // giving up the chirp on the others — so absence has to be ruled out first.
+  if (raw === null || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return Math.min(1, value);
+}
+
 function nonNegative(raw, fallback) {
   // Zero is a legitimate answer here (square corners), so absence has to be
   // ruled out first — `Number(null)` is 0, which would read as "squared off".
@@ -145,6 +162,8 @@ export function parseOverlayOptions(params) {
     radius: nonNegative(params.get('radius'), d.radius),
     count: bool(params.get('count'), d.count),
     camera: params.get('camera')?.trim() || d.camera,
+    sound: bool(params.get('sound'), d.sound),
+    volume: fraction(params.get('volume'), d.volume),
     setup: bool(params.get('setup'), d.setup),
   };
 }
