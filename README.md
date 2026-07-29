@@ -230,32 +230,54 @@ It counts on the way up, when the rep is actually finished. Two thresholds
 rather than one is what stops jitter around a single value from spraying out
 phantom reps. On top of that:
 
-- Angles run through a moving average, so one bad frame can't trigger a count.
+- A rep that stops short of the up threshold still counts once you turn around
+  and start the next one — see `uptol` below. At speed nobody locks out, and a
+  detector that insists on it stops counting exactly when you speed up.
+- Bad frames are removed with a median of the last three samples rather than by
+  averaging. An average heavy enough to swallow a mis-detected limb also flattens
+  the peaks of a quick rep until they no longer reach the thresholds.
 - The bottom of the rep must last a minimum time, and reps must be a minimum
   time apart — flailing doesn't count.
 - If your hips sag or pike past the plank threshold the rep is thrown away and
-  you have to re-establish the top position.
-- Losing the pose (you leave frame) abandons the rep in progress rather than
-  banking it.
+  you have to re-establish the top position — but only if it lasts. A wobble
+  shorter than `plankgrace` withholds the count instead of binning the rep.
+- Losing the pose abandons the rep in progress rather than banking it, once you
+  have really gone (`gap`). A frame or two of motion blur is not you leaving.
 - Reps counted while the server is unreachable are held and sent when it's back,
   so a blip doesn't quietly cheat you out of push-ups.
 
+Inference runs on every decoded camera frame rather than once per repaint, and
+the camera is asked for 60 fps. Sample rate is what sets the ceiling on how fast
+you can go: a 300 ms rep seen 30 times a second is nine samples end to end.
+
 ### Tuning it to you
 
-Range of motion varies. Open `?setup=1`, do one slow rep watching the live elbow
-angle under the picture, note what you actually hit at the top and the bottom,
-and set the thresholds just inside that range:
+Range of motion varies. Open `?setup=1`, do a few reps *at the speed you actually
+train at* while watching the readout under the picture. It shows the live elbow
+and plank angles, the range of the last rep it counted, and the sample rate.
 
-| Param       | Default | What it does                                      |
-| ----------- | ------- | ------------------------------------------------- |
-| `down`      | `100`   | How bent your arms must get to register the bottom |
-| `up`        | `155`   | How straight they must get to complete the rep     |
-| `plank`     | `140`   | How straight your body must be for a rep to count  |
-| `smoothing` | `0.5`   | Lower = steadier but laggier; higher = twitchier   |
-| `minrep`    | `400`   | Minimum ms between reps                            |
+| Param        | Default | What it does                                        |
+| ------------ | ------- | --------------------------------------------------- |
+| `down`       | `100`   | How bent your arms must get to register the bottom   |
+| `up`         | `155`   | How straight they must get to complete the rep       |
+| `uptol`      | `25`    | How far short of `up` a rep may stop if you turn around |
+| `reversal`   | `10`    | Degrees back down that mark the top of such a rep    |
+| `plank`      | `140`   | How straight your body must be for a rep to count    |
+| `smoothing`  | `0.85`  | Lower = steadier but laggier; higher = twitchier     |
+| `minrep`     | `220`   | Minimum ms between reps                              |
+| `minphase`   | `60`    | Minimum ms the bottom of a rep must last             |
+| `gap`        | `250`   | Ms of lost pose tolerated before the rep is dropped  |
+| `plankgrace` | `300`   | Ms of ragged form tolerated before the rep is dropped |
 
-Reps **missed**? Raise `down` and lower `up`. Getting **double counts**? Raise
-`minrep` and lower `smoothing`.
+Reps **missed when you go fast**? Check the sample rate first — under about 25/s
+no threshold will save you, and the fix is more light on you or a camera that
+will do 60 fps. Then raise `uptol`, and lower `minrep` if you are quicker than
+~270 reps a minute. Reps **missed generally**? Raise `down` and lower `up` to sit
+just inside the range the readout shows you actually hitting.
+
+Getting **double counts**? Raise `minrep`, lower `smoothing`, and raise
+`reversal` — a bigger turnaround is harder for noise to fake. `uptol=0` puts it
+back to demanding a full lockout on every rep.
 
 These live in the URL rather than in a settings panel on purpose. A control you
 can reach mid-set is a control you will reach for.

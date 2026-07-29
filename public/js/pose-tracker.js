@@ -99,8 +99,15 @@ export class PoseTracker {
     this.running = false;
     this.assetSource = null;
     this.lastVideoTime = -1;
+    this.lastTimestamp = 0;
     this.frameHandle = null;
+    this.usingFrameCallback = false;
     this.highlight = false;
+    // Samples per second actually reaching the rep counter. A quick push-up is
+    // over in a third of a second, so this is the number that decides whether it
+    // can be seen at all — the setup view puts it on screen for that reason.
+    this.sampleRate = 0;
+    this.lastSampleAt = null;
   }
 
   /** Loads the runtime and model once. Safe to call repeatedly. */
@@ -174,9 +181,13 @@ export class PoseTracker {
    * video inputs — a real webcam or two, a phone-as-webcam bridge, OBS's own
    * virtual camera — and whichever the browser considers default is often the
    * one OBS has already taken. Naming the camera is how you avoid that.
+   *
+   * The frame rate is asked for as high as the camera will go: every frame is
+   * one more sample of the elbow angle, and a fast rep is only a handful of
+   * samples wide to begin with.
    */
   async #videoConstraints() {
-    const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    const size = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } };
     if (!this.camera) return { ...size, facingMode: 'user' };
 
     const cameras = await listCameras();
@@ -197,7 +208,8 @@ export class PoseTracker {
   stop() {
     this.running = false;
     if (this.frameHandle !== null) {
-      cancelAnimationFrame(this.frameHandle);
+      if (this.usingFrameCallback) this.video.cancelVideoFrameCallback?.(this.frameHandle);
+      else cancelAnimationFrame(this.frameHandle);
       this.frameHandle = null;
     }
     if (this.stream) {
@@ -206,6 +218,8 @@ export class PoseTracker {
     }
     this.video.srcObject = null;
     this.lastVideoTime = -1;
+    this.lastSampleAt = null;
+    this.sampleRate = 0;
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.onStatus('Camera off');
   }
@@ -218,15 +232,51 @@ export class PoseTracker {
     }, 220);
   }
 
+  /**
+   * Drive inference off the decoder rather than off the display.
+   *
+   * `requestVideoFrameCallback` fires once per decoded camera frame, so a 60 fps
+   * webcam gives 60 samples a second. `requestAnimationFrame` fires once per
+   * repaint, which in an OBS browser source is the scene's frame rate — often
+   * 30, sometimes less while the encoder is busy — and every sample lost that
+   * way comes straight off the resolution of a fast rep.
+   */
   #loop() {
-    if (!this.running) return;
-    this.frameHandle = requestAnimationFrame(() => this.#loop());
+    if (typeof this.video.requestVideoFrameCallback === 'function') {
+      this.usingFrameCallback = true;
+      const step = () => {
+        if (!this.running) return;
+        this.frameHandle = this.video.requestVideoFrameCallback(step);
+        this.#processFrame();
+      };
+      this.frameHandle = this.video.requestVideoFrameCallback(step);
+      return;
+    }
 
-    // Only run inference when the decoder has actually produced a new frame.
-    if (this.video.currentTime === this.lastVideoTime) return;
-    this.lastVideoTime = this.video.currentTime;
+    this.usingFrameCallback = false;
+    const step = () => {
+      if (!this.running) return;
+      this.frameHandle = requestAnimationFrame(step);
+      // Only run inference when the decoder has actually produced a new frame.
+      if (this.video.currentTime === this.lastVideoTime) return;
+      this.lastVideoTime = this.video.currentTime;
+      this.#processFrame();
+    };
+    this.frameHandle = requestAnimationFrame(step);
+  }
 
-    const timestamp = performance.now();
+  #processFrame() {
+    // MediaPipe rejects a timestamp that does not advance, and two frames can
+    // land inside the same clock tick once the rate is high enough.
+    const timestamp = Math.max(performance.now(), this.lastTimestamp + 1);
+    this.lastTimestamp = timestamp;
+
+    if (this.lastSampleAt !== null) {
+      const dt = timestamp - this.lastSampleAt;
+      if (dt > 0) this.sampleRate += 0.2 * (1000 / dt - this.sampleRate);
+    }
+    this.lastSampleAt = timestamp;
+
     let result;
     try {
       result = this.landmarker.detectForVideo(this.video, timestamp);
