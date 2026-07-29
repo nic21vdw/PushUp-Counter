@@ -14,6 +14,7 @@ import { RepCounter, DEFAULT_OPTIONS } from './rep-counter.js';
 import { anglesFromLandmarks } from './pose-math.js';
 import { CounterClient } from './counter-client.js';
 import { StatusSlots } from './status-slots.js';
+import { RepSound } from './rep-sound.js';
 import { parseOverlayOptions, parseDetectionOptions } from './overlay-options.js';
 
 const params = new URLSearchParams(location.search);
@@ -180,6 +181,28 @@ function flashRep() {
   setTimeout(() => tile.classList.remove('rep'), 240);
 }
 
+/* ----------------------------------------------------------------- sound */
+
+// Doing a push-up puts your face at the floor, so the flash above is confirmation
+// you are not in a position to see. Only the source that actually banks the rep
+// chirps: a display-only duplicate is watching the same body, and two of them
+// would answer every push-up twice.
+const repSound = new RepSound({
+  enabled: options.sound && options.count,
+  volume: options.volume,
+});
+
+// OBS runs browser sources with autoplay allowed, so the chirp is live from the
+// first rep there. A browser has to be touched first, and the tracker is a page
+// you leave running — so the first click or key anywhere on it opens the device.
+if (repSound.enabled) {
+  const arm = () => repSound.arm();
+  for (const event of ['pointerdown', 'keydown']) {
+    window.addEventListener(event, arm, { once: true, passive: true });
+  }
+  repSound.arm();
+}
+
 /* -------------------------------------------------------------- counting */
 
 function handlePose({ landmarks, worldLandmarks, timestamp }) {
@@ -203,13 +226,14 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
       `<b>${detectedThisSession}</b> rep${detectedThisSession === 1 ? '' : 's'} detected · ` +
       `elbow <b>${result.angle === null ? '—' : Math.round(result.angle)}°</b> · ` +
       `plank <b>${result.plankAngle === null ? '—' : Math.round(result.plankAngle)}°</b> · ` +
-      `<b>${result.state}</b> · ${result.feedback}`;
+      `<b>${result.state}</b> · sound <b>${repSound.status}</b> · ${result.feedback}`;
   }
 
   if (result.repCompleted) {
     detectedThisSession += 1;
     tracker?.flash();
     flashRep();
+    repSound.play();
     if (options.count) client.reportReps(1);
   }
 }
@@ -359,6 +383,7 @@ function matches(label, wanted) {
 window.addEventListener('pagehide', () => {
   tracker?.stop();
   client.stop();
+  repSound.stop();
 });
 
 async function boot() {
