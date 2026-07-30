@@ -141,6 +141,11 @@ stop it, close its window; to start it again, run the shortcut.
 If you would rather not have a console window sitting in the taskbar, set the
 shortcut's **Run** to **Minimized** in its Properties.
 
+**`update-and-start.cmd`** is the same thing with a `git pull` in front of it, so
+a double-click gets you the current counter rather than the one you cloned. It
+never blocks on a failed update: no git, a branch other than `main`, local edits,
+or no network each print a line and start what you already have.
+
 ### Making it look right
 
 | Param      | Example              | What it does                                |
@@ -169,37 +174,43 @@ The status page shows the finished URL for you.
 | `camera` | `camera=Brio`   | Which webcam to open (part of its name)             |
 | `setup`  | `setup=1`       | Add the detector readout and the fault box. Never use on stream |
 | `count`  | `count=0`       | Display only — shows the picture but banks nothing  |
-| `sound`  | `sound=0`       | Stop the chirp on every counted rep                 |
-| `volume` | `volume=0.2`    | How loud that chirp is, `0` to `1`                  |
+| `sound`  | `sound=boing`   | Which noise a counted rep makes; `sound=0` for none |
+| `volume` | `volume=0.2`    | How loud that noise is, `0` to `1`                  |
 
 `count=0` is there for a second source showing the same thing on another scene.
 Only ever run **one** counting source, or every push-up lands twice.
 
-### The rep chirp
+### The rep sound
 
-Every counted rep plays a short rising beep. Halfway through a set your head is
-at the floor and the number is off to the side, so the beep is the confirmation
-you can actually take in — no beep means the rep did not count, without looking
+Every counted rep plays a short arcade blip. Halfway through a set your head is
+at the floor and the number is off to the side, so the blip is the confirmation
+you can actually take in — no blip means the rep did not count, without looking
 up to find that out.
+
+| `sound=`  | What it is                                                   |
+| --------- | ------------------------------------------------------------ |
+| `coin`    | Two-note pickup. The default, and the one that gets out of the way |
+| `powerup` | Four notes up. Bigger; good for a stream that is a set piece  |
+| `pop`     | A bubble. The quietest, and the one that survives a long set   |
+| `boing`   | Cartoon spring. Funny once an hour; you have been warned        |
+| `chirp`   | A plain rising beep, no character                              |
+| `0`       | Silence                                                        |
+
+They are synthesised in the page, so there is no sound file to go missing, and
+nothing runs longer than 210 ms — a sound still playing when the next rep lands
+has stopped being feedback.
 
 Only the counting source makes it: a `count=0` duplicate is watching the same
 push-up, and two of them would answer each one twice.
 
 In OBS, tick **Control audio via OBS** in the browser source's properties if you
-want the beep on the stream and in your monitor mix; leave it off and it comes
+want the sound on the stream and in your monitor mix; leave it off and it comes
 out of the machine's default output, which you hear in the room but your viewers
 do not. Either way, `volume=0.2` if it is louder than you want next to a mic.
 
-In a normal browser tab the beep stays silent until you click the page once —
-autoplay rules, not a fault. `?setup=1` says which it is: the readout ends with
-`sound running`, `suspended` (click the page), `off`, or `blocked`.
-
-Faults — a camera that will not open, a server that stopped answering — are only
-painted onto the source under `?setup=1`. A red banner across your scene tells
-the audience about a problem only you can fix. The reason still goes to the
-browser console — open the same URL in Chrome and look at DevTools, or reload
-the source with `?setup=1` to see it on the page. A source that has gone quiet
-and blank is a source with something in that log.
+In a normal browser tab it stays silent until you click the page once — autoplay
+rules, not a fault. `?setup=1` says which it is: the readout shows the preset and
+its state, as `coin/running`, `coin/suspended` (click the page), or `off`.
 
 ## 6. Check it is working
 

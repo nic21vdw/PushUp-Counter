@@ -10,7 +10,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { RepSound, DEFAULT_VOLUME } from '../public/js/rep-sound.js';
+import { RepSound, DEFAULT_VOLUME, DEFAULT_PRESET, PRESETS } from '../public/js/rep-sound.js';
+
+const NOTES = PRESETS[DEFAULT_PRESET].length;
 
 /** Enough of the Web Audio API to record what a chirp asked for. */
 function fakeContext({ state = 'running' } = {}) {
@@ -57,7 +59,7 @@ test('a counted rep makes a noise', () => {
 
   sound.play();
 
-  assert.equal(ctx.started.length, 1, 'one rep, one chirp');
+  assert.equal(ctx.started.length, NOTES, 'one rep, one sound');
 });
 
 test('the device is opened once and reused, not reopened per rep', () => {
@@ -75,7 +77,7 @@ test('the device is opened once and reused, not reopened per rep', () => {
   sound.play();
 
   assert.equal(built, 1);
-  assert.equal(ctx.started.length, 3);
+  assert.equal(ctx.started.length, NOTES * 3);
 });
 
 test('a page that has not been clicked yet gets resumed rather than staying mute', () => {
@@ -85,13 +87,13 @@ test('a page that has not been clicked yet gets resumed rather than staying mute
   sound.play();
 
   assert.equal(ctx.resumed, 1, 'autoplay policy is the usual reason for silence');
-  assert.equal(ctx.started.length, 1);
+  assert.equal(ctx.started.length, NOTES);
 });
 
 test('sound off means no audio device is ever opened', () => {
   let built = 0;
   const sound = new RepSound({
-    enabled: false,
+    preset: null,
     contextFactory: () => {
       built += 1;
       return fakeContext();
@@ -138,7 +140,7 @@ test('volume 0 is real silence, not the default volume', () => {
 
   sound.play();
 
-  const peak = Math.max(...ctx.gains[0].gain.ramps);
+  const peak = Math.max(...ctx.gains.flatMap((g) => g.gain.ramps));
   assert.ok(peak <= 0.0001, `muted, got peak gain ${peak}`);
 });
 
@@ -149,6 +151,35 @@ test('the status readout names why it is quiet', () => {
   assert.equal(sound.status, 'idle', 'nothing has opened the device yet');
   sound.arm();
   assert.equal(sound.status, 'running');
+});
+
+test('every preset is short enough to be over before the next rep', () => {
+  for (const [name, notes] of Object.entries(PRESETS)) {
+    const end = Math.max(...notes.map((n) => n.at + n.dur));
+    assert.ok(end <= 0.22, `${name} runs ${Math.round(end * 1000)}ms — a fast set is 300ms a rep`);
+    for (const note of notes) {
+      assert.ok(note.hz > 0 && note.gain > 0, `${name} has a silent or pitchless note`);
+    }
+  }
+});
+
+test('a preset can be picked, and a made-up one still makes a noise', () => {
+  assert.equal(new RepSound({ preset: 'boing' }).preset, 'boing');
+  assert.equal(
+    new RepSound({ preset: 'airhorn' }).preset,
+    DEFAULT_PRESET,
+    'an unknown name is a typo, and a typo should not cost you the feedback',
+  );
+  assert.equal(new RepSound({ preset: null }).preset, null, 'null is the way to ask for silence');
+});
+
+test('the chosen preset is the one that plays', () => {
+  const ctx = fakeContext();
+  const sound = new RepSound({ preset: 'powerup', contextFactory: () => ctx });
+
+  sound.play();
+
+  assert.equal(ctx.started.length, PRESETS.powerup.length, 'four notes, four oscillators');
 });
 
 test('leaving the page releases the audio device', () => {

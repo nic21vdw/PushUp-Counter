@@ -15,6 +15,8 @@
  * off halfway through a stream.
  */
 
+import { PRESETS, DEFAULT_PRESET } from './rep-sound.js';
+
 export const DEFAULT_OVERLAY_OPTIONS = {
   /** Height of the number, in px. */
   size: 88,
@@ -67,13 +69,13 @@ export const DEFAULT_OVERLAY_OPTIONS = {
    */
   camera: null,
   /**
-   * Chirp on every counted rep. On by default: mid-set your head is down and
-   * the number is off to the side, so the sound is the only confirmation you
-   * actually get.
+   * Which sound a counted rep makes: `coin`, `powerup`, `pop`, `boing` or
+   * `chirp`. Null is silence. On by default — mid-set your head is down and the
+   * number is off to the side, so the sound is the only confirmation you get.
    */
-  sound: true,
-  /** How loud that chirp is, 0 to 1. */
-  volume: 0.5,
+  sound: DEFAULT_PRESET,
+  /** How loud that sound is, 0 to 1. */
+  volume: 0.45,
   /** Show the detector's live readout while you tune. Never use on stream. */
   setup: false,
 };
@@ -127,6 +129,20 @@ function positive(raw, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+/**
+ * `sound` is both a switch and a choice: `sound=0` is silence, `sound=boing`
+ * picks one. A name that does not exist falls back to the default rather than
+ * to silence — a typo should cost you the sound you wanted, not the feedback.
+ */
+function soundPreset(raw, fallback) {
+  if (raw === null) return fallback;
+  const value = raw.trim().toLowerCase();
+  if (value === '') return fallback;
+  if (FALSY.has(value)) return null;
+  if (value in PRESETS) return value;
+  return fallback === null ? DEFAULT_PRESET : fallback;
+}
+
 function fraction(raw, fallback) {
   // Silence is a real answer — `volume=0` is how you mute one source without
   // giving up the chirp on the others — so absence has to be ruled out first.
@@ -174,7 +190,7 @@ export function parseOverlayOptions(params) {
     radius: nonNegative(params.get('radius'), d.radius),
     count: bool(params.get('count'), d.count),
     camera: params.get('camera')?.trim() || d.camera,
-    sound: bool(params.get('sound'), d.sound),
+    sound: soundPreset(params.get('sound'), d.sound),
     volume: fraction(params.get('volume'), d.volume),
     setup: bool(params.get('setup'), d.setup),
   };

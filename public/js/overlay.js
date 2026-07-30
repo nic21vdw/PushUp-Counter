@@ -188,7 +188,7 @@ function flashRep() {
 // chirps: a display-only duplicate is watching the same body, and two of them
 // would answer every push-up twice.
 const repSound = new RepSound({
-  enabled: options.sound && options.count,
+  preset: options.count ? options.sound : null,
   volume: options.volume,
 });
 
@@ -234,7 +234,8 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
       `plank <b>${deg(result.plankAngle)}</b> · ` +
       `last <b>${deg(result.lastRepDepth)}→${deg(result.lastRepTop)}</b> · ` +
       `<b>${Math.round(tracker?.sampleRate ?? 0)}</b>/s · ` +
-      `<b>${result.state}</b> · sound <b>${repSound.status}</b> · ${result.feedback}`;
+      `<b>${result.state}</b> · ` +
+      `sound <b>${repSound.preset ?? 'off'}/${repSound.status}</b> · ${result.feedback}`;
   }
 
   if (result.repCompleted) {
