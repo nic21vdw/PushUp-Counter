@@ -335,7 +335,25 @@ export class RepSound {
     return this.ctx.state ?? 'idle';
   }
 
-  /** Live volume change, for a setup page that wants a slider one day. */
+  /**
+   * Change which sound plays, without dropping the audio device — the options
+   * panel changes it live, and reopening the device would cost the wake-up this
+   * class exists to avoid. A new file starts loading immediately; reps landing
+   * before it arrives fall back, exactly as they do at start-up.
+   *
+   * @param {string|null} preset a name, or null for silence
+   */
+  setPreset(preset) {
+    const next = preset === null || preset === undefined ? null : resolve(preset);
+    if (next === this.preset) return;
+
+    this.preset = next;
+    this.buffer = null;
+    this.loading = null;
+    if (this.ctx && this.enabled) this.#load();
+  }
+
+  /** Live volume change, for the options panel's slider. */
   setVolume(volume) {
     this.volume = clamp(volume);
   }

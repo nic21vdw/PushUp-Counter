@@ -59,34 +59,40 @@ npm start
 ```
   Push-up counter is running.
   OBS source    http://127.0.0.1:4747/overlay.html      <- add this as a Browser Source
-  Set it up     http://127.0.0.1:4747/overlay.html?setup=1   <- pick a camera, check framing
+  Set it up     http://127.0.0.1:4747/overlay.html?setup=1   <- detector readout, check framing
   Status        http://127.0.0.1:4747/status.html
   1 push-up per subscriber gained while live.
 ```
 
 ## 4. Pick your camera and frame yourself
 
-Open **`/overlay.html?setup=1`** in a browser. That is exactly the page you are
-about to put in OBS, plus a live readout of your elbow angle under the picture
+Open **`/overlay.html`** in a browser. That is exactly the page you are about to
+put in OBS: your camera filling the window with the count over it, and nothing
+else. Add `?setup=1` for a live readout of your elbow angle under the picture,
 so you can see what the detector sees.
 
-Streaming machines usually have several cameras — a webcam or two, a
-phone-as-webcam bridge, OBS's own virtual camera. **The setup view has a
-dropdown** listing all of them: pick one and the picture switches straight
-away, with no reload.
+**Move the mouse and a gear appears** in the top right. That is Options: which
+camera to watch, which sound a rep makes, and how loud. Pick a camera and the
+picture switches straight away, with no reload.
 
-That choice is saved on the server, not in the browser, because the setup view
+The controls are revealed by the pointer rather than always drawn, because this
+page is also the browser source. OBS has no mouse, so nothing in Options can
+ever appear on stream.
+
+Your choices are saved on the server, not in the browser, because this window
 (in Chrome) and the browser source (in OBS) are two different browsers with
-separate storage. So changing the camera here changes it in OBS too — you never
-have to re-paste a URL. The dropdown only appears in setup mode; it would be on
-stream otherwise.
+separate storage. So changing the camera or the sound here changes it in OBS too
+— you never have to re-paste a URL.
 
 If you would rather pin a camera to a particular source, name it in the URL and
 that wins over the saved choice:
 
 ```
-/overlay.html?setup=1&camera=Brio
+/overlay.html?camera=Brio
 ```
+
+The same goes for `?sound=` and `?volume=`: named in the URL, they win over
+whatever Options has saved, so one source can be silent while another is not.
 
 Any part of the camera's name works, case-insensitive. If it can't find it, or
 the camera is busy, the error names every camera on the machine so you know what

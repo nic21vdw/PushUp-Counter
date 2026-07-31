@@ -14,7 +14,7 @@ import { RepCounter, DEFAULT_OPTIONS } from './rep-counter.js';
 import { anglesFromLandmarks } from './pose-math.js';
 import { CounterClient } from './counter-client.js';
 import { StatusSlots } from './status-slots.js';
-import { RepSound } from './rep-sound.js';
+import { RepSound, SOUND_NAMES } from './rep-sound.js';
 import { parseOverlayOptions, parseDetectionOptions } from './overlay-options.js';
 
 const params = new URLSearchParams(location.search);
@@ -32,9 +32,15 @@ const barFill = document.getElementById('bar').querySelector('i');
 const sublineEl = document.getElementById('subline');
 const tuneEl = document.getElementById('tune');
 const statusEl = document.getElementById('status');
-const pickerEl = document.getElementById('picker');
-const selectEl = document.getElementById('camera-select');
-const pickerNote = document.getElementById('picker-note');
+const optionsEl = document.getElementById('options');
+const optionsOpen = document.getElementById('options-open');
+const optionsClose = document.getElementById('options-close');
+const optCamera = document.getElementById('opt-camera');
+const optSound = document.getElementById('opt-sound');
+const optVolume = document.getElementById('opt-volume');
+const optVolumeValue = document.getElementById('opt-volume-value');
+const optionsNote = document.getElementById('options-note');
+const optSaved = document.getElementById('opt-saved');
 
 /* ------------------------------------------------------------------ look */
 
@@ -102,6 +108,7 @@ const client = new CounterClient({
     serverState = state;
     render();
     if (!options.camera) followServerCamera(state.camera ?? null);
+    followServerSound(state);
   },
   onPending: (count) => {
     pendingReps = count;
@@ -202,6 +209,143 @@ if (repSound.enabled) {
   }
   repSound.arm();
 }
+
+/* --------------------------------------------------------------- options */
+
+// The camera and the sound are chosen here and saved on the server, which is
+// the only thing this window and the OBS source both see — they are separate
+// browsers with separate storage. A `?sound=` in the URL is an explicit
+// instruction and still wins, the same way `?camera=` does.
+const soundFromUrl = params.has('sound');
+const volumeFromUrl = params.has('volume');
+
+function followServerSound(state) {
+  if (!soundFromUrl && state.sound !== undefined && state.sound !== null) {
+    repSound.setPreset(options.count ? state.sound : null);
+  }
+  if (!volumeFromUrl && typeof state.volume === 'number') {
+    repSound.setVolume(state.volume);
+    if (optVolume) syncVolumeInput(state.volume);
+  }
+}
+
+function syncVolumeInput(volume) {
+  optVolume.value = String(Math.round(volume * 100));
+  optVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+}
+
+async function savePrefs(patch, message) {
+  try {
+    const res = await fetch('/api/prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    optSaved.textContent = message;
+  } catch {
+    // Saying "saved" when it was not is worse than saying nothing: the setting
+    // would come back next launch and look like the panel had lied.
+    optSaved.textContent = 'Not saved — server did not answer';
+  }
+  setTimeout(() => {
+    optSaved.textContent = '';
+  }, 2600);
+}
+
+async function buildOptions() {
+  for (const name of SOUND_NAMES) {
+    optSound.append(new Option(name, name));
+  }
+  optSound.append(new Option('none', 'off'));
+  optSound.value = options.sound ?? 'off';
+
+  syncVolumeInput(options.volume);
+
+  optSound.addEventListener('change', () => {
+    const chosen = optSound.value === 'off' ? null : optSound.value;
+    repSound.setPreset(options.count ? chosen : null);
+    // A sound you cannot hear is indistinguishable from one that failed, and
+    // this is the moment you are listening for it.
+    repSound.play();
+    savePrefs({ sound: chosen }, 'Saved');
+  });
+
+  optVolume.addEventListener('input', () => {
+    const volume = Number(optVolume.value) / 100;
+    syncVolumeInput(volume);
+    repSound.setVolume(volume);
+  });
+  optVolume.addEventListener('change', () => {
+    repSound.play();
+    savePrefs({ volume: Number(optVolume.value) / 100 }, 'Saved');
+  });
+
+  optCamera.addEventListener('change', async () => {
+    const chosen = optCamera.value || null;
+    optSaved.textContent = 'Switching…';
+    await switchCamera(chosen);
+    savePrefs({ camera: chosen }, 'Saved');
+  });
+
+  optionsNote.textContent = options.camera
+    ? `Opened with ?camera=${options.camera}, which overrides the saved camera.`
+    : 'These are saved on the server, so the OBS source picks them up too.';
+
+  await refreshCameraList();
+}
+
+/**
+ * Camera labels only exist once permission has been granted, so this is called
+ * again after the camera has actually been opened.
+ */
+async function refreshCameraList() {
+  let cameras = [];
+  try {
+    const { listCameras } = await import('./pose-tracker.js');
+    cameras = await listCameras();
+  } catch {
+    /* leave the list with just the default entry */
+  }
+
+  optCamera.replaceChildren();
+  optCamera.append(new Option('Default (whatever the browser picks)', ''));
+  for (const device of cameras) {
+    // Match by label, not deviceId: ids are rotated per browser profile, so an
+    // id chosen here would mean nothing to the OBS source.
+    optCamera.append(new Option(device.label || '(unnamed camera)', device.label));
+  }
+
+  const current = cameras.find((d) => matches(d.label, activeCamera));
+  optCamera.value = current ? current.label : '';
+}
+
+// This page is the browser source as well as the window you set it up in, so
+// the controls appear only for something with a pointer. OBS has none, and
+// never will, so nothing here can reach the stream.
+let hideControls;
+function showControls() {
+  document.body.dataset.pointer = '1';
+  clearTimeout(hideControls);
+  hideControls = setTimeout(() => {
+    if (optionsEl.hidden) document.body.dataset.pointer = '0';
+  }, 2600);
+}
+
+window.addEventListener('pointermove', showControls, { passive: true });
+optionsOpen.addEventListener('click', () => {
+  optionsEl.hidden = false;
+  optionsOpen.hidden = true;
+  refreshCameraList();
+});
+optionsClose.addEventListener('click', () => {
+  optionsEl.hidden = true;
+  optionsOpen.hidden = false;
+  showControls();
+});
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !optionsEl.hidden) optionsClose.click();
+});
 
 /* -------------------------------------------------------------- counting */
 
@@ -329,63 +473,6 @@ async function describeCameraFailure(err) {
   );
 }
 
-/* ------------------------------------------------- the setup-only picker */
-
-/**
- * Lists the machine's cameras so you can swap without editing a URL. Setup view
- * only: a dropdown baked into the browser source would be on stream, and the
- * source has no one sitting in front of it to use it anyway.
- *
- * The choice goes to the server, which is the only thing the setup view (in
- * Chrome) and the browser source (in OBS) both see — they are separate browsers
- * with separate storage.
- */
-async function buildPicker() {
-  const { listCameras } = await import('./pose-tracker.js');
-  const cameras = await listCameras();
-
-  selectEl.innerHTML = '';
-  const auto = document.createElement('option');
-  auto.value = '';
-  auto.textContent = 'Default (whatever the browser picks)';
-  selectEl.appendChild(auto);
-
-  for (const device of cameras) {
-    const option = document.createElement('option');
-    // Match by label, not deviceId: ids are rotated per browser profile, so an
-    // id chosen here would mean nothing to the OBS source.
-    option.value = device.label;
-    option.textContent = device.label || '(unnamed camera)';
-    selectEl.appendChild(option);
-  }
-
-  const current = cameras.find((d) => matches(d.label, activeCamera));
-  selectEl.value = current ? current.label : '';
-
-  selectEl.addEventListener('change', async () => {
-    const chosen = selectEl.value || null;
-    pickerNote.textContent = 'Switching…';
-    await switchCamera(chosen);
-    try {
-      await fetch('/api/camera', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ camera: chosen }),
-      });
-      pickerNote.textContent = chosen
-        ? 'Saved. The OBS source will switch to this too.'
-        : 'Saved. The OBS source will use the default camera.';
-    } catch {
-      pickerNote.textContent = 'Switched here, but the server did not save it.';
-    }
-  });
-
-  pickerNote.textContent = options.camera
-    ? `This page was opened with ?camera=${options.camera}, which overrides the saved choice.`
-    : 'Whatever you pick here is what the OBS source will use.';
-  pickerEl.hidden = false;
-}
-
 function matches(label, wanted) {
   if (!label || !wanted) return false;
   return label.toLowerCase().includes(wanted.trim().toLowerCase());
@@ -422,10 +509,12 @@ async function boot() {
       console.error(err);
       setStatus('camera', await describeCameraFailure(err));
     }
-    // Labels only exist once permission has been granted, so the picker is
-    // built after the first camera attempt, failed or not.
-    if (options.setup) await buildPicker().catch((err) => console.error(err));
+    // Camera labels only exist once permission has been granted, so the list
+    // in the options panel is filled in after the first attempt, failed or not.
+    await refreshCameraList().catch((err) => console.error(err));
   }
+
+  await buildOptions().catch((err) => console.error(err));
 
   client.connect();
 }
