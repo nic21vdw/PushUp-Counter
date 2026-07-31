@@ -174,7 +174,7 @@ The status page shows the finished URL for you.
 | `camera` | `camera=Brio`   | Which webcam to open (part of its name)             |
 | `setup`  | `setup=1`       | Add the detector readout and the fault box. Never use on stream |
 | `count`  | `count=0`       | Display only — shows the picture but banks nothing  |
-| `sound`  | `sound=boing`   | Which noise a counted rep makes; `sound=0` for none |
+| `sound`  | `sound=coin`    | Which noise a counted rep makes; `sound=0` for none |
 | `volume` | `volume=0.2`    | How loud that noise is, `0` to `1`                  |
 
 `count=0` is there for a second source showing the same thing on another scene.
@@ -182,35 +182,49 @@ Only ever run **one** counting source, or every push-up lands twice.
 
 ### The rep sound
 
-Every counted rep plays a short arcade blip. Halfway through a set your head is
-at the floor and the number is off to the side, so the blip is the confirmation
-you can actually take in — no blip means the rep did not count, without looking
-up to find that out.
+Every counted rep plays a sound. Halfway through a set your head is at the floor
+and the number is off to the side, so it is the confirmation you can actually
+take in — no sound means the rep did not count, without looking up to find that
+out.
 
-| `sound=`  | What it is                                                   |
-| --------- | ------------------------------------------------------------ |
-| `coin`    | Two-note pickup. The default, and the one that gets out of the way |
-| `powerup` | Four notes up. Bigger; good for a stream that is a set piece  |
-| `pop`     | A bubble. The quietest, and the one that survives a long set   |
-| `boing`   | Cartoon spring. Funny once an hour; you have been warned        |
-| `chirp`   | A plain rising beep, no character                              |
-| `0`       | Silence                                                        |
+| `sound=`  | What it is                                                     |
+| --------- | -------------------------------------------------------------- |
+| `fahh`    | The meme. The default                                          |
+| `coin`    | Two-note arcade pickup                                          |
+| `powerup` | Four notes up, bigger                                           |
+| `pop`     | A bubble; the quietest                                          |
+| `boing`   | Cartoon spring                                                  |
+| `chirp`   | A plain rising beep                                             |
+| `0`       | Silence                                                         |
 
-They are synthesised in the page, so there is no sound file to go missing, and
-nothing runs longer than 210 ms — a sound still playing when the next rep lands
-has stopped being feedback.
+`fahh` is a file, `public/sounds/fahh.mp3`. The recording is four and a half
+seconds long, silent for its first, and reverb tail for its last one and a half;
+the page trims it to the one second that is actually the sound, measured off the
+waveform rather than guessed, and fades the end so the tail does not ring on. To
+use a different recording, drop it in `public/sounds/` and add it to `SAMPLES` in
+`public/js/rep-sound.js` with the window you want.
 
-Only the counting source makes it: a `count=0` duplicate is watching the same
+Everything else is synthesised, so it needs no file at all — and one of them is
+what plays if the file cannot be loaded. A rep is never left silent.
+
+**On lag.** The file is fetched, decoded and trimmed once when the page opens,
+never on the rep. The page also holds the audio device open with a silent source,
+because Windows powers an idle output down between reps and waking it costs
+50-200ms — which you hear as the sound arriving after the push-up. `?setup=1`
+reports the remaining hardware latency in ms; under about 30 is as good as it
+gets.
+
+Only the counting source makes noise: a `count=0` duplicate is watching the same
 push-up, and two of them would answer each one twice.
 
 In OBS, tick **Control audio via OBS** in the browser source's properties if you
-want the sound on the stream and in your monitor mix; leave it off and it comes
-out of the machine's default output, which you hear in the room but your viewers
-do not. Either way, `volume=0.2` if it is louder than you want next to a mic.
+want it on the stream and in your monitor mix; leave it off and it comes out of
+the machine's default output, which you hear in the room but your viewers do not.
+Either way, `volume=0.2` if it is louder than you want next to a mic.
 
 In a normal browser tab it stays silent until you click the page once — autoplay
-rules, not a fault. `?setup=1` says which it is: the readout shows the preset and
-its state, as `coin/running`, `coin/suspended` (click the page), or `off`.
+rules, not a fault. `?setup=1` shows the sound, its state and its latency, as
+`fahh/running 12ms`, `fahh/loading`, `fahh/suspended` (click the page), or `off`.
 
 ## 6. Check it is working
 

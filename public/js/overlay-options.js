@@ -15,7 +15,7 @@
  * off halfway through a stream.
  */
 
-import { PRESETS, DEFAULT_PRESET } from './rep-sound.js';
+import { SOUND_NAMES, DEFAULT_PRESET } from './rep-sound.js';
 
 export const DEFAULT_OVERLAY_OPTIONS = {
   /** Height of the number, in px. */
@@ -69,9 +69,10 @@ export const DEFAULT_OVERLAY_OPTIONS = {
    */
   camera: null,
   /**
-   * Which sound a counted rep makes: `coin`, `powerup`, `pop`, `boing` or
-   * `chirp`. Null is silence. On by default — mid-set your head is down and the
-   * number is off to the side, so the sound is the only confirmation you get.
+   * Which sound a counted rep makes: `fahh`, `coin`, `powerup`, `pop`, `boing`
+   * or `chirp`. Null is silence. On by default — mid-set your head is down and
+   * the number is off to the side, so the sound is the only confirmation you
+   * get.
    */
   sound: DEFAULT_PRESET,
   /** How loud that sound is, 0 to 1. */
@@ -139,7 +140,7 @@ function soundPreset(raw, fallback) {
   const value = raw.trim().toLowerCase();
   if (value === '') return fallback;
   if (FALSY.has(value)) return null;
-  if (value in PRESETS) return value;
+  if (SOUND_NAMES.includes(value)) return value;
   return fallback === null ? DEFAULT_PRESET : fallback;
 }
 

@@ -235,14 +235,18 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
       `last <b>${deg(result.lastRepDepth)}→${deg(result.lastRepTop)}</b> · ` +
       `<b>${Math.round(tracker?.sampleRate ?? 0)}</b>/s · ` +
       `<b>${result.state}</b> · ` +
-      `sound <b>${repSound.preset ?? 'off'}/${repSound.status}</b> · ${result.feedback}`;
+      `sound <b>${repSound.preset ?? 'off'}/${repSound.status}` +
+      `${repSound.latencyMs === null ? '' : ` ${repSound.latencyMs}ms`}</b> · ${result.feedback}`;
   }
 
   if (result.repCompleted) {
     detectedThisSession += 1;
+    // Sound first. The two flashes below touch the DOM and force a style
+    // recalculation, and every millisecond of that would sit between the rep
+    // and the noise — which is the one piece of feedback being timed by ear.
+    repSound.play();
     tracker?.flash();
     flashRep();
-    repSound.play();
     if (options.count) client.reportReps(1);
   }
 }
