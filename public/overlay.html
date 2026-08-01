@@ -384,11 +384,80 @@
       #options a:hover {
         text-decoration: underline;
       }
-      #options-note {
+      #options-note,
+      #obs-note {
         margin: 10px 0 0;
         font-size: 11.5px;
         line-height: 1.45;
         opacity: 0.68;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        text-align: center;
+      }
+      .stats div {
+        padding: 8px 4px;
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .stats b {
+        display: block;
+        font-size: 19px;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.15;
+      }
+      .stats span {
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        opacity: 0.6;
+      }
+      .stat-line {
+        margin: 7px 0 0;
+        font-size: 12px;
+        opacity: 0.8;
+      }
+      .stat-line[data-tone='good'] {
+        color: #7fe3a6;
+        opacity: 1;
+      }
+      .stat-line[data-tone='warn'] {
+        color: #f0c674;
+        opacity: 1;
+      }
+      .stat-line[data-tone='bad'] {
+        color: #ff9b9b;
+        opacity: 1;
+      }
+      #options h2:not(:first-of-type) {
+        margin-top: 18px;
+        padding-top: 13px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+      }
+      #obs-url {
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+        padding: 7px 9px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 11.5px;
+        color: #9ce8b6;
+      }
+      #obs-copy {
+        flex: none;
+        padding: 7px 11px;
+        border: 0;
+        border-radius: 8px;
+        color: inherit;
+        background: rgba(255, 255, 255, 0.12);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
       }
 
       /* ---- setup-only detector readout ---- */
@@ -467,7 +536,18 @@
 
     <div id="options" hidden>
       <button id="options-close" type="button" aria-label="Close options">×</button>
-      <h2>Options</h2>
+      <h2>Now</h2>
+
+      <div class="stats">
+        <div><b id="stat-todo">&mdash;</b><span>to do</span></div>
+        <div><b id="stat-done">&mdash;</b><span>done</span></div>
+        <div><b id="stat-owed">&mdash;</b><span>owed</span></div>
+      </div>
+      <p class="stat-line" id="stat-subs"></p>
+      <p class="stat-line" id="stat-detector"></p>
+      <p class="stat-line" id="stat-lastrep"></p>
+
+      <h2>Settings</h2>
 
       <div class="field">
         <label for="opt-camera">Camera</label>
@@ -489,8 +569,19 @@
 
       <p id="options-note"></p>
 
+      <h2>OBS browser source</h2>
+      <div class="row">
+        <code id="obs-url"></code>
+        <button id="obs-copy" type="button">Copy</button>
+      </div>
+      <p id="obs-note">
+        Add at 1100&times;340, and leave the source running while you are off-scene so the camera
+        stays open. Give it a camera OBS is not also using. Nothing in this panel is drawn
+        without a mouse, so none of it reaches the stream.
+      </p>
+
       <footer>
-        <a id="opt-dashboard" href="/status.html" target="_blank" rel="noopener">Open dashboard →</a>
+        <a id="opt-dashboard" href="/status.html" target="_blank" rel="noopener">Full status page →</a>
         <span id="opt-saved" aria-live="polite"></span>
       </footer>
     </div>

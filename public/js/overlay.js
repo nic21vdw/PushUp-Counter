@@ -17,9 +17,24 @@ import { StatusSlots } from './status-slots.js';
 import { RepSound, SOUND_NAMES } from './rep-sound.js';
 import { parseOverlayOptions, parseDetectionOptions } from './overlay-options.js';
 import { checkFraming, FRAMING } from './framing.js';
+import { buildOverlayUrl } from './obs-link.js';
 
 const params = new URLSearchParams(location.search);
 const options = parseOverlayOptions(params);
+
+/**
+ * This page is two things: the browser source OBS composites, and the window
+ * you open to set the thing up. Everything meant for the second — the detector
+ * readout, the fault box, the gear — appears only once a pointer has moved,
+ * because OBS has no pointer and never will. That is what lets the window you
+ * open be the setup view by default without any of it reaching the stream.
+ *
+ * `?setup=1` forces it on regardless, and `?setup=0` off, for the cases where
+ * you want to be sure rather than to be clever.
+ */
+const setupWasNamed = params.has('setup');
+let pointerSeen = false;
+const isSetupView = () => (setupWasNamed ? options.setup : pointerSeen);
 
 const video = document.getElementById('video');
 const canvas = document.getElementById('stage');
@@ -43,6 +58,14 @@ const optVolume = document.getElementById('opt-volume');
 const optVolumeValue = document.getElementById('opt-volume-value');
 const optionsNote = document.getElementById('options-note');
 const optSaved = document.getElementById('opt-saved');
+const statTodo = document.getElementById('stat-todo');
+const statDone = document.getElementById('stat-done');
+const statOwed = document.getElementById('stat-owed');
+const statSubs = document.getElementById('stat-subs');
+const statDetector = document.getElementById('stat-detector');
+const statLastRep = document.getElementById('stat-lastrep');
+const obsUrl = document.getElementById('obs-url');
+const obsCopy = document.getElementById('obs-copy');
 
 /* ------------------------------------------------------------------ look */
 
@@ -77,7 +100,7 @@ function setStatus(slot, message, tone = 'error') {
   // tile is blank and the source is saying nothing about why.
   if (message && tone === 'error') console.error(`[${slot}] ${message}`);
 
-  const show = winner && options.setup;
+  const show = winner && isSetupView();
   statusEl.textContent = show ? winner.message : '';
   statusEl.hidden = !show;
   statusEl.dataset.tone = winner?.tone ?? 'error';
@@ -139,6 +162,7 @@ function render() {
     countEl.classList.add('bump');
   }
   lastShown = left;
+  renderPanelStatus(rawLeft);
 
   const owed = serverState.owed ?? 0;
   const done = (serverState.done ?? 0) + pendingReps;
@@ -210,6 +234,51 @@ if (repSound.enabled) {
     window.addEventListener(event, arm, { once: true, passive: true });
   }
   repSound.arm();
+}
+
+/**
+ * The numbers, inside the panel.
+ *
+ * They used to live on a separate page you had to go and find. But the window
+ * you actually open is this one — so what you would have gone looking for is
+ * here, a click away, next to the settings that change it.
+ */
+function renderPanelStatus(rawLeft) {
+  if (optionsEl.hidden || !serverState) return;
+
+  const owed = serverState.owed ?? 0;
+  const done = serverState.done ?? 0;
+  statTodo.textContent = format(Math.max(0, rawLeft));
+  statDone.textContent = format(done);
+  statOwed.textContent = format(owed);
+
+  const subs = serverState.subsEnabled
+    ? `+${format(serverState.fromSubs ?? 0)} from ${format(serverState.subsGained ?? 0)} subs`
+    : 'Subscribers off — nothing is adding push-ups';
+  statSubs.textContent = subs;
+
+  // "Is it working" is a question about this minute, not about the totals: a
+  // detector that stopped ten minutes ago shows the same numbers as one that is
+  // running perfectly.
+  const rate = Math.round(tracker?.sampleRate ?? 0);
+  const seenAgo = serverState.lastRepAt
+    ? Math.round((Date.now() - new Date(serverState.lastRepAt).getTime()) / 1000)
+    : null;
+
+  statDetector.textContent =
+    rate === 0
+      ? 'Not sampling — is this window behind another one?'
+      : rate < 25
+        ? `${rate}/s — too slow for fast reps; bring this window to the front`
+        : `${rate}/s — good`;
+  statDetector.dataset.tone = rate === 0 ? 'bad' : rate < 25 ? 'warn' : 'good';
+
+  statLastRep.textContent =
+    seenAgo === null
+      ? 'Nothing counted yet'
+      : seenAgo < 90
+        ? `Last rep ${seenAgo}s ago`
+        : `Last rep ${Math.round(seenAgo / 60)} min ago`;
 }
 
 /* --------------------------------------------------------------- options */
@@ -299,6 +368,8 @@ async function buildOptions() {
     savePrefs({ camera: chosen }, 'Saved');
   });
 
+  obsUrl.textContent = buildOverlayUrl(location.origin, { ...options, setup: false });
+
   optionsNote.textContent = options.camera
     ? `Opened with ?camera=${options.camera}, which overrides the saved camera.`
     : 'These are saved on the server, so the OBS source picks them up too.';
@@ -336,6 +407,7 @@ async function refreshCameraList() {
 // never will, so nothing here can reach the stream.
 let hideControls;
 function showControls() {
+  pointerSeen = true;
   document.body.dataset.pointer = '1';
   clearTimeout(hideControls);
   hideControls = setTimeout(() => {
@@ -348,6 +420,21 @@ optionsOpen.addEventListener('click', () => {
   optionsEl.hidden = false;
   optionsOpen.hidden = true;
   refreshCameraList();
+  render();
+});
+
+// The URL to paste into OBS, with the options you are actually using folded in
+// — which is the one thing the old status page was genuinely useful for.
+obsCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(obsUrl.textContent);
+    obsCopy.textContent = 'Copied';
+  } catch {
+    obsCopy.textContent = 'Select it and copy';
+  }
+  setTimeout(() => {
+    obsCopy.textContent = 'Copy';
+  }, 2200);
 });
 optionsClose.addEventListener('click', () => {
   optionsEl.hidden = true;
@@ -370,7 +457,7 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
   const framing = checkFraming(landmarks, { minVisibility: counter.options.minVisibility });
   showCoaching(framing, result);
 
-  if (options.setup) {
+  if (isSetupView()) {
     // The numbers you need to set the thresholds, where you can see them while
     // doing the movement. Off on stream.
     //

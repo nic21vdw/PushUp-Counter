@@ -66,23 +66,34 @@ npm start
 
 ## 4. Pick your camera and frame yourself
 
-Open **`/overlay.html`** in a browser. That is exactly the page you are about to
-put in OBS: your camera filling the window with the count over it, and nothing
-else. Add `?setup=1` for a live readout of your elbow angle under the picture,
-so you can see what the detector sees.
+Open **`/overlay.html`** in a browser. It is the same page OBS renders — your
+camera filling the window with the count over it — but opened in a window with a
+mouse it *is* the setup view: the detector's live readout appears under the
+picture, and a **gear** in the top right opens everything else.
 
-**Move the mouse and a gear appears** in the top right. That is Options: which
-camera to watch, which sound a rep makes, and how loud. Pick a camera and the
-picture switches straight away, with no reload.
+Nothing in that second group is drawn until a pointer moves, and OBS has no
+pointer, so none of it can reach the stream. That is the whole trick, and it is
+why the window you open needs no special URL. `?setup=1` forces the readout on
+anyway and `?setup=0` forces it off, for when you would rather be sure than
+clever.
 
-The controls are revealed by the pointer rather than always drawn, because this
-page is also the browser source. OBS has no mouse, so nothing in Options can
-ever appear on stream.
+Behind the gear:
+
+- **Now** — push-ups to do, done, owed; whether subscribers are adding any;
+  whether the detector is actually sampling fast enough; when the last rep
+  landed. The questions the old status page existed to answer.
+- **Settings** — camera, sound, volume. Pick a camera and the picture switches
+  straight away, with no reload.
+- **OBS browser source** — the URL to paste, with your current options folded
+  in, and a Copy button.
 
 Your choices are saved on the server, not in the browser, because this window
 (in Chrome) and the browser source (in OBS) are two different browsers with
 separate storage. So changing the camera or the sound here changes it in OBS too
 — you never have to re-paste a URL.
+
+`/status.html` still exists as a read-only page for a second monitor, but you no
+longer have to go there for anything.
 
 If you would rather pin a camera to a particular source, name it in the URL and
 that wins over the saved choice:
