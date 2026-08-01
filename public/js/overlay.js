@@ -256,7 +256,16 @@ async function savePrefs(patch, message) {
 }
 
 async function buildOptions() {
-  for (const name of SOUND_NAMES) {
+  let files = [];
+  try {
+    files = (await (await fetch('/api/sounds')).json()).sounds ?? [];
+  } catch {
+    // Only the synthesised ones, then. They need no files.
+  }
+
+  optSound.append(new Option('shuffle — a different one each rep', 'shuffle'));
+  for (const file of files) optSound.append(new Option(file.name, file.name));
+  for (const name of SOUND_NAMES.filter((n) => n !== 'shuffle')) {
     optSound.append(new Option(name, name));
   }
   optSound.append(new Option('none', 'off'));
@@ -420,7 +429,10 @@ function showCoaching(framing, result) {
   // doing; framing comes from the landmarks. Framing wins when both have
   // something to say — there is no point correcting a plank the camera cannot
   // measure in the first place.
-  const message = framing.ok ? formNote(result) : framing.message;
+  // Nothing else on screen explains a silent tracker, and a browser will hold
+  // the sound back for ever until the page has been clicked once.
+  const muted = repSound.needsGesture ? 'Click the window once to turn the sound on.' : null;
+  const message = framing.ok ? (muted ?? formNote(result)) : framing.message;
   const code = framing.ok ? (message ? `form:${message}` : null) : framing.code;
 
   const now = performance.now();

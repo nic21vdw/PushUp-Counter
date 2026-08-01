@@ -13,16 +13,21 @@ import assert from 'node:assert/strict';
 import {
   RepSound,
   trimBuffer,
+  autoWindow,
   DEFAULT_VOLUME,
-  DEFAULT_PRESET,
   FALLBACK_PRESET,
   PRESETS,
-  SAMPLES,
+  SAMPLE_WINDOWS,
+  SHUFFLE,
 } from '../public/js/rep-sound.js';
 
-// The default is a file, so a bare RepSound in these tests plays the fallback
-// notes until something hands it a decoded buffer.
+// The default is shuffle, so a bare RepSound in these tests plays the fallback
+// notes until files have been discovered and decoded.
 const NOTES = PRESETS[FALLBACK_PRESET].length;
+
+/** A RepSound with no files to find, so only the synthesised path can run. */
+const bare = (options = {}) =>
+  new RepSound({ listSounds: () => Promise.resolve([]), ...options });
 
 /** How many notes actually sounded, ignoring the silent keep-awake source. */
 const notesPlayed = (ctx) => ctx.started.filter((n) => n.hz !== 20).length;
@@ -103,7 +108,7 @@ function fakeContext({ state = 'running', decode = null } = {}) {
 
 test('a counted rep makes a noise', () => {
   const ctx = fakeContext();
-  const sound = new RepSound({ contextFactory: () => ctx });
+  const sound = bare({ contextFactory: () => ctx });
 
   sound.play();
 
@@ -113,7 +118,7 @@ test('a counted rep makes a noise', () => {
 test('the device is opened once and reused, not reopened per rep', () => {
   let built = 0;
   const ctx = fakeContext();
-  const sound = new RepSound({
+  const sound = bare({
     contextFactory: () => {
       built += 1;
       return ctx;
@@ -130,7 +135,7 @@ test('the device is opened once and reused, not reopened per rep', () => {
 
 test('a page that has not been clicked yet gets resumed rather than staying mute', () => {
   const ctx = fakeContext({ state: 'suspended' });
-  const sound = new RepSound({ contextFactory: () => ctx });
+  const sound = bare({ contextFactory: () => ctx });
 
   sound.play();
 
@@ -140,7 +145,7 @@ test('a page that has not been clicked yet gets resumed rather than staying mute
 
 test('sound off means no audio device is ever opened', () => {
   let built = 0;
-  const sound = new RepSound({
+  const sound = bare({
     preset: null,
     contextFactory: () => {
       built += 1;
@@ -155,7 +160,7 @@ test('sound off means no audio device is ever opened', () => {
 });
 
 test('a machine with no audio goes silent instead of breaking the count', () => {
-  const sound = new RepSound({ contextFactory: () => null });
+  const sound = bare({ contextFactory: () => null });
 
   assert.doesNotThrow(() => sound.play());
   assert.equal(sound.status, 'blocked');
@@ -163,7 +168,7 @@ test('a machine with no audio goes silent instead of breaking the count', () => 
 
 test('a constructor that throws is treated as no audio, and is not retried', () => {
   let attempts = 0;
-  const sound = new RepSound({
+  const sound = bare({
     contextFactory: () => {
       attempts += 1;
       throw new Error('no output device');
@@ -176,15 +181,15 @@ test('a constructor that throws is treated as no audio, and is not retried', () 
 });
 
 test('volume is clamped, and junk falls back rather than blasting', () => {
-  assert.equal(new RepSound({ volume: 0.2 }).volume, 0.2);
-  assert.equal(new RepSound({ volume: 9 }).volume, 1);
-  assert.equal(new RepSound({ volume: -1 }).volume, 0);
-  assert.equal(new RepSound({ volume: 'loud' }).volume, DEFAULT_VOLUME);
+  assert.equal(bare({ volume: 0.2 }).volume, 0.2);
+  assert.equal(bare({ volume: 9 }).volume, 1);
+  assert.equal(bare({ volume: -1 }).volume, 0);
+  assert.equal(bare({ volume: 'loud' }).volume, DEFAULT_VOLUME);
 });
 
 test('volume 0 is real silence, not the default volume', () => {
   const ctx = fakeContext();
-  const sound = new RepSound({ volume: 0, contextFactory: () => ctx });
+  const sound = bare({ volume: 0, contextFactory: () => ctx });
 
   sound.play();
 
@@ -194,7 +199,7 @@ test('volume 0 is real silence, not the default volume', () => {
 
 test('the status readout names why it is quiet', () => {
   const ctx = fakeContext({ state: 'suspended' });
-  const sound = new RepSound({ preset: 'coin', contextFactory: () => ctx });
+  const sound = bare({ preset: 'coin', contextFactory: () => ctx });
 
   assert.equal(sound.status, 'idle', 'nothing has opened the device yet');
   sound.arm();
@@ -211,19 +216,15 @@ test('every preset is short enough to be over before the next rep', () => {
   }
 });
 
-test('a preset can be picked, and a made-up one still makes a noise', () => {
-  assert.equal(new RepSound({ preset: 'boing' }).preset, 'boing');
-  assert.equal(
-    new RepSound({ preset: 'airhorn' }).preset,
-    DEFAULT_PRESET,
-    'an unknown name is a typo, and a typo should not cost you the feedback',
-  );
-  assert.equal(new RepSound({ preset: null }).preset, null, 'null is the way to ask for silence');
+test('a preset can be picked, and silence asked for', () => {
+  assert.equal(bare({ preset: 'boing' }).preset, 'boing');
+  assert.equal(bare({ preset: 'BOING' }).preset, 'boing', 'case is not a setting');
+  assert.equal(bare({ preset: null }).preset, null, 'null is the way to ask for silence');
 });
 
 test('the chosen preset is the one that plays', () => {
   const ctx = fakeContext();
-  const sound = new RepSound({ preset: 'powerup', contextFactory: () => ctx });
+  const sound = bare({ preset: 'powerup', contextFactory: () => ctx });
 
   sound.play();
 
@@ -232,7 +233,7 @@ test('the chosen preset is the one that plays', () => {
 
 test('leaving the page releases the audio device', () => {
   const ctx = fakeContext();
-  const sound = new RepSound({ contextFactory: () => ctx });
+  const sound = bare({ contextFactory: () => ctx });
 
   sound.play();
   sound.stop();
@@ -240,13 +241,19 @@ test('leaving the page releases the audio device', () => {
   assert.equal(ctx.closed, true);
 });
 
-/* ------------------------------------------------------------- the sample */
 
-/** A decoded file: `silentMs` of nothing, then a steady tone. */
-function fakeDecoded({ rate = 1000, silentMs = 945, toneMs = 2000 } = {}) {
-  const frames = Math.round(((silentMs + toneMs) / 1000) * rate);
+/* --------------------------------------------------------------- the bank */
+
+/** A decoded file: `silentMs` of nothing, a tone, then a quiet tail. */
+function fakeDecoded({ rate = 1000, silentMs = 500, toneMs = 400, tailMs = 1000 } = {}) {
+  const frames = Math.round(((silentMs + toneMs + tailMs) / 1000) * rate);
   const data = new Float32Array(frames);
-  for (let i = Math.round((silentMs / 1000) * rate); i < frames; i++) data[i] = 1;
+  const start = Math.round((silentMs / 1000) * rate);
+  const end = start + Math.round((toneMs / 1000) * rate);
+  for (let i = start; i < end; i++) data[i] = 1;
+  // A tail at a fortieth of the peak: below the end threshold, so it is meant
+  // to be trimmed off rather than played out.
+  for (let i = end; i < frames; i++) data[i] = 0.025;
   return {
     numberOfChannels: 1,
     length: frames,
@@ -266,117 +273,179 @@ const makeBuffer = (channels, frames, rate) => {
   };
 };
 
-test('the trim drops the silence at the front and keeps the window asked for', () => {
-  const out = trimBuffer(fakeDecoded(), { startMs: 945, durationMs: 1000, fadeMs: 180 }, makeBuffer);
-
-  assert.equal(out.length, 1000, 'one second at 1000 samples a second');
-  assert.equal(out.getChannelData(0)[0], 1, 'it starts on the sound, not the silence before it');
-});
-
-test('the trim fades the end rather than chopping it', () => {
-  const out = trimBuffer(fakeDecoded(), { startMs: 945, durationMs: 1000, fadeMs: 180 }, makeBuffer);
-  const d = out.getChannelData(0);
-
-  assert.equal(d[d.length - 1], 0, 'it ends at silence');
-  assert.ok(d[d.length - 90] < 0.6 && d[d.length - 90] > 0.4, 'halfway through the fade, halfway down');
-  assert.equal(d[d.length - 200], 1, 'and full weight before the fade begins');
-});
-
-test('a window running past the end of the file is shortened, not padded', () => {
-  const out = trimBuffer(
-    fakeDecoded({ toneMs: 200 }),
-    { startMs: 945, durationMs: 1000, fadeMs: 50 },
-    makeBuffer,
-  );
-
-  assert.equal(out.length, 200, 'trailing silence is the thing being removed');
-});
-
-test('reps before the file has loaded still make a noise', () => {
-  const ctx = fakeContext({ decode: () => new Promise(() => {}) });
+/** A RepSound wired to a bank of fake files. */
+function withBank(names, options = {}) {
+  const ctx = fakeContext({ decode: () => Promise.resolve(fakeDecoded()) });
   const sound = new RepSound({
-    preset: 'fahh',
     contextFactory: () => ctx,
+    listSounds: () => Promise.resolve(names.map((name) => ({ name, src: `/sounds/${name}.mp3` }))),
     fetchAudio: () => Promise.resolve(new ArrayBuffer(8)),
+    ...options,
   });
+  return { ctx, sound };
+}
 
-  sound.play();
+test('the silence at the front of a meme sound is found, not guessed', () => {
+  const window = autoWindow(fakeDecoded({ silentMs: 500, toneMs: 400 }));
 
-  assert.equal(sound.status, 'loading', 'and the readout says why');
-  assert.equal(notesPlayed(ctx), PRESETS[FALLBACK_PRESET].length, 'a silent rep reads as a missed rep');
-  assert.equal(ctx.samples.length, 0);
+  assert.ok(window.startMs >= 470 && window.startMs <= 500, `started at ${window.startMs}ms`);
+  assert.ok(window.durationMs <= 500, `kept ${window.durationMs}ms of a 400ms sound`);
+  assert.ok(window.fadeMs > 0, 'and the end is faded, not cut');
 });
 
-test('once loaded, the file is what plays - and it is only decoded once', async () => {
-  let decodes = 0;
-  let fetches = 0;
-  const ctx = fakeContext({
-    decode: () => {
-      decodes += 1;
-      return Promise.resolve(fakeDecoded());
-    },
-  });
-  const sound = new RepSound({
-    preset: 'fahh',
-    contextFactory: () => ctx,
+test('nothing from the bank can outlast the gap between two fast reps', () => {
+  const window = autoWindow(fakeDecoded({ silentMs: 0, toneMs: 5000, tailMs: 0 }));
+
+  assert.ok(window.durationMs <= 1200, `a 5s file was kept at ${window.durationMs}ms`);
+});
+
+test('a silent file is left alone rather than given an invented window', () => {
+  const silent = {
+    numberOfChannels: 1,
+    length: 1000,
+    sampleRate: 1000,
+    getChannelData: () => new Float32Array(1000),
+  };
+
+  const window = autoWindow(silent);
+  assert.equal(window.startMs, 0);
+  assert.equal(window.durationMs, 1000, 'a file that makes no noise is a thing to notice');
+});
+
+test('the measured window wins over the automatic one where there is one', () => {
+  assert.ok(SAMPLE_WINDOWS.fahh, 'fahh was measured by hand');
+  assert.equal(SAMPLE_WINDOWS.fahh.startMs, 1045);
+});
+
+test('shuffle loads every file it might play', async () => {
+  const { sound } = withBank(['fahh', 'vine-boom', 'roblox-oof']);
+
+  sound.arm();
+  await sound.loading;
+
+  assert.deepEqual(sound.loaded, ['fahh', 'vine-boom', 'roblox-oof']);
+});
+
+test('naming one sound loads only that one', async () => {
+  let fetched = 0;
+  const { sound } = withBank(['fahh', 'vine-boom', 'roblox-oof'], {
+    preset: 'vine-boom',
     fetchAudio: () => {
-      fetches += 1;
+      fetched += 1;
       return Promise.resolve(new ArrayBuffer(8));
     },
   });
 
   sound.arm();
   await sound.loading;
-  sound.play();
-  sound.play();
 
-  assert.equal(fetches, 1, 'fetched once for the life of the page');
-  assert.equal(decodes, 1, 'and decoded once - never on the rep');
-  assert.equal(ctx.samples.length, 2, 'both reps played the file');
-  assert.equal(notesPlayed(ctx), 0, 'and neither fell back to the beeps');
+  assert.equal(fetched, 1, 'no point decoding a bank you will not draw from');
+  assert.deepEqual(sound.loaded, ['vine-boom']);
 });
 
-test('a file that will not load falls back for good rather than going silent', async () => {
-  const ctx = fakeContext({ decode: () => Promise.reject(new Error('bad data')) });
-  const sound = new RepSound({
-    preset: 'fahh',
-    contextFactory: () => ctx,
-    fetchAudio: () => Promise.reject(new Error('404')),
+test('shuffle plays a file, and never the same one twice running', async () => {
+  // A random that always asks for the first candidate: without the guard it
+  // would return the same sound every rep.
+  const { ctx, sound } = withBank(['fahh', 'vine-boom', 'roblox-oof'], { random: () => 0 });
+
+  sound.arm();
+  await sound.loading;
+
+  const played = [];
+  for (let i = 0; i < 6; i++) {
+    sound.play();
+    played.push(sound.lastPlayed);
+  }
+
+  assert.equal(ctx.samples.length, 6, 'six reps, six sounds');
+  for (let i = 1; i < played.length; i++) {
+    assert.notEqual(played[i], played[i - 1], `rep ${i} repeated ${played[i]}`);
+  }
+});
+
+test('a bank of one plays that one rather than nothing', async () => {
+  const { ctx, sound } = withBank(['fahh']);
+
+  sound.arm();
+  await sound.loading;
+  sound.play();
+  sound.play();
+
+  assert.equal(ctx.samples.length, 2);
+  assert.equal(sound.lastPlayed, 'fahh');
+});
+
+test('an empty sounds folder falls back to the beeps instead of going quiet', async () => {
+  const { ctx, sound } = withBank([]);
+
+  sound.arm();
+  await sound.loading;
+  sound.play();
+
+  assert.equal(ctx.samples.length, 0);
+  assert.equal(notesPlayed(ctx), PRESETS[FALLBACK_PRESET].length, 'a silent rep reads as a missed rep');
+});
+
+test('one unreadable file does not silence the rest of the bank', async () => {
+  let call = 0;
+  const { sound } = withBank(['broken', 'fine'], {
+    fetchAudio: () => {
+      call += 1;
+      return call === 1 ? Promise.reject(new Error('404')) : Promise.resolve(new ArrayBuffer(8));
+    },
   });
 
   sound.arm();
   await sound.loading;
 
-  assert.doesNotThrow(() => sound.play());
+  assert.deepEqual(sound.loaded, ['fine']);
+});
+
+test('reps before the bank has loaded still make a noise', () => {
+  const { ctx, sound } = withBank(['fahh'], { decode: () => new Promise(() => {}) });
+
+  sound.play();
+
+  assert.equal(sound.status, 'loading', 'and the readout says why');
   assert.equal(notesPlayed(ctx), PRESETS[FALLBACK_PRESET].length);
 });
 
-test('the audio device is held open so it cannot doze off between reps', () => {
-  const ctx = fakeContext();
-  const sound = new RepSound({ preset: 'coin', contextFactory: () => ctx });
+test('switching sound keeps what is already decoded', async () => {
+  let fetched = 0;
+  const { sound } = withBank(['fahh', 'vine-boom'], {
+    fetchAudio: () => {
+      fetched += 1;
+      return Promise.resolve(new ArrayBuffer(8));
+    },
+  });
 
   sound.arm();
-  sound.arm();
-  sound.play();
+  await sound.loading;
+  const first = fetched;
 
-  const keepAlive = ctx.started.filter((n) => n.hz === 20);
-  assert.equal(keepAlive.length, 1, 'one silent source, held for the life of the page');
+  sound.setPreset('vine-boom');
+  await sound.loading;
+
+  assert.equal(fetched, first, 'switching back and forth must not re-fetch the bank');
+  assert.equal(sound.preset, 'vine-boom');
 });
 
-test('the sample window is the one measured off the real file', () => {
-  const spec = SAMPLES.fahh;
-  assert.ok(spec.startMs >= 900, 'the recording is silent for its first second');
-  assert.ok(spec.durationMs <= 1000, 'a quick one, as asked');
-  assert.ok(spec.fadeMs > 0, 'the tail is faded, not cut');
+test('a page that has not been clicked says so, because that is the usual silence', () => {
+  const ctx = fakeContext({ state: 'suspended' });
+  const sound = bare({ preset: 'coin', contextFactory: () => ctx });
+
+  assert.equal(sound.needsGesture, false, 'nothing has opened the device yet');
+  sound.arm();
+  // The fake resumes on request; a real browser refuses until a real click.
+  ctx.state = 'suspended';
+  assert.equal(sound.needsGesture, true);
+
+  const silent = bare({ preset: null });
+  assert.equal(silent.needsGesture, false, 'silence is not something to nag about');
 });
 
 test('a rep landing mid-sound retriggers it instead of stacking', async () => {
-  const ctx = fakeContext({ decode: () => Promise.resolve(fakeDecoded()) });
-  const sound = new RepSound({
-    preset: 'fahh',
-    contextFactory: () => ctx,
-    fetchAudio: () => Promise.resolve(new ArrayBuffer(8)),
-  });
+  const { ctx, sound } = withBank(['fahh', 'vine-boom']);
 
   sound.arm();
   await sound.loading;
@@ -384,6 +453,28 @@ test('a rep landing mid-sound retriggers it instead of stacking', async () => {
   sound.play();
 
   assert.equal(ctx.samples.length, 2, 'both reps were answered');
-  assert.ok(ctx.samples[0].stopped !== null, 'and the first was ducked out rather than left to overlap');
+  assert.ok(ctx.samples[0].stopped !== null, 'and the first was ducked rather than left to overlap');
   assert.equal(ctx.samples[1].stopped, null, 'while the newest keeps playing');
+});
+
+test('leaving the page releases the audio device', () => {
+  const ctx = fakeContext();
+  const sound = bare({ contextFactory: () => ctx });
+
+  sound.play();
+  sound.stop();
+
+  assert.equal(ctx.closed, true);
+});
+
+test('a sound named that does not exist shuffles rather than beeping forever', async () => {
+  const { ctx, sound } = withBank(['fahh', 'vine-boom'], { preset: 'fah' });
+
+  sound.arm();
+  await sound.loading;
+  sound.play();
+
+  assert.deepEqual(sound.loaded, ['fahh', 'vine-boom'], 'the bank is loaded despite the typo');
+  assert.equal(ctx.samples.length, 1, 'and a real sound played');
+  assert.equal(notesPlayed(ctx), 0);
 });

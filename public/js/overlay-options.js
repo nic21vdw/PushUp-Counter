@@ -146,7 +146,14 @@ function soundPreset(raw, fallback) {
   const value = raw.trim().toLowerCase();
   if (value === '') return fallback;
   if (FALSY.has(value)) return null;
+  // `sound=1` is the old on-switch and means "the default one", not a file
+  // called 1 — checked before the file-name shape below, which would match it.
+  if (TRUTHY.has(value)) return fallback === null ? DEFAULT_PRESET : fallback;
   if (SOUND_NAMES.includes(value)) return value;
+  // Files in `public/sounds/` are discovered at run time, so their names cannot
+  // be checked here — anything shaped like one is passed through, and the page
+  // falls back to a beep if no such sound turns up.
+  if (/^[a-z0-9][a-z0-9_-]{0,31}$/.test(value)) return value;
   return fallback === null ? DEFAULT_PRESET : fallback;
 }
 

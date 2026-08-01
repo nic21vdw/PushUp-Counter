@@ -214,49 +214,49 @@ hips, and going too fast to control. `coach=0` turns it off.
 
 ### The rep sound
 
-Every counted rep plays a sound. Halfway through a set your head is at the floor
-and the number is off to the side, so it is the confirmation you can actually
-take in — no sound means the rep did not count, without looking up to find that
-out.
+Every counted rep plays a sound, and by default a **different one each time** —
+the same noise a hundred times in a set stops being funny somewhere around six.
 
-| `sound=`  | What it is                                                     |
-| --------- | -------------------------------------------------------------- |
-| `fahh`    | The meme. The default                                          |
-| `coin`    | Two-note arcade pickup                                          |
-| `powerup` | Four notes up, bigger                                           |
-| `pop`     | A bubble; the quietest                                          |
-| `boing`   | Cartoon spring                                                  |
-| `chirp`   | A plain rising beep                                             |
-| `0`       | Silence                                                         |
+The bank is just the files in **`public/sounds/`**. Drop an mp3 in there and it
+joins the rotation; no code to edit, nothing to restart but the page. What ships
+is `fahh`, `vine-boom`, `roblox-oof` and `among-us`.
 
-`fahh` is a file, `public/sounds/fahh.mp3`. The recording is four and a half
-seconds long, silent for its first, and reverb tail for its last one and a half;
-the page trims it to the one second that is actually the sound, measured off the
-waveform rather than guessed, and fades the end so the tail does not ring on. To
-use a different recording, drop it in `public/sounds/` and add it to `SAMPLES` in
-`public/js/rep-sound.js` with the window you want.
+| `sound=` | What you get |
+| --- | --- |
+| `shuffle` | A different file each rep, never the same one twice running. The default |
+| *a file name* | Only that one, e.g. `sound=vine-boom` |
+| `coin` `powerup` `pop` `boing` `sadtrombone` `chirp` | Synthesised, no file needed |
+| `0` | Silence |
 
-Everything else is synthesised, so it needs no file at all — and one of them is
-what plays if the file cannot be loaded. A rep is never left silent.
+**Files are trimmed on the way in.** Meme sound effects are recorded with a
+second of dead air at the front and a reverb tail hanging off the back, and
+neither belongs between push-ups. The page measures each file's loudness, opens
+the window just before the sound actually lands, caps it at a second so it
+cannot still be playing when the next rep arrives, and fades the end. Every
+sound in the bank reaches half volume within 25 ms of the rep. `fahh` has a
+hand-measured window; everything else is done by the same rules in code.
 
-**On lag.** The file is fetched, decoded and trimmed once when the page opens,
-never on the rep. The page also holds the audio device open with a silent source,
-because Windows powers an idle output down between reps and waking it costs
-50-200ms — which you hear as the sound arriving after the push-up. `?setup=1`
-reports the remaining hardware latency in ms; under about 30 is as good as it
-gets.
+If a file will not load, that one drops out and the rest carry on. If none load,
+you get a synthesised beep. A rep is never left silent — a missing noise reads
+as a missed rep.
+
+**On lag.** Files are fetched, decoded and trimmed once when the page opens,
+never on the rep. The page also holds the audio device open with a silent
+source, because Windows powers an idle output down between reps and waking it
+costs 50-200 ms. `?setup=1` reports the remaining hardware latency.
+
+**In a normal browser tab there is no sound until you click the page once.**
+That is the autoplay rule, not a fault, and it is silent about itself — so the
+tracker now says so on screen when it applies. OBS browser sources are exempt
+and play from the first rep.
 
 Only the counting source makes noise: a `count=0` duplicate is watching the same
 push-up, and two of them would answer each one twice.
 
 In OBS, tick **Control audio via OBS** in the browser source's properties if you
 want it on the stream and in your monitor mix; leave it off and it comes out of
-the machine's default output, which you hear in the room but your viewers do not.
-Either way, `volume=0.2` if it is louder than you want next to a mic.
-
-In a normal browser tab it stays silent until you click the page once — autoplay
-rules, not a fault. `?setup=1` shows the sound, its state and its latency, as
-`fahh/running 12ms`, `fahh/loading`, `fahh/suspended` (click the page), or `off`.
+the machine's default output, which you hear in the room but your viewers do
+not. Either way, `volume=0.2` if it is louder than you want next to a mic.
 
 ## 6. Check it is working
 

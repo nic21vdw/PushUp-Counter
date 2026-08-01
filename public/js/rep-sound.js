@@ -4,16 +4,21 @@
  * Mid-set your head is down and the number is off to the side, so the only
  * honest confirmation the tracker can give you is one you can hear.
  *
- * Two kinds of sound live here. A **sample** is an audio file trimmed to the
- * part worth hearing — the default `fahh` is a 4.5 second recording that is
- * silent for its first second and reverb for its last one and a half, so it is
- * cut to the second in the middle. A **preset** is synthesised from oscillators,
- * needs no file, and is what plays if a sample cannot be loaded.
+ * Two kinds of sound live here. A **sample** is an audio file from
+ * `public/sounds/`, trimmed to the part worth hearing. A **preset** is
+ * synthesised from oscillators, needs no file, and is what plays if a sample
+ * cannot be loaded. `shuffle` draws a different sample each rep, because the
+ * same noise a hundred times in a set stops being funny somewhere around six.
  *
- * Everything is prepared once, up front: the file is fetched, decoded and
- * trimmed at start-up, and a rep only ever triggers an already-decoded buffer.
- * Nothing is fetched, decoded or allocated on the rep itself, because that is
- * the moment the sound has to be instant.
+ * Files are discovered at run time rather than listed here, so dropping an mp3
+ * into `public/sounds/` is all it takes to add one. Anything without a measured
+ * window is trimmed by ear, in code: leading silence cut, tail faded, capped so
+ * it cannot still be playing when the next rep lands.
+ *
+ * Everything is prepared once, up front: fetched, decoded and trimmed at
+ * start-up, and a rep only ever triggers a buffer already in memory. Nothing is
+ * fetched, decoded or allocated on the rep itself, because that is the moment
+ * the sound has to be instant.
  *
  * Kept free of the DOM and of a real AudioContext at construction time so the
  * rules below can be tested, and so a browser with audio blocked degrades to
@@ -24,17 +29,16 @@
 export const DEFAULT_VOLUME = 0.45;
 
 /**
- * Sounds that come from a file, and the window of each one worth playing.
+ * Windows measured off a decoded waveform, for files worth being exact about.
+ * Anything not named here is trimmed automatically when it loads.
  *
- * `startMs` and `durationMs` were measured off the decoded waveform, not
- * guessed. `fahh.mp3` is silent until 960ms, creeps up to a tenth of its volume
- * over the next 90ms, and only actually lands at 1050ms — so the window opens
- * at 1045, five milliseconds ahead of the attack. Starting any earlier buys
- * nothing but the lag it was cut to remove. `fadeMs` closes the window rather
- * than cutting it, which is also what takes the reverb tail off the end.
+ * `fahh.mp3` is silent until 960ms, creeps up to a tenth of its volume over the
+ * next 90ms and only lands at 1050ms, so its window opens at 1045 — five
+ * milliseconds ahead of the attack. Starting earlier buys nothing but the lag
+ * the trim exists to remove.
  */
-export const SAMPLES = {
-  fahh: { src: '/sounds/fahh.mp3', startMs: 1045, durationMs: 1000, fadeMs: 180, gain: 1 },
+export const SAMPLE_WINDOWS = {
+  fahh: { startMs: 1045, durationMs: 1000, fadeMs: 180 },
 };
 
 /**
@@ -62,32 +66,103 @@ export const PRESETS = {
     { at: 0, dur: 0.07, hz: 420, to: 780, type: 'triangle', gain: 0.8 },
     { at: 0.065, dur: 0.14, hz: 780, to: 180, type: 'triangle', gain: 0.8 },
   ],
+  /** The two-note fall of a joke landing badly. */
+  sadtrombone: [
+    { at: 0, dur: 0.16, hz: 233, to: 208, type: 'sawtooth', gain: 0.5 },
+    { at: 0.15, dur: 0.06, hz: 196, type: 'sawtooth', gain: 0.5 },
+  ],
   /** The plain rising beep. */
   chirp: [{ at: 0, dur: 0.11, hz: 880, to: 1320, type: 'triangle', gain: 1 }],
 };
 
+/** Draw a different sound each rep. */
+export const SHUFFLE = 'shuffle';
+
 /** Played when the sound is on but nothing specific was asked for. */
-export const DEFAULT_PRESET = 'fahh';
+export const DEFAULT_PRESET = SHUFFLE;
 
 /** Played while a sample is still loading, and if it never loads at all. */
 export const FALLBACK_PRESET = 'coin';
 
-/** Every name `?sound=` accepts. */
-export const SOUND_NAMES = [...Object.keys(SAMPLES), ...Object.keys(PRESETS)];
+/** Names `?sound=` accepts without knowing which files exist. */
+export const SOUND_NAMES = [SHUFFLE, ...Object.keys(PRESETS)];
 
 // Short enough that the note starts at full weight rather than fading in. Any
 // softer and the sound reads as late even when it is not.
 const ATTACK_S = 0.002;
 const FLOOR = 0.0001;
 
+/** Nothing may run longer than this: a rep can land 300ms after the last one. */
+const MAX_SAMPLE_MS = 1000;
+
+export const DEFAULT_AUTO_TRIM = {
+  /** Window size the loudness is measured over. */
+  frameMs: 10,
+  /**
+   * Fraction of the peak that counts as the sound having started. Set high on
+   * purpose: several of these recordings open with a soft build, and a rep
+   * answered by a swell reads as late even when the file began on time. The
+   * sound wanted here is the hit, not the run-up to it.
+   */
+  onsetLevel: 0.3,
+  /** And as it having finished. Lower, so a decay is not cut mid-fall. */
+  endLevel: 0.05,
+  /** Kept ahead of the attack so the very front of it is not clipped. */
+  preRollMs: 15,
+  maxMs: MAX_SAMPLE_MS,
+  fadeMs: 120,
+};
+
 /**
- * Cut a decoded file down to the window worth hearing, fading the end so it
- * stops rather than being chopped off.
+ * Find the part of a decoded file worth playing: where it starts, where it
+ * stops, and how long a fade takes the tail off.
  *
- * Pure apart from the buffer it is handed to write into, so the arithmetic can
- * be tested without an audio device.
+ * Meme sound effects are recorded with a second of silence at the front and a
+ * reverb tail hanging off the back, and neither is something you want between
+ * push-ups. This is the measurement done by hand for `fahh`, done in code.
  *
- * @param {AudioBuffer} source decoded file
+ * @param {AudioBuffer} buffer
+ * @param {Partial<typeof DEFAULT_AUTO_TRIM>} [overrides]
+ * @returns {{startMs: number, durationMs: number, fadeMs: number}}
+ */
+export function autoWindow(buffer, overrides = {}) {
+  const o = { ...DEFAULT_AUTO_TRIM, ...overrides };
+  const rate = buffer.sampleRate;
+  const data = buffer.getChannelData(0);
+  const frame = Math.max(1, Math.floor((o.frameMs / 1000) * rate));
+
+  const levels = [];
+  for (let i = 0; i < data.length; i += frame) {
+    let sum = 0;
+    const end = Math.min(i + frame, data.length);
+    for (let j = i; j < end; j++) sum += data[j] * data[j];
+    levels.push(Math.sqrt(sum / (end - i)));
+  }
+
+  const peak = Math.max(...levels, 0);
+  if (peak <= 0) {
+    // Silence all the way through. Play it as-is rather than inventing a window
+    // — a file that makes no noise is a problem to notice, not to paper over.
+    return { startMs: 0, durationMs: (data.length / rate) * 1000, fadeMs: 0 };
+  }
+
+  let first = levels.findIndex((v) => v >= peak * o.onsetLevel);
+  if (first < 0) first = 0;
+  let last = levels.length - 1;
+  while (last > first && levels[last] < peak * o.endLevel) last--;
+
+  const startMs = Math.max(0, first * o.frameMs - o.preRollMs);
+  const endMs = (last + 1) * o.frameMs;
+  const durationMs = Math.min(o.maxMs, Math.max(o.frameMs, endMs - startMs));
+
+  return { startMs, durationMs, fadeMs: Math.min(o.fadeMs, durationMs / 3) };
+}
+
+/**
+ * Cut a decoded file down to a window, fading the end so it stops rather than
+ * being chopped off.
+ *
+ * @param {AudioBuffer} source
  * @param {{startMs: number, durationMs: number, fadeMs: number}} window
  * @param {(channels: number, frames: number, rate: number) => AudioBuffer} makeBuffer
  * @returns {AudioBuffer}
@@ -96,7 +171,7 @@ export function trimBuffer(source, { startMs, durationMs, fadeMs }, makeBuffer) 
   const rate = source.sampleRate;
   const start = Math.max(0, Math.floor((startMs / 1000) * rate));
   const wanted = Math.floor((durationMs / 1000) * rate);
-  // A window that runs off the end of the file is shortened, not padded with
+  // A window running off the end of the file is shortened, not padded with
   // silence — trailing silence is the thing being removed.
   const frames = Math.max(1, Math.min(wanted, source.length - start));
   const fade = Math.min(frames, Math.floor((fadeMs / 1000) * rate));
@@ -108,7 +183,7 @@ export function trimBuffer(source, { startMs, durationMs, fadeMs }, makeBuffer) 
     const to = out.getChannelData(channel);
     for (let i = 0; i < frames; i++) {
       const remaining = frames - i;
-      // `remaining - 1` so the very last sample lands on silence rather than a
+      // `remaining - 1` so the last sample lands on silence rather than a
       // fraction of the way down: a fade that stops short still clicks.
       const level = fade > 0 && remaining <= fade ? (remaining - 1) / fade : 1;
       to[i] = from[start + i] * level;
@@ -122,24 +197,35 @@ export class RepSound {
   /**
    * @param {{preset?: string|null, volume?: number,
    *          contextFactory?: () => AudioContext|null,
-   *          fetchAudio?: (src: string) => Promise<ArrayBuffer>}} [options]
+   *          fetchAudio?: (src: string) => Promise<ArrayBuffer>,
+   *          listSounds?: () => Promise<Array<{name: string, src: string}>>,
+   *          random?: () => number}} [options]
    */
   constructor({
     preset = DEFAULT_PRESET,
     volume = DEFAULT_VOLUME,
     contextFactory = defaultContext,
     fetchAudio = defaultFetch,
+    listSounds = defaultCatalog,
+    random = Math.random,
   } = {}) {
-    this.preset = resolve(preset);
+    this.preset = preset === null || preset === undefined ? null : String(preset).toLowerCase();
     this.volume = clamp(volume);
     this.contextFactory = contextFactory;
     this.fetchAudio = fetchAudio;
+    this.listSounds = listSounds;
+    this.random = random;
+
     this.ctx = null;
     this.failed = false;
     this.keepAlive = null;
-    this.buffer = null;
-    this.loading = null;
     this.playing = null;
+    /** name -> decoded, trimmed buffer. */
+    this.buffers = new Map();
+    /** Files the server says exist, once asked. */
+    this.catalog = [];
+    this.loading = null;
+    this.lastPlayed = null;
   }
 
   /** Whether this page should be making any noise at all. */
@@ -147,16 +233,16 @@ export class RepSound {
     return this.preset !== null;
   }
 
-  /** Whether the chosen sound comes from a file. */
-  get isSample() {
-    return this.preset !== null && this.preset in SAMPLES;
+  /** Every sample that finished loading, in catalogue order. */
+  get loaded() {
+    return this.catalog.map((s) => s.name).filter((name) => this.buffers.has(name));
   }
 
   /**
-   * Open the audio device, and start loading the sound if it comes from a file.
-   * Safe to call more than once, and safe to call from a click handler — which
-   * is where it wants to be called from, because a page that has never been
-   * touched is not allowed to make noise.
+   * Open the audio device and start loading whatever the choice needs. Safe to
+   * call repeatedly, and safe to call from a click handler — which is where it
+   * wants to be called from, because a page that has never been touched is not
+   * allowed to make noise.
    *
    * @returns {boolean} whether audio is usable
    */
@@ -184,9 +270,7 @@ export class RepSound {
    *
    * Reps are seconds apart, and Windows powers an idle audio stream down in
    * less than that. Waking it costs 50-200ms, which lands on the front of the
-   * sound and reads as lag between the rep and the noise. A node that outputs
-   * nothing, forever, keeps the stream running between reps — one oscillator
-   * for the life of the page.
+   * sound and reads as lag between the rep and the noise.
    */
   #keepAwake() {
     if (this.keepAlive || !this.ctx.createGain || !this.ctx.createOscillator) return;
@@ -201,65 +285,112 @@ export class RepSound {
       osc.start();
       this.keepAlive = osc;
     } catch {
-      // A context that will not hold a silent source will still play sounds; it
+      // A context that will not hold a silent source still plays sounds; it
       // just wakes up slower. Not worth failing over.
     }
   }
 
   /**
-   * Fetch, decode and trim the sample, once. Reps that land before it is ready
-   * fall back to a synthesised sound rather than going unacknowledged — a
-   * missing noise reads as a missed rep, which is the one thing this must not
-   * do.
+   * Ask what files exist, then fetch and trim the ones this choice can play.
+   * Reps landing before it finishes fall back to a synthesised sound rather
+   * than going unacknowledged — a missing noise reads as a missed rep, which is
+   * the one thing this must not do.
    */
   #load() {
-    if (!this.isSample || this.buffer || this.loading) return;
-    const spec = SAMPLES[this.preset];
+    if (this.loading || !this.enabled) return;
     const ctx = this.ctx;
     if (!ctx.decodeAudioData || !ctx.createBuffer) return;
+    // A synth preset needs no files at all.
+    if (this.preset !== SHUFFLE && this.preset in PRESETS) return;
 
     this.loading = (async () => {
       try {
-        const bytes = await this.fetchAudio(spec.src);
-        const decoded = await ctx.decodeAudioData(bytes);
-        this.buffer = trimBuffer(decoded, spec, (channels, frames, rate) =>
-          ctx.createBuffer(channels, frames, rate),
-        );
+        this.catalog = (await this.listSounds()) ?? [];
       } catch {
-        // Left null on purpose: `play` already knows what to do without it.
-        this.buffer = null;
+        this.catalog = [];
       }
+
+      // A name that matches no file is a typo — in a URL, or in the folder
+      // since it was typed. The whole bank is loaded in that case, so the
+      // mistake costs you the sound you asked for and not the feedback.
+      const named = this.catalog.filter((sound) => sound.name === this.preset);
+      const wanted = (this.preset === SHUFFLE || named.length === 0 ? this.catalog : named)
+        // Already decoded is already done. Switching sounds in the options
+        // panel must not send the whole bank over the wire again.
+        .filter((sound) => !this.buffers.has(sound.name));
+
+      // In parallel: one slow file must not hold up the rest of the bank.
+      await Promise.all(
+        wanted.map(async (sound) => {
+          try {
+            const bytes = await this.fetchAudio(sound.src);
+            const decoded = await ctx.decodeAudioData(bytes);
+            const window = SAMPLE_WINDOWS[sound.name] ?? autoWindow(decoded);
+            this.buffers.set(
+              sound.name,
+              trimBuffer(decoded, window, (channels, frames, rate) =>
+                ctx.createBuffer(channels, frames, rate),
+              ),
+            );
+          } catch {
+            // Left out of the bank on purpose: `play` already knows what to do
+            // without it, and one bad file must not silence the rest.
+          }
+        }),
+      );
     })();
   }
 
   /**
-   * Play the sound once. Called from the rep detector, so it never throws and
-   * never blocks: a broken speaker must not be able to stop a push-up being
-   * counted.
+   * Play once. Called from the rep detector, so it never throws and never
+   * blocks: a broken speaker must not stop a push-up being counted.
    */
   play() {
     if (!this.arm()) return;
-    if (this.buffer) this.#playSample();
-    else this.#playNotes(PRESETS[this.isSample ? FALLBACK_PRESET : this.preset]);
+
+    const name = this.#choose();
+    if (name && this.buffers.has(name)) {
+      this.lastPlayed = name;
+      this.#playSample(this.buffers.get(name));
+      return;
+    }
+    this.#playNotes(PRESETS[name in PRESETS ? name : FALLBACK_PRESET]);
   }
 
-  #playSample() {
+  /**
+   * Which sound this rep gets. Shuffle never repeats itself twice running —
+   * randomness that lands on the same noise three times reads as broken rather
+   * than random.
+   */
+  #choose() {
+    if (this.preset !== SHUFFLE && this.buffers.has(this.preset)) return this.preset;
+    // A synthesised preset was asked for by name and needs no bank.
+    if (this.preset !== SHUFFLE && this.preset in PRESETS) return this.preset;
+
+    const bank = this.loaded;
+    if (bank.length === 0) return FALLBACK_PRESET;
+    if (bank.length === 1) return bank[0];
+
+    const others = bank.filter((name) => name !== this.lastPlayed);
+    return others[Math.floor(this.random() * others.length) % others.length];
+  }
+
+  #playSample(buffer) {
     const ctx = this.ctx;
     const at = ctx.currentTime;
-    const spec = SAMPLES[this.preset];
 
-    // A rep every 300ms against a one-second sound would stack four of them on
-    // top of each other and turn a set into mush. The last one gets ducked out
-    // over a few milliseconds instead — fast enough to read as a retrigger,
-    // slow enough not to click.
+    // A rep every 300ms against a one-second sound would stack four on top of
+    // each other and turn a set into mush. The last one is ducked out over a
+    // few milliseconds instead — fast enough to read as a retrigger, slow
+    // enough not to click.
     this.#duck(at);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(Math.max(FLOOR, this.volume * spec.gain), at);
+    gain.gain.setValueAtTime(Math.max(FLOOR, this.volume), at);
     gain.connect(ctx.destination);
 
     const source = ctx.createBufferSource();
-    source.buffer = this.buffer;
+    source.buffer = buffer;
     source.connect(gain);
     source.start(at);
 
@@ -308,11 +439,32 @@ export class RepSound {
   }
 
   /**
+   * Change which sound plays, without dropping the audio device — the options
+   * panel changes it live, and reopening the device would cost the wake-up this
+   * class exists to avoid.
+   *
+   * @param {string|null} preset a name, `shuffle`, or null for silence
+   */
+  setPreset(preset) {
+    const next = preset === null || preset === undefined ? null : String(preset).toLowerCase();
+    if (next === this.preset) return;
+
+    this.preset = next;
+    // Buffers already decoded stay decoded: switching back is then instant, and
+    // the bank is a few hundred kilobytes at worst.
+    this.loading = null;
+    if (this.ctx && this.enabled) this.#load();
+  }
+
+  /** Live volume change, for the options panel's slider. */
+  setVolume(volume) {
+    this.volume = clamp(volume);
+  }
+
+  /**
    * How far behind the rep the sound lands, in ms — the audio stack's own delay
    * between a scheduled sample and the speaker. Under about 30 reads as
    * instant; a figure in the hundreds is the device, not this code.
-   *
-   * @returns {number|null} null when nothing has opened the device yet
    */
   get latencyMs() {
     if (!this.ctx) return null;
@@ -331,31 +483,14 @@ export class RepSound {
     if (!this.enabled) return 'off';
     if (this.failed) return 'blocked';
     if (!this.ctx) return 'idle';
-    if (this.isSample && !this.buffer) return 'loading';
+    const needsFiles = this.preset === SHUFFLE || !(this.preset in PRESETS);
+    if (needsFiles && this.buffers.size === 0) return 'loading';
     return this.ctx.state ?? 'idle';
   }
 
-  /**
-   * Change which sound plays, without dropping the audio device — the options
-   * panel changes it live, and reopening the device would cost the wake-up this
-   * class exists to avoid. A new file starts loading immediately; reps landing
-   * before it arrives fall back, exactly as they do at start-up.
-   *
-   * @param {string|null} preset a name, or null for silence
-   */
-  setPreset(preset) {
-    const next = preset === null || preset === undefined ? null : resolve(preset);
-    if (next === this.preset) return;
-
-    this.preset = next;
-    this.buffer = null;
-    this.loading = null;
-    if (this.ctx && this.enabled) this.#load();
-  }
-
-  /** Live volume change, for the options panel's slider. */
-  setVolume(volume) {
-    this.volume = clamp(volume);
+  /** True when the browser is holding the sound back until the page is clicked. */
+  get needsGesture() {
+    return this.enabled && this.ctx?.state === 'suspended';
   }
 
   /** Release the audio device on the way out of the page. */
@@ -363,17 +498,10 @@ export class RepSound {
     this.ctx?.close?.();
     this.ctx = null;
     this.keepAlive = null;
-    this.buffer = null;
-    this.loading = null;
     this.playing = null;
+    this.buffers.clear();
+    this.loading = null;
   }
-}
-
-/** A name that exists wins; anything else falls back rather than to silence. */
-function resolve(preset) {
-  if (preset === null || preset === undefined) return null;
-  if (preset in SAMPLES || preset in PRESETS) return preset;
-  return DEFAULT_PRESET;
 }
 
 function clamp(volume) {
@@ -384,7 +512,7 @@ function clamp(volume) {
 
 function defaultContext() {
   const Ctor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
-  // `interactive` asks the browser for the shortest output buffer it will give,
+  // `interactive` asks for the shortest output buffer the browser will give,
   // which is the difference between a sound that answers the rep and one that
   // trails it.
   return Ctor ? new Ctor({ latencyHint: 'interactive' }) : null;
@@ -395,4 +523,10 @@ function defaultFetch(src) {
     if (!res.ok) throw new Error(`${src} came back ${res.status}`);
     return res.arrayBuffer();
   });
+}
+
+function defaultCatalog() {
+  return fetch('/api/sounds')
+    .then((res) => (res.ok ? res.json() : { sounds: [] }))
+    .then((body) => body.sounds ?? []);
 }

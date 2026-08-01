@@ -410,6 +410,12 @@ const MIME = {
   '.wasm': 'application/wasm',
   '.task': 'application/octet-stream',
   '.json': 'application/json; charset=utf-8',
+  // The rep sounds. `decodeAudioData` will take almost anything, but a wrong
+  // Content-Type is one of the ways a file arrives and still will not play.
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
@@ -515,6 +521,28 @@ const server = http.createServer(async (req, res) => {
     await saveState();
     broadcast();
     return sendJson(res, 200, view());
+  }
+
+  // What is in the sounds folder. The page builds its bank from this rather
+  // than from a list in the code, so adding a noise to a rep is a matter of
+  // dropping an mp3 in `public/sounds/` — no edit, no restart of anything but
+  // the page. Read-only, and it only ever names files that are already served.
+  if (url.pathname === '/api/sounds' && req.method === 'GET') {
+    let sounds = [];
+    try {
+      sounds = fs
+        .readdirSync(path.join(PUBLIC_DIR, 'sounds'), { withFileTypes: true })
+        .filter((entry) => entry.isFile() && /\.(mp3|ogg|wav|m4a)$/i.test(entry.name))
+        .map((entry) => ({
+          name: entry.name.replace(/\.[^.]+$/, '').toLowerCase(),
+          src: `/sounds/${encodeURIComponent(entry.name)}`,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      // No folder is not a fault: the synthesised sounds need no files, and the
+      // page falls back to them on its own.
+    }
+    return sendJson(res, 200, { sounds });
   }
 
   // Preferences, not scores: which camera to watch, which noise a rep makes,
