@@ -23,7 +23,7 @@ const KEYS = [
   ['layout', 'layout'],
   ['radius', 'radius'],
   ['count', 'count'],
-  ['sound', 'sound'],
+  ['coach', 'coach'],
   ['volume', 'volume'],
   ['camera', 'camera'],
 ];
@@ -61,6 +61,13 @@ export function buildOverlayUrl(origin, choices = {}) {
   // — so it is checked separately from the falsy skips above.
   if (choices.label !== null && choices.label !== undefined && choices.label !== DEFAULT_OVERLAY_OPTIONS.label) {
     params.set('label', choices.label);
+  }
+
+  // `sound` is a name or silence, and silence is spelled with the switch it was
+  // always spelled with — so null cannot ride the skip-empty rule above.
+  if (choices.sound === null) params.set('sound', '0');
+  else if (choices.sound && choices.sound !== DEFAULT_OVERLAY_OPTIONS.sound) {
+    params.set('sound', String(choices.sound));
   }
 
   if (choices.shadow === false) params.set('shadow', SHADOW_OFF);

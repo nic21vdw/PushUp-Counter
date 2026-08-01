@@ -15,6 +15,8 @@
  * off halfway through a stream.
  */
 
+import { SOUND_NAMES, DEFAULT_PRESET } from './rep-sound.js';
+
 export const DEFAULT_OVERLAY_OPTIONS = {
   /** Height of the number, in px. */
   size: 88,
@@ -67,13 +69,20 @@ export const DEFAULT_OVERLAY_OPTIONS = {
    */
   camera: null,
   /**
-   * Chirp on every counted rep. On by default: mid-set your head is down and
+   * Which sound a counted rep makes: `fahh`, `coin`, `powerup`, `pop`, `boing`
+   * or `chirp`. Null is silence. On by default — mid-set your head is down and
    * the number is off to the side, so the sound is the only confirmation you
-   * actually get.
+   * get.
    */
-  sound: true,
-  /** How loud that chirp is, 0 to 1. */
-  volume: 0.5,
+  sound: DEFAULT_PRESET,
+  /** How loud that sound is, 0 to 1. */
+  volume: 0.45,
+  /**
+   * Say why a body in frame is not being counted — too far, cut off, facing the
+   * camera, standing up. On by default: it appears only when something is
+   * wrong, and the moment it is right it goes away again.
+   */
+  coach: true,
   /** Show the detector's live readout while you tune. Never use on stream. */
   setup: false,
 };
@@ -127,6 +136,27 @@ function positive(raw, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+/**
+ * `sound` is both a switch and a choice: `sound=0` is silence, `sound=boing`
+ * picks one. A name that does not exist falls back to the default rather than
+ * to silence — a typo should cost you the sound you wanted, not the feedback.
+ */
+function soundPreset(raw, fallback) {
+  if (raw === null) return fallback;
+  const value = raw.trim().toLowerCase();
+  if (value === '') return fallback;
+  if (FALSY.has(value)) return null;
+  // `sound=1` is the old on-switch and means "the default one", not a file
+  // called 1 — checked before the file-name shape below, which would match it.
+  if (TRUTHY.has(value)) return fallback === null ? DEFAULT_PRESET : fallback;
+  if (SOUND_NAMES.includes(value)) return value;
+  // Files in `public/sounds/` are discovered at run time, so their names cannot
+  // be checked here — anything shaped like one is passed through, and the page
+  // falls back to a beep if no such sound turns up.
+  if (/^[a-z0-9][a-z0-9_-]{0,31}$/.test(value)) return value;
+  return fallback === null ? DEFAULT_PRESET : fallback;
+}
+
 function fraction(raw, fallback) {
   // Silence is a real answer — `volume=0` is how you mute one source without
   // giving up the chirp on the others — so absence has to be ruled out first.
@@ -174,7 +204,8 @@ export function parseOverlayOptions(params) {
     radius: nonNegative(params.get('radius'), d.radius),
     count: bool(params.get('count'), d.count),
     camera: params.get('camera')?.trim() || d.camera,
-    sound: bool(params.get('sound'), d.sound),
+    coach: bool(params.get('coach'), d.coach),
+    sound: soundPreset(params.get('sound'), d.sound),
     volume: fraction(params.get('volume'), d.volume),
     setup: bool(params.get('setup'), d.setup),
   };

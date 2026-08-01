@@ -112,11 +112,29 @@ test('a camera can be named, because the default is often the one OBS has', () =
 });
 
 test('a rep makes a noise unless you ask it not to', () => {
-  assert.equal(parse('').sound, true, 'head down mid-set, the chirp is the only feedback you get');
-  assert.equal(parse('').volume, 0.5);
-  assert.equal(parse('sound=0').sound, false);
-  assert.equal(parse('sound=off').sound, false);
-  assert.equal(parse('sound=maybe').sound, true, 'junk leaves the confirmation on');
+  assert.equal(parse('').sound, 'shuffle', 'a different noise each rep, so it stays funny');
+  assert.equal(parse('').volume, 0.45);
+  assert.equal(parse('sound=0').sound, null);
+  assert.equal(parse('sound=off').sound, null);
+  // Files are discovered at run time, so a name this has never heard of cannot
+  // be told from a typo here. It is passed through, and the page shuffles the
+  // bank when nothing by that name turns up.
+  assert.equal(parse('sound=maybe').sound, 'maybe');
+  assert.equal(parse('sound=not a name!').sound, 'shuffle', 'but that is not a file name');
+});
+
+test('the sound can be chosen by name', () => {
+  assert.equal(parse('sound=boing').sound, 'boing');
+  assert.equal(parse('sound=POWERUP').sound, 'powerup', 'case is not a setting');
+  assert.equal(parse('sound=%20pop%20').sound, 'pop');
+  assert.equal(parse('sound=coin').sound, 'coin', 'the synthesised ones are still there');
+  assert.equal(parse('sound=1').sound, 'shuffle', 'the old on-switch still means the default');
+  assert.equal(parse('sound=').sound, 'shuffle', 'a bare ?sound is not a request for silence');
+  assert.equal(
+    parse('sound=vine-boom').sound,
+    'vine-boom',
+    'a file in the sounds folder is a name this never heard of, and must survive anyway',
+  );
 });
 
 test('volume is clamped, and zero is a real answer rather than a missing one', () => {
@@ -150,4 +168,10 @@ test('the fast-rep settings are tunable, and zero is a real answer for them', ()
   assert.deepEqual(detection('uptol=0'), { upTolerance: 0 }, 'zero is how you demand a lockout');
   assert.deepEqual(detection('gap=0&plankgrace=0'), { maxGapMs: 0, plankGraceMs: 0 });
   assert.deepEqual(detection('minrep=150&minphase=40'), { minRepMs: 150, minPhaseMs: 40 });
+});
+
+test('the framing advice is on unless it is turned off', () => {
+  assert.equal(parse('').coach, true, 'a body that will not count should say why');
+  assert.equal(parse('coach=0').coach, false);
+  assert.equal(parse('coach=nope').coach, true, 'junk leaves the help on');
 });

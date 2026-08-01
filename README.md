@@ -59,34 +59,51 @@ npm start
 ```
   Push-up counter is running.
   OBS source    http://127.0.0.1:4747/overlay.html      <- add this as a Browser Source
-  Set it up     http://127.0.0.1:4747/overlay.html?setup=1   <- pick a camera, check framing
+  Set it up     http://127.0.0.1:4747/overlay.html?setup=1   <- detector readout, check framing
   Status        http://127.0.0.1:4747/status.html
   1 push-up per subscriber gained while live.
 ```
 
 ## 4. Pick your camera and frame yourself
 
-Open **`/overlay.html?setup=1`** in a browser. That is exactly the page you are
-about to put in OBS, plus a live readout of your elbow angle under the picture
-so you can see what the detector sees.
+Open **`/overlay.html`** in a browser. It is the same page OBS renders — your
+camera filling the window with the count over it — but opened in a window with a
+mouse it *is* the setup view: the detector's live readout appears under the
+picture, and a **gear** in the top right opens everything else.
 
-Streaming machines usually have several cameras — a webcam or two, a
-phone-as-webcam bridge, OBS's own virtual camera. **The setup view has a
-dropdown** listing all of them: pick one and the picture switches straight
-away, with no reload.
+Nothing in that second group is drawn until a pointer moves, and OBS has no
+pointer, so none of it can reach the stream. That is the whole trick, and it is
+why the window you open needs no special URL. `?setup=1` forces the readout on
+anyway and `?setup=0` forces it off, for when you would rather be sure than
+clever.
 
-That choice is saved on the server, not in the browser, because the setup view
+Behind the gear:
+
+- **Now** — push-ups to do, done, owed; whether subscribers are adding any;
+  whether the detector is actually sampling fast enough; when the last rep
+  landed. The questions the old status page existed to answer.
+- **Settings** — camera, sound, volume. Pick a camera and the picture switches
+  straight away, with no reload.
+- **OBS browser source** — the URL to paste, with your current options folded
+  in, and a Copy button.
+
+Your choices are saved on the server, not in the browser, because this window
 (in Chrome) and the browser source (in OBS) are two different browsers with
-separate storage. So changing the camera here changes it in OBS too — you never
-have to re-paste a URL. The dropdown only appears in setup mode; it would be on
-stream otherwise.
+separate storage. So changing the camera or the sound here changes it in OBS too
+— you never have to re-paste a URL.
+
+`/status.html` still exists as a read-only page for a second monitor, but you no
+longer have to go there for anything.
 
 If you would rather pin a camera to a particular source, name it in the URL and
 that wins over the saved choice:
 
 ```
-/overlay.html?setup=1&camera=Brio
+/overlay.html?camera=Brio
 ```
+
+The same goes for `?sound=` and `?volume=`: named in the URL, they win over
+whatever Options has saved, so one source can be silent while another is not.
 
 Any part of the camera's name works, case-insensitive. If it can't find it, or
 the camera is busy, the error names every camera on the machine so you know what
@@ -141,6 +158,11 @@ stop it, close its window; to start it again, run the shortcut.
 If you would rather not have a console window sitting in the taskbar, set the
 shortcut's **Run** to **Minimized** in its Properties.
 
+**`update-and-start.cmd`** is the same thing with a `git pull` in front of it, so
+a double-click gets you the current counter rather than the one you cloned. It
+never blocks on a failed update: no git, a branch other than `main`, local edits,
+or no network each print a line and start what you already have.
+
 ### Making it look right
 
 | Param      | Example              | What it does                                |
@@ -169,37 +191,94 @@ The status page shows the finished URL for you.
 | `camera` | `camera=Brio`   | Which webcam to open (part of its name)             |
 | `setup`  | `setup=1`       | Add the detector readout and the fault box. Never use on stream |
 | `count`  | `count=0`       | Display only — shows the picture but banks nothing  |
-| `sound`  | `sound=0`       | Stop the chirp on every counted rep                 |
-| `volume` | `volume=0.2`    | How loud that chirp is, `0` to `1`                  |
+| `sound`  | `sound=coin`    | Which noise a counted rep makes; `sound=0` for none |
+| `volume` | `volume=0.2`    | How loud that noise is, `0` to `1`                  |
 
 `count=0` is there for a second source showing the same thing on another scene.
 Only ever run **one** counting source, or every push-up lands twice.
 
-### The rep chirp
+### When it can see you but will not count you
 
-Every counted rep plays a short rising beep. Halfway through a set your head is
-at the floor and the number is off to the side, so the beep is the confirmation
-you can actually take in — no beep means the rep did not count, without looking
-up to find that out.
+The detector finding a body is not the same as the body being countable. Too far
+away and the joints are noise; too close and your arms leave the frame; face-on
+and the elbow angle is a guess; standing up and there is no push-up to find. In
+all of those the skeleton draws happily and the number never moves — which from
+the floor is indistinguishable from the thing being broken.
 
-Only the counting source makes it: a `count=0` duplicate is watching the same
+So the tracker says which it is, in one instruction at a time, over the picture:
+
+| What it sees | What it says |
+| --- | --- |
+| Nothing | Step into frame — nothing to track yet |
+| You running off an edge | You are cut off on the left — shift right |
+| You filling the frame | Move further back — you fill the whole frame |
+| You too small to measure | Move closer — you are too small to measure |
+| Arms not visible | Your arms are hidden — turn so the camera sees them |
+| You upright | Get down into a plank — nothing counts standing up |
+| You facing the camera | Turn side-on — the camera should see you from the side |
+| A half-sure detector | Hard to see you — try more light or a plainer background |
+
+It waits about 700 ms before speaking, so settling into position does not make it
+flicker, and it disappears the moment the framing is good. Once you are counting
+it only comes back for the two form notes that stop a rep being banked: sagging
+hips, and going too fast to control. `coach=0` turns it off.
+
+### The rep sound
+
+Every counted rep plays a sound, and by default a **different one each time** —
+the same noise a hundred times in a set stops being funny somewhere around six.
+
+The bank is just the files in **`public/sounds/`**. Drop an mp3 in there and it
+joins the rotation; no code to edit, nothing to restart but the page. What ships
+is `fahh`, `vine-boom`, `roblox-oof` and `among-us`.
+
+| `sound=` | What you get |
+| --- | --- |
+| `shuffle` | A different file each rep, never the same one twice running. The default |
+| *a file name* | Only that one, e.g. `sound=vine-boom` |
+| `pacer` | The shuttle run, for push-ups: a beep a rep, a level every ten, and a spoken start |
+| `coin` `powerup` `pop` `boing` `sadtrombone` `fart` `airhorn` `slidewhistle` `rimshot` `chirp` | Synthesised, no file needed |
+| `0` | Silence |
+
+The synthesised ones are built from oscillators, noise and filters in the page —
+`fart` is noise through a closing lowpass with a wobbling saw under it, `rimshot`
+is two toms and a burst of filtered hiss. No files, nothing to fetch, nothing
+that belongs to anybody.
+
+`pacer` is its own thing: the first rep gets an announcement (spoken by the
+browser, from a parody written in `rep-sound.js` — there is no recording of it),
+every rep after that gets the beep, and every tenth gets three beeps and a new
+level. Choosing it again starts the test over.
+
+**Files are trimmed on the way in.** Meme sound effects are recorded with a
+second of dead air at the front and a reverb tail hanging off the back, and
+neither belongs between push-ups. The page measures each file's loudness, opens
+the window just before the sound actually lands, caps it at a second so it
+cannot still be playing when the next rep arrives, and fades the end. Every
+sound in the bank reaches half volume within 25 ms of the rep. `fahh` has a
+hand-measured window; everything else is done by the same rules in code.
+
+If a file will not load, that one drops out and the rest carry on. If none load,
+you get a synthesised beep. A rep is never left silent — a missing noise reads
+as a missed rep.
+
+**On lag.** Files are fetched, decoded and trimmed once when the page opens,
+never on the rep. The page also holds the audio device open with a silent
+source, because Windows powers an idle output down between reps and waking it
+costs 50-200 ms. `?setup=1` reports the remaining hardware latency.
+
+**In a normal browser tab there is no sound until you click the page once.**
+That is the autoplay rule, not a fault, and it is silent about itself — so the
+tracker now says so on screen when it applies. OBS browser sources are exempt
+and play from the first rep.
+
+Only the counting source makes noise: a `count=0` duplicate is watching the same
 push-up, and two of them would answer each one twice.
 
 In OBS, tick **Control audio via OBS** in the browser source's properties if you
-want the beep on the stream and in your monitor mix; leave it off and it comes
-out of the machine's default output, which you hear in the room but your viewers
-do not. Either way, `volume=0.2` if it is louder than you want next to a mic.
-
-In a normal browser tab the beep stays silent until you click the page once —
-autoplay rules, not a fault. `?setup=1` says which it is: the readout ends with
-`sound running`, `suspended` (click the page), `off`, or `blocked`.
-
-Faults — a camera that will not open, a server that stopped answering — are only
-painted onto the source under `?setup=1`. A red banner across your scene tells
-the audience about a problem only you can fix. The reason still goes to the
-browser console — open the same URL in Chrome and look at DevTools, or reload
-the source with `?setup=1` to see it on the page. A source that has gone quiet
-and blank is a source with something in that log.
+want it on the stream and in your monitor mix; leave it off and it comes out of
+the machine's default output, which you hear in the room but your viewers do
+not. Either way, `volume=0.2` if it is louder than you want next to a mic.
 
 ## 6. Check it is working
 

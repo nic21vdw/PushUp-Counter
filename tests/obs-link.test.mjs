@@ -64,7 +64,18 @@ test('turning counting off is emitted, because it is not the default', () => {
 });
 
 test('muting a source survives the round trip, silence included', () => {
-  assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: false })).sound, false);
+  const muted = buildOverlayUrl(ORIGIN, { sound: null });
+  assert.match(muted, /sound=0/, 'silence is spelled with the switch, not a missing param');
+  assert.equal(optionsOf(muted).sound, null);
+
+  assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: 'boing' })).sound, 'boing');
+  assert.equal(
+    buildOverlayUrl(ORIGIN, { sound: 'shuffle' }),
+    `${ORIGIN}/overlay.html`,
+    'the default sound is not worth a query param',
+  );
+  assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: 'fahh' })).sound, 'fahh');
+  assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: 'coin' })).sound, 'coin');
 
   const quiet = buildOverlayUrl(ORIGIN, { volume: 0 });
   assert.match(quiet, /volume=0/, 'zero is a choice, not an absent value');

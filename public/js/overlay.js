@@ -14,11 +14,27 @@ import { RepCounter, DEFAULT_OPTIONS } from './rep-counter.js';
 import { anglesFromLandmarks } from './pose-math.js';
 import { CounterClient } from './counter-client.js';
 import { StatusSlots } from './status-slots.js';
-import { RepSound } from './rep-sound.js';
+import { RepSound, SOUND_NAMES } from './rep-sound.js';
 import { parseOverlayOptions, parseDetectionOptions } from './overlay-options.js';
+import { checkFraming, FRAMING } from './framing.js';
+import { buildOverlayUrl } from './obs-link.js';
 
 const params = new URLSearchParams(location.search);
 const options = parseOverlayOptions(params);
+
+/**
+ * This page is two things: the browser source OBS composites, and the window
+ * you open to set the thing up. Everything meant for the second — the detector
+ * readout, the fault box, the gear — appears only once a pointer has moved,
+ * because OBS has no pointer and never will. That is what lets the window you
+ * open be the setup view by default without any of it reaching the stream.
+ *
+ * `?setup=1` forces it on regardless, and `?setup=0` off, for the cases where
+ * you want to be sure rather than to be clever.
+ */
+const setupWasNamed = params.has('setup');
+let pointerSeen = false;
+const isSetupView = () => (setupWasNamed ? options.setup : pointerSeen);
 
 const video = document.getElementById('video');
 const canvas = document.getElementById('stage');
@@ -31,10 +47,25 @@ const progressText = document.getElementById('progress-text');
 const barFill = document.getElementById('bar').querySelector('i');
 const sublineEl = document.getElementById('subline');
 const tuneEl = document.getElementById('tune');
+const coachEl = document.getElementById('coach');
 const statusEl = document.getElementById('status');
-const pickerEl = document.getElementById('picker');
-const selectEl = document.getElementById('camera-select');
-const pickerNote = document.getElementById('picker-note');
+const optionsEl = document.getElementById('options');
+const optionsOpen = document.getElementById('options-open');
+const optionsClose = document.getElementById('options-close');
+const optCamera = document.getElementById('opt-camera');
+const optSound = document.getElementById('opt-sound');
+const optVolume = document.getElementById('opt-volume');
+const optVolumeValue = document.getElementById('opt-volume-value');
+const optionsNote = document.getElementById('options-note');
+const optSaved = document.getElementById('opt-saved');
+const statTodo = document.getElementById('stat-todo');
+const statDone = document.getElementById('stat-done');
+const statOwed = document.getElementById('stat-owed');
+const statSubs = document.getElementById('stat-subs');
+const statDetector = document.getElementById('stat-detector');
+const statLastRep = document.getElementById('stat-lastrep');
+const obsUrl = document.getElementById('obs-url');
+const obsCopy = document.getElementById('obs-copy');
 
 /* ------------------------------------------------------------------ look */
 
@@ -69,7 +100,7 @@ function setStatus(slot, message, tone = 'error') {
   // tile is blank and the source is saying nothing about why.
   if (message && tone === 'error') console.error(`[${slot}] ${message}`);
 
-  const show = winner && options.setup;
+  const show = winner && isSetupView();
   statusEl.textContent = show ? winner.message : '';
   statusEl.hidden = !show;
   statusEl.dataset.tone = winner?.tone ?? 'error';
@@ -102,6 +133,7 @@ const client = new CounterClient({
     serverState = state;
     render();
     if (!options.camera) followServerCamera(state.camera ?? null);
+    followServerSound(state);
   },
   onPending: (count) => {
     pendingReps = count;
@@ -130,6 +162,7 @@ function render() {
     countEl.classList.add('bump');
   }
   lastShown = left;
+  renderPanelStatus(rawLeft);
 
   const owed = serverState.owed ?? 0;
   const done = (serverState.done ?? 0) + pendingReps;
@@ -188,7 +221,7 @@ function flashRep() {
 // chirps: a display-only duplicate is watching the same body, and two of them
 // would answer every push-up twice.
 const repSound = new RepSound({
-  enabled: options.sound && options.count,
+  preset: options.count ? options.sound : null,
   volume: options.volume,
 });
 
@@ -203,6 +236,215 @@ if (repSound.enabled) {
   repSound.arm();
 }
 
+/**
+ * The numbers, inside the panel.
+ *
+ * They used to live on a separate page you had to go and find. But the window
+ * you actually open is this one — so what you would have gone looking for is
+ * here, a click away, next to the settings that change it.
+ */
+function renderPanelStatus(rawLeft) {
+  if (optionsEl.hidden || !serverState) return;
+
+  const owed = serverState.owed ?? 0;
+  const done = serverState.done ?? 0;
+  statTodo.textContent = format(Math.max(0, rawLeft));
+  statDone.textContent = format(done);
+  statOwed.textContent = format(owed);
+
+  const subs = serverState.subsEnabled
+    ? `+${format(serverState.fromSubs ?? 0)} from ${format(serverState.subsGained ?? 0)} subs`
+    : 'Subscribers off — nothing is adding push-ups';
+  statSubs.textContent = subs;
+
+  // "Is it working" is a question about this minute, not about the totals: a
+  // detector that stopped ten minutes ago shows the same numbers as one that is
+  // running perfectly.
+  const rate = Math.round(tracker?.sampleRate ?? 0);
+  const seenAgo = serverState.lastRepAt
+    ? Math.round((Date.now() - new Date(serverState.lastRepAt).getTime()) / 1000)
+    : null;
+
+  statDetector.textContent =
+    rate === 0
+      ? 'Not sampling — is this window behind another one?'
+      : rate < 25
+        ? `${rate}/s — too slow for fast reps; bring this window to the front`
+        : `${rate}/s — good`;
+  statDetector.dataset.tone = rate === 0 ? 'bad' : rate < 25 ? 'warn' : 'good';
+
+  statLastRep.textContent =
+    seenAgo === null
+      ? 'Nothing counted yet'
+      : seenAgo < 90
+        ? `Last rep ${seenAgo}s ago`
+        : `Last rep ${Math.round(seenAgo / 60)} min ago`;
+}
+
+/* --------------------------------------------------------------- options */
+
+// The camera and the sound are chosen here and saved on the server, which is
+// the only thing this window and the OBS source both see — they are separate
+// browsers with separate storage. A `?sound=` in the URL is an explicit
+// instruction and still wins, the same way `?camera=` does.
+const soundFromUrl = params.has('sound');
+const volumeFromUrl = params.has('volume');
+
+function followServerSound(state) {
+  if (!soundFromUrl && state.sound !== undefined && state.sound !== null) {
+    repSound.setPreset(options.count ? state.sound : null);
+  }
+  if (!volumeFromUrl && typeof state.volume === 'number') {
+    repSound.setVolume(state.volume);
+    if (optVolume) syncVolumeInput(state.volume);
+  }
+}
+
+function syncVolumeInput(volume) {
+  optVolume.value = String(Math.round(volume * 100));
+  optVolumeValue.textContent = `${Math.round(volume * 100)}%`;
+}
+
+async function savePrefs(patch, message) {
+  try {
+    const res = await fetch('/api/prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    optSaved.textContent = message;
+  } catch {
+    // Saying "saved" when it was not is worse than saying nothing: the setting
+    // would come back next launch and look like the panel had lied.
+    optSaved.textContent = 'Not saved — server did not answer';
+  }
+  setTimeout(() => {
+    optSaved.textContent = '';
+  }, 2600);
+}
+
+async function buildOptions() {
+  let files = [];
+  try {
+    files = (await (await fetch('/api/sounds')).json()).sounds ?? [];
+  } catch {
+    // Only the synthesised ones, then. They need no files.
+  }
+
+  optSound.append(new Option('shuffle — a different one each rep', 'shuffle'));
+  for (const file of files) optSound.append(new Option(file.name, file.name));
+  for (const name of SOUND_NAMES.filter((n) => n !== 'shuffle')) {
+    optSound.append(new Option(name, name));
+  }
+  optSound.append(new Option('none', 'off'));
+  optSound.value = options.sound ?? 'off';
+
+  syncVolumeInput(options.volume);
+
+  optSound.addEventListener('change', () => {
+    const chosen = optSound.value === 'off' ? null : optSound.value;
+    repSound.setPreset(options.count ? chosen : null);
+    // A sound you cannot hear is indistinguishable from one that failed, and
+    // this is the moment you are listening for it.
+    repSound.play();
+    savePrefs({ sound: chosen }, 'Saved');
+  });
+
+  optVolume.addEventListener('input', () => {
+    const volume = Number(optVolume.value) / 100;
+    syncVolumeInput(volume);
+    repSound.setVolume(volume);
+  });
+  optVolume.addEventListener('change', () => {
+    repSound.play();
+    savePrefs({ volume: Number(optVolume.value) / 100 }, 'Saved');
+  });
+
+  optCamera.addEventListener('change', async () => {
+    const chosen = optCamera.value || null;
+    optSaved.textContent = 'Switching…';
+    await switchCamera(chosen);
+    savePrefs({ camera: chosen }, 'Saved');
+  });
+
+  obsUrl.textContent = buildOverlayUrl(location.origin, { ...options, setup: false });
+
+  optionsNote.textContent = options.camera
+    ? `Opened with ?camera=${options.camera}, which overrides the saved camera.`
+    : 'These are saved on the server, so the OBS source picks them up too.';
+
+  await refreshCameraList();
+}
+
+/**
+ * Camera labels only exist once permission has been granted, so this is called
+ * again after the camera has actually been opened.
+ */
+async function refreshCameraList() {
+  let cameras = [];
+  try {
+    const { listCameras } = await import('./pose-tracker.js');
+    cameras = await listCameras();
+  } catch {
+    /* leave the list with just the default entry */
+  }
+
+  optCamera.replaceChildren();
+  optCamera.append(new Option('Default (whatever the browser picks)', ''));
+  for (const device of cameras) {
+    // Match by label, not deviceId: ids are rotated per browser profile, so an
+    // id chosen here would mean nothing to the OBS source.
+    optCamera.append(new Option(device.label || '(unnamed camera)', device.label));
+  }
+
+  const current = cameras.find((d) => matches(d.label, activeCamera));
+  optCamera.value = current ? current.label : '';
+}
+
+// This page is the browser source as well as the window you set it up in, so
+// the controls appear only for something with a pointer. OBS has none, and
+// never will, so nothing here can reach the stream.
+let hideControls;
+function showControls() {
+  pointerSeen = true;
+  document.body.dataset.pointer = '1';
+  clearTimeout(hideControls);
+  hideControls = setTimeout(() => {
+    if (optionsEl.hidden) document.body.dataset.pointer = '0';
+  }, 2600);
+}
+
+window.addEventListener('pointermove', showControls, { passive: true });
+optionsOpen.addEventListener('click', () => {
+  optionsEl.hidden = false;
+  optionsOpen.hidden = true;
+  refreshCameraList();
+  render();
+});
+
+// The URL to paste into OBS, with the options you are actually using folded in
+// — which is the one thing the old status page was genuinely useful for.
+obsCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(obsUrl.textContent);
+    obsCopy.textContent = 'Copied';
+  } catch {
+    obsCopy.textContent = 'Select it and copy';
+  }
+  setTimeout(() => {
+    obsCopy.textContent = 'Copy';
+  }, 2200);
+});
+optionsClose.addEventListener('click', () => {
+  optionsEl.hidden = true;
+  optionsOpen.hidden = false;
+  showControls();
+});
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !optionsEl.hidden) optionsClose.click();
+});
+
 /* -------------------------------------------------------------- counting */
 
 function handlePose({ landmarks, worldLandmarks, timestamp }) {
@@ -212,8 +454,10 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     counter.options.minVisibility,
   );
   const result = counter.update({ elbowAngle, plankAngle, timestamp });
+  const framing = checkFraming(landmarks, { minVisibility: counter.options.minVisibility });
+  showCoaching(framing, result);
 
-  if (options.setup) {
+  if (isSetupView()) {
     // The numbers you need to set the thresholds, where you can see them while
     // doing the movement. Off on stream.
     //
@@ -234,16 +478,76 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
       `plank <b>${deg(result.plankAngle)}</b> · ` +
       `last <b>${deg(result.lastRepDepth)}→${deg(result.lastRepTop)}</b> · ` +
       `<b>${Math.round(tracker?.sampleRate ?? 0)}</b>/s · ` +
-      `<b>${result.state}</b> · sound <b>${repSound.status}</b> · ${result.feedback}`;
+      `<b>${result.state}</b> · ` +
+      `sound <b>${repSound.preset ?? 'off'}/${repSound.status}` +
+      `${repSound.latencyMs === null ? '' : ` ${repSound.latencyMs}ms`}</b> · ${result.feedback}`;
   }
 
   if (result.repCompleted) {
     detectedThisSession += 1;
+    // Sound first. The two flashes below touch the DOM and force a style
+    // recalculation, and every millisecond of that would sit between the rep
+    // and the noise — which is the one piece of feedback being timed by ear.
+    repSound.play();
     tracker?.flash();
     flashRep();
-    repSound.play();
     if (options.count) client.reportReps(1);
   }
+}
+
+/* -------------------------------------------------------------- coaching */
+
+// What the detector can see is not what it can count, and from the floor the
+// two look identical: the skeleton draws, the number does not move. This says
+// which it is, in one instruction you can act on without getting up.
+//
+// It is deliberately slow to appear and quick to leave. A message that flickers
+// on every other frame while you settle into position is worse than silence,
+// and once the framing is right the screen should go back to being the count.
+const COACH_HOLD_MS = 700;
+let coachCode = null;
+let coachSince = 0;
+let coachShown = null;
+
+function showCoaching(framing, result) {
+  if (!options.coach) return;
+
+  // Mid-rep form notes come from the counter, which knows what the movement is
+  // doing; framing comes from the landmarks. Framing wins when both have
+  // something to say — there is no point correcting a plank the camera cannot
+  // measure in the first place.
+  // Nothing else on screen explains a silent tracker, and a browser will hold
+  // the sound back for ever until the page has been clicked once.
+  const muted = repSound.needsGesture ? 'Click the window once to turn the sound on.' : null;
+  const message = framing.ok ? (muted ?? formNote(result)) : framing.message;
+  const code = framing.ok ? (message ? `form:${message}` : null) : framing.code;
+
+  const now = performance.now();
+  if (code !== coachCode) {
+    coachCode = code;
+    coachSince = now;
+  }
+
+  // Nothing to say, or not for long enough yet to be worth saying.
+  const settled = now - coachSince >= COACH_HOLD_MS;
+  const next = code && settled ? message : coachShown && code ? coachShown : null;
+
+  if (next === coachShown) return;
+  coachShown = next;
+  coachEl.textContent = next ?? '';
+  coachEl.hidden = !next;
+  coachEl.dataset.severity = framing.code === FRAMING.NO_POSE ? 'wait' : 'fix';
+}
+
+/**
+ * The counter's own note, but only the ones that are a problem. "Down — now
+ * push" is a running commentary on a rep that is going fine, and does not
+ * belong on screen.
+ */
+function formNote(result) {
+  if (result.feedback === 'Straighten up — hips are sagging or piked.') return result.feedback;
+  if (result.feedback === 'Too fast to count — control the rep.') return result.feedback;
+  return null;
 }
 
 async function startCamera() {
@@ -324,63 +628,6 @@ async function describeCameraFailure(err) {
   );
 }
 
-/* ------------------------------------------------- the setup-only picker */
-
-/**
- * Lists the machine's cameras so you can swap without editing a URL. Setup view
- * only: a dropdown baked into the browser source would be on stream, and the
- * source has no one sitting in front of it to use it anyway.
- *
- * The choice goes to the server, which is the only thing the setup view (in
- * Chrome) and the browser source (in OBS) both see — they are separate browsers
- * with separate storage.
- */
-async function buildPicker() {
-  const { listCameras } = await import('./pose-tracker.js');
-  const cameras = await listCameras();
-
-  selectEl.innerHTML = '';
-  const auto = document.createElement('option');
-  auto.value = '';
-  auto.textContent = 'Default (whatever the browser picks)';
-  selectEl.appendChild(auto);
-
-  for (const device of cameras) {
-    const option = document.createElement('option');
-    // Match by label, not deviceId: ids are rotated per browser profile, so an
-    // id chosen here would mean nothing to the OBS source.
-    option.value = device.label;
-    option.textContent = device.label || '(unnamed camera)';
-    selectEl.appendChild(option);
-  }
-
-  const current = cameras.find((d) => matches(d.label, activeCamera));
-  selectEl.value = current ? current.label : '';
-
-  selectEl.addEventListener('change', async () => {
-    const chosen = selectEl.value || null;
-    pickerNote.textContent = 'Switching…';
-    await switchCamera(chosen);
-    try {
-      await fetch('/api/camera', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ camera: chosen }),
-      });
-      pickerNote.textContent = chosen
-        ? 'Saved. The OBS source will switch to this too.'
-        : 'Saved. The OBS source will use the default camera.';
-    } catch {
-      pickerNote.textContent = 'Switched here, but the server did not save it.';
-    }
-  });
-
-  pickerNote.textContent = options.camera
-    ? `This page was opened with ?camera=${options.camera}, which overrides the saved choice.`
-    : 'Whatever you pick here is what the OBS source will use.';
-  pickerEl.hidden = false;
-}
-
 function matches(label, wanted) {
   if (!label || !wanted) return false;
   return label.toLowerCase().includes(wanted.trim().toLowerCase());
@@ -417,10 +664,12 @@ async function boot() {
       console.error(err);
       setStatus('camera', await describeCameraFailure(err));
     }
-    // Labels only exist once permission has been granted, so the picker is
-    // built after the first camera attempt, failed or not.
-    if (options.setup) await buildPicker().catch((err) => console.error(err));
+    // Camera labels only exist once permission has been granted, so the list
+    // in the options panel is filled in after the first attempt, failed or not.
+    await refreshCameraList().catch((err) => console.error(err));
   }
+
+  await buildOptions().catch((err) => console.error(err));
 
   client.connect();
 }

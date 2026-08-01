@@ -104,6 +104,12 @@ const DEFAULT_STATE = {
   // because the setup view and the OBS source are two different browsers with
   // separate storage — the server is the only thing they both see.
   camera: null,
+  // Which sound a counted rep makes, and how loud, chosen in the tracker's
+  // options panel. Here for the same reason the camera is: the panel you use
+  // and the OBS source are two different browsers, and this is what they share.
+  // Null means "whatever the page defaults to" rather than a choice.
+  sound: null,
+  volume: null,
 };
 
 let state = { ...DEFAULT_STATE };
@@ -209,6 +215,8 @@ function view() {
     streamStartedAt: state.streamStartedAt,
     lastRepAt: state.lastRepAt,
     camera: state.camera,
+    sound: state.sound,
+    volume: state.volume,
     countingClientId: activeCameraView(),
     pollSeconds: CONFIG.pollSeconds,
     // Whether subscribers are being watched at all. `false` is a mode, not a
@@ -402,6 +410,12 @@ const MIME = {
   '.wasm': 'application/wasm',
   '.task': 'application/octet-stream',
   '.json': 'application/json; charset=utf-8',
+  // The rep sounds. `decodeAudioData` will take almost anything, but a wrong
+  // Content-Type is one of the ways a file arrives and still will not play.
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
@@ -509,10 +523,37 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, view());
   }
 
-  // Which webcam to watch. This is a preference, not a score: it cannot reach
-  // `done`, `carriedOver` or anything else the count is made of, so it stays a
-  // control you are allowed to have.
-  if (url.pathname === '/api/camera' && req.method === 'POST') {
+  // What is in the sounds folder. The page builds its bank from this rather
+  // than from a list in the code, so adding a noise to a rep is a matter of
+  // dropping an mp3 in `public/sounds/` — no edit, no restart of anything but
+  // the page. Read-only, and it only ever names files that are already served.
+  if (url.pathname === '/api/sounds' && req.method === 'GET') {
+    let sounds = [];
+    try {
+      sounds = fs
+        .readdirSync(path.join(PUBLIC_DIR, 'sounds'), { withFileTypes: true })
+        .filter((entry) => entry.isFile() && /\.(mp3|ogg|wav|m4a)$/i.test(entry.name))
+        .map((entry) => ({
+          name: entry.name.replace(/\.[^.]+$/, '').toLowerCase(),
+          src: `/sounds/${encodeURIComponent(entry.name)}`,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      // No folder is not a fault: the synthesised sounds need no files, and the
+      // page falls back to them on its own.
+    }
+    return sendJson(res, 200, { sounds });
+  }
+
+  // Preferences, not scores: which camera to watch, which noise a rep makes,
+  // how loud. None of them can reach `done`, `carriedOver` or anything else the
+  // count is made of, so they stay controls you are allowed to have — and they
+  // live here rather than in the browser because the options panel and the OBS
+  // source are two different browsers with separate storage.
+  //
+  // `/api/camera` is the older spelling of the same thing, kept because it is
+  // in URLs and notes that predate the panel.
+  if ((url.pathname === '/api/prefs' || url.pathname === '/api/camera') && req.method === 'POST') {
     let body;
     try {
       body = await readJsonBody(req);
@@ -520,12 +561,33 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: err.message });
     }
 
-    if (body.camera !== null && typeof body.camera !== 'string') {
-      return sendJson(res, 400, { error: 'camera must be a device name, or null for the default' });
+    // Only what was sent is changed. Absent is "leave it alone", which is not
+    // the same as null — null is how you go back to the page's own default.
+    if ('camera' in body) {
+      if (body.camera !== null && typeof body.camera !== 'string') {
+        return sendJson(res, 400, { error: 'camera must be a device name, or null for the default' });
+      }
+      state.camera = body.camera === null ? null : body.camera.trim().slice(0, 200) || null;
     }
-    const camera = body.camera === null ? null : body.camera.trim().slice(0, 200) || null;
 
-    state.camera = camera;
+    if ('sound' in body) {
+      if (body.sound !== null && typeof body.sound !== 'string') {
+        return sendJson(res, 400, { error: 'sound must be a name, or null for the default' });
+      }
+      // The server does not know which sounds exist, and should not: the page
+      // owns that list and falls back on its own when handed a name it cannot
+      // place. All that matters here is that it is a short, plain word.
+      state.sound = body.sound === null ? null : body.sound.trim().toLowerCase().slice(0, 32) || null;
+    }
+
+    if ('volume' in body) {
+      const volume = body.volume === null ? null : Number(body.volume);
+      if (volume !== null && (!Number.isFinite(volume) || volume < 0 || volume > 1)) {
+        return sendJson(res, 400, { error: 'volume must be between 0 and 1, or null for the default' });
+      }
+      state.volume = volume;
+    }
+
     await saveState();
     broadcast();
     return sendJson(res, 200, view());
