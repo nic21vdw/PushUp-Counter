@@ -23,6 +23,7 @@ const KEYS = [
   ['layout', 'layout'],
   ['radius', 'radius'],
   ['count', 'count'],
+  ['coach', 'coach'],
   ['volume', 'volume'],
   ['camera', 'camera'],
 ];

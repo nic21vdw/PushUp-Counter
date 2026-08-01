@@ -77,6 +77,12 @@ export const DEFAULT_OVERLAY_OPTIONS = {
   sound: DEFAULT_PRESET,
   /** How loud that sound is, 0 to 1. */
   volume: 0.45,
+  /**
+   * Say why a body in frame is not being counted — too far, cut off, facing the
+   * camera, standing up. On by default: it appears only when something is
+   * wrong, and the moment it is right it goes away again.
+   */
+  coach: true,
   /** Show the detector's live readout while you tune. Never use on stream. */
   setup: false,
 };
@@ -191,6 +197,7 @@ export function parseOverlayOptions(params) {
     radius: nonNegative(params.get('radius'), d.radius),
     count: bool(params.get('count'), d.count),
     camera: params.get('camera')?.trim() || d.camera,
+    coach: bool(params.get('coach'), d.coach),
     sound: soundPreset(params.get('sound'), d.sound),
     volume: fraction(params.get('volume'), d.volume),
     setup: bool(params.get('setup'), d.setup),

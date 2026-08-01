@@ -160,3 +160,9 @@ test('the fast-rep settings are tunable, and zero is a real answer for them', ()
   assert.deepEqual(detection('gap=0&plankgrace=0'), { maxGapMs: 0, plankGraceMs: 0 });
   assert.deepEqual(detection('minrep=150&minphase=40'), { minRepMs: 150, minPhaseMs: 40 });
 });
+
+test('the framing advice is on unless it is turned off', () => {
+  assert.equal(parse('').coach, true, 'a body that will not count should say why');
+  assert.equal(parse('coach=0').coach, false);
+  assert.equal(parse('coach=nope').coach, true, 'junk leaves the help on');
+});

@@ -186,6 +186,32 @@ The status page shows the finished URL for you.
 `count=0` is there for a second source showing the same thing on another scene.
 Only ever run **one** counting source, or every push-up lands twice.
 
+### When it can see you but will not count you
+
+The detector finding a body is not the same as the body being countable. Too far
+away and the joints are noise; too close and your arms leave the frame; face-on
+and the elbow angle is a guess; standing up and there is no push-up to find. In
+all of those the skeleton draws happily and the number never moves — which from
+the floor is indistinguishable from the thing being broken.
+
+So the tracker says which it is, in one instruction at a time, over the picture:
+
+| What it sees | What it says |
+| --- | --- |
+| Nothing | Step into frame — nothing to track yet |
+| You running off an edge | You are cut off on the left — shift right |
+| You filling the frame | Move further back — you fill the whole frame |
+| You too small to measure | Move closer — you are too small to measure |
+| Arms not visible | Your arms are hidden — turn so the camera sees them |
+| You upright | Get down into a plank — nothing counts standing up |
+| You facing the camera | Turn side-on — the camera should see you from the side |
+| A half-sure detector | Hard to see you — try more light or a plainer background |
+
+It waits about 700 ms before speaking, so settling into position does not make it
+flicker, and it disappears the moment the framing is good. Once you are counting
+it only comes back for the two form notes that stop a rep being banked: sagging
+hips, and going too fast to control. `coach=0` turns it off.
+
 ### The rep sound
 
 Every counted rep plays a sound. Halfway through a set your head is at the floor

@@ -16,6 +16,7 @@ import { CounterClient } from './counter-client.js';
 import { StatusSlots } from './status-slots.js';
 import { RepSound, SOUND_NAMES } from './rep-sound.js';
 import { parseOverlayOptions, parseDetectionOptions } from './overlay-options.js';
+import { checkFraming, FRAMING } from './framing.js';
 
 const params = new URLSearchParams(location.search);
 const options = parseOverlayOptions(params);
@@ -31,6 +32,7 @@ const progressText = document.getElementById('progress-text');
 const barFill = document.getElementById('bar').querySelector('i');
 const sublineEl = document.getElementById('subline');
 const tuneEl = document.getElementById('tune');
+const coachEl = document.getElementById('coach');
 const statusEl = document.getElementById('status');
 const optionsEl = document.getElementById('options');
 const optionsOpen = document.getElementById('options-open');
@@ -356,6 +358,8 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     counter.options.minVisibility,
   );
   const result = counter.update({ elbowAngle, plankAngle, timestamp });
+  const framing = checkFraming(landmarks, { minVisibility: counter.options.minVisibility });
+  showCoaching(framing, result);
 
   if (options.setup) {
     // The numbers you need to set the thresholds, where you can see them while
@@ -393,6 +397,58 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     flashRep();
     if (options.count) client.reportReps(1);
   }
+}
+
+/* -------------------------------------------------------------- coaching */
+
+// What the detector can see is not what it can count, and from the floor the
+// two look identical: the skeleton draws, the number does not move. This says
+// which it is, in one instruction you can act on without getting up.
+//
+// It is deliberately slow to appear and quick to leave. A message that flickers
+// on every other frame while you settle into position is worse than silence,
+// and once the framing is right the screen should go back to being the count.
+const COACH_HOLD_MS = 700;
+let coachCode = null;
+let coachSince = 0;
+let coachShown = null;
+
+function showCoaching(framing, result) {
+  if (!options.coach) return;
+
+  // Mid-rep form notes come from the counter, which knows what the movement is
+  // doing; framing comes from the landmarks. Framing wins when both have
+  // something to say — there is no point correcting a plank the camera cannot
+  // measure in the first place.
+  const message = framing.ok ? formNote(result) : framing.message;
+  const code = framing.ok ? (message ? `form:${message}` : null) : framing.code;
+
+  const now = performance.now();
+  if (code !== coachCode) {
+    coachCode = code;
+    coachSince = now;
+  }
+
+  // Nothing to say, or not for long enough yet to be worth saying.
+  const settled = now - coachSince >= COACH_HOLD_MS;
+  const next = code && settled ? message : coachShown && code ? coachShown : null;
+
+  if (next === coachShown) return;
+  coachShown = next;
+  coachEl.textContent = next ?? '';
+  coachEl.hidden = !next;
+  coachEl.dataset.severity = framing.code === FRAMING.NO_POSE ? 'wait' : 'fix';
+}
+
+/**
+ * The counter's own note, but only the ones that are a problem. "Down — now
+ * push" is a running commentary on a rep that is going fine, and does not
+ * belong on screen.
+ */
+function formNote(result) {
+  if (result.feedback === 'Straighten up — hips are sagging or piked.') return result.feedback;
+  if (result.feedback === 'Too fast to count — control the rep.') return result.feedback;
+  return null;
 }
 
 async function startCamera() {
