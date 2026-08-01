@@ -17,6 +17,8 @@ import {
   DEFAULT_VOLUME,
   FALLBACK_PRESET,
   PRESETS,
+  PACER,
+  PACER_MODE,
   SAMPLE_WINDOWS,
   SHUFFLE,
 } from '../public/js/rep-sound.js';
@@ -42,6 +44,7 @@ function fakeContext({ state = 'running', decode = null } = {}) {
     started: [],
     samples: [],
     gains: [],
+    filters: [],
     createGain() {
       const node = {
         gain: {
@@ -70,6 +73,15 @@ function fakeContext({ state = 'running', decode = null } = {}) {
         start: () => ctx.started.push(node),
         stop: () => {},
       };
+      return node;
+    },
+    createBiquadFilter() {
+      const node = {
+        type: null,
+        frequency: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+        connect: () => {},
+      };
+      ctx.filters.push(node);
       return node;
     },
     createBuffer(channels, frames, sampleRate) {
@@ -206,12 +218,18 @@ test('the status readout names why it is quiet', () => {
   assert.equal(sound.status, 'running');
 });
 
-test('every preset is short enough to be over before the next rep', () => {
+test('every preset is short enough to stay out of the next rep’s way', () => {
   for (const [name, notes] of Object.entries(PRESETS)) {
     const end = Math.max(...notes.map((n) => n.at + n.dur));
-    assert.ok(end <= 0.22, `${name} runs ${Math.round(end * 1000)}ms — a fast set is 300ms a rep`);
+    // Half a second. The beeps are a fifth of that; the jokes need room for a
+    // punchline, and a fast set at 300ms a rep only ever overlaps their tails.
+    assert.ok(end <= 0.5, `${name} runs ${Math.round(end * 1000)}ms`);
     for (const note of notes) {
-      assert.ok(note.hz > 0 && note.gain > 0, `${name} has a silent or pitchless note`);
+      assert.ok(note.gain > 0, `${name} has a silent note`);
+      // Noise has no pitch, which is the point of it.
+      if (note.type !== 'noise') {
+        assert.ok(note.hz > 0, `${name} has a pitchless note that is not noise`);
+      }
     }
   }
 });
@@ -477,4 +495,129 @@ test('a sound named that does not exist shuffles rather than beeping forever', a
   assert.deepEqual(sound.loaded, ['fahh', 'vine-boom'], 'the bank is loaded despite the typo');
   assert.equal(ctx.samples.length, 1, 'and a real sound played');
   assert.equal(notesPlayed(ctx), 0);
+});
+
+/* ---------------------------------------------------------------- the noise */
+
+test('a fart is noise and a wobble, not a plain tone', () => {
+  const ctx = fakeContext();
+  const sound = bare({ preset: 'fart', contextFactory: () => ctx });
+
+  sound.play();
+
+  assert.ok(ctx.filters.length >= 1, 'the splutter is a closing filter');
+  assert.ok(ctx.samples.length >= 1, 'and part of it is noise, played from a buffer');
+  // The saw, its wobble LFO, and the keep-awake source.
+  assert.ok(ctx.started.length >= 3, 'with an LFO bending the pitch');
+});
+
+test('the noise buffer is built once, not on every rep', () => {
+  const ctx = fakeContext();
+  const sound = bare({ preset: 'fart', contextFactory: () => ctx });
+
+  sound.play();
+  const first = sound.noise;
+  sound.play();
+
+  assert.equal(sound.noise, first, 'a second of random numbers per rep is work on the wrong side');
+});
+
+test('a browser without filters still makes the sound, just plainer', () => {
+  const ctx = fakeContext();
+  delete ctx.createBiquadFilter;
+  const sound = bare({ preset: 'fart', contextFactory: () => ctx });
+
+  assert.doesNotThrow(() => sound.play());
+});
+
+/* ---------------------------------------------------------------- the pacer */
+
+/** Records what was said, in order. */
+function fakeSpeech() {
+  const said = [];
+  return {
+    said,
+    speech: { speak: (u) => said.push(u.text), cancel: () => {} },
+    Utterance: class {
+      constructor(text) {
+        this.text = text;
+      }
+    },
+  };
+}
+
+test('the pacer announces itself on the first rep, then just beeps', () => {
+  const ctx = fakeContext();
+  const { said, speech, Utterance } = fakeSpeech();
+  const sound = bare({ preset: PACER_MODE, contextFactory: () => ctx, speech, Utterance });
+
+  sound.play();
+  sound.play();
+  sound.play();
+
+  assert.equal(said.length, 1, 'a sentence per rep would be unbearable');
+  assert.equal(said[0], PACER.intro);
+  assert.equal(sound.reps, 3);
+});
+
+test('the pacer changes level every tenth rep, and says so', () => {
+  const ctx = fakeContext();
+  const { said, speech, Utterance } = fakeSpeech();
+  const sound = bare({ preset: PACER_MODE, contextFactory: () => ctx, speech, Utterance });
+
+  for (let i = 0; i < 20; i++) sound.play();
+
+  assert.deepEqual(said, [PACER.intro, 'Level 2.', 'Level 3.'], 'ten reps a level');
+});
+
+test('the pacer needs no files and never reports itself as loading', async () => {
+  let asked = 0;
+  const ctx = fakeContext();
+  const sound = new RepSound({
+    preset: PACER_MODE,
+    contextFactory: () => ctx,
+    listSounds: () => {
+      asked += 1;
+      return Promise.resolve([{ name: 'fahh', src: '/sounds/fahh.mp3' }]);
+    },
+  });
+
+  sound.arm();
+  await sound.loading;
+
+  assert.equal(asked, 0, 'a beep it synthesises itself needs no bank');
+  assert.equal(sound.status, 'running');
+});
+
+test('starting the pacer again starts the test again', () => {
+  const ctx = fakeContext();
+  const { said, speech, Utterance } = fakeSpeech();
+  const sound = bare({ preset: PACER_MODE, contextFactory: () => ctx, speech, Utterance });
+
+  sound.play();
+  sound.play();
+  sound.setPreset('coin');
+  sound.setPreset(PACER_MODE);
+  sound.play();
+
+  assert.equal(sound.reps, 1);
+  assert.deepEqual(said, [PACER.intro, PACER.intro], 'the announcement comes back with it');
+});
+
+test('a browser that cannot speak still runs the test', () => {
+  const ctx = fakeContext();
+  const sound = bare({
+    preset: PACER_MODE,
+    contextFactory: () => ctx,
+    speech: undefined,
+    Utterance: undefined,
+  });
+
+  assert.doesNotThrow(() => sound.play());
+  assert.equal(notesPlayed(ctx), PACER.beep.length, 'the beep is the part that matters');
+});
+
+test('the pacer script is a parody written here, not a recording of anything', () => {
+  assert.match(PACER.intro, /push-up/i);
+  assert.ok(PACER.intro.length < 200, 'short enough to sit through once');
 });

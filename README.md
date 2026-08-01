@@ -236,8 +236,19 @@ is `fahh`, `vine-boom`, `roblox-oof` and `among-us`.
 | --- | --- |
 | `shuffle` | A different file each rep, never the same one twice running. The default |
 | *a file name* | Only that one, e.g. `sound=vine-boom` |
-| `coin` `powerup` `pop` `boing` `sadtrombone` `chirp` | Synthesised, no file needed |
+| `pacer` | The shuttle run, for push-ups: a beep a rep, a level every ten, and a spoken start |
+| `coin` `powerup` `pop` `boing` `sadtrombone` `fart` `airhorn` `slidewhistle` `rimshot` `chirp` | Synthesised, no file needed |
 | `0` | Silence |
+
+The synthesised ones are built from oscillators, noise and filters in the page —
+`fart` is noise through a closing lowpass with a wobbling saw under it, `rimshot`
+is two toms and a burst of filtered hiss. No files, nothing to fetch, nothing
+that belongs to anybody.
+
+`pacer` is its own thing: the first rep gets an announcement (spoken by the
+browser, from a parody written in `rep-sound.js` — there is no recording of it),
+every rep after that gets the beep, and every tenth gets three beeps and a new
+level. Choosing it again starts the test over.
 
 **Files are trimmed on the way in.** Meme sound effects are recorded with a
 second of dead air at the front and a reverb tail hanging off the back, and

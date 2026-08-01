@@ -71,12 +71,84 @@ export const PRESETS = {
     { at: 0, dur: 0.16, hz: 233, to: 208, type: 'sawtooth', gain: 0.5 },
     { at: 0.15, dur: 0.06, hz: 196, type: 'sawtooth', gain: 0.5 },
   ],
+  /**
+   * Exactly what it sounds like. Noise pushed through a closing lowpass for the
+   * splutter, a wobbling saw underneath it for the pitch — the wobble is what
+   * stops it reading as a broken speaker.
+   */
+  fart: [
+    {
+      at: 0,
+      dur: 0.32,
+      hz: 95,
+      to: 62,
+      type: 'sawtooth',
+      gain: 0.55,
+      wobble: { hz: 22, depth: 26 },
+      filter: { type: 'lowpass', hz: 900, to: 260 },
+    },
+    {
+      at: 0.02,
+      dur: 0.3,
+      type: 'noise',
+      gain: 0.3,
+      filter: { type: 'lowpass', hz: 700, to: 180 },
+    },
+  ],
+  /** Three detuned stabs. Loud on purpose; it is an air horn. */
+  airhorn: [
+    { at: 0, dur: 0.26, hz: 415, type: 'sawtooth', gain: 0.28 },
+    { at: 0, dur: 0.26, hz: 622, type: 'sawtooth', gain: 0.24 },
+    { at: 0, dur: 0.26, hz: 311, type: 'sawtooth', gain: 0.26 },
+  ],
+  /** Up and away. Vibrato is what makes it a whistle instead of a beep. */
+  slidewhistle: [
+    { at: 0, dur: 0.28, hz: 700, to: 2200, type: 'sine', gain: 0.75, wobble: { hz: 7, depth: 40 } },
+  ],
+  /** Ba-dum-tss. The joke has been made; move on. */
+  rimshot: [
+    { at: 0, dur: 0.07, hz: 220, to: 120, type: 'sine', gain: 0.8 },
+    { at: 0.1, dur: 0.07, hz: 180, to: 100, type: 'sine', gain: 0.8 },
+    {
+      at: 0.2,
+      dur: 0.22,
+      type: 'noise',
+      gain: 0.35,
+      filter: { type: 'highpass', hz: 4000, to: 7000 },
+    },
+  ],
   /** The plain rising beep. */
   chirp: [{ at: 0, dur: 0.11, hz: 880, to: 1320, type: 'triangle', gain: 1 }],
 };
 
+/**
+ * The shuttle-run beep, and the announcement that goes with it.
+ *
+ * A push-up every time the beep sounds, and the beep gets a friend every tenth
+ * rep the way the real thing changes level. The announcement is spoken by the
+ * browser rather than played from a file: it is a parody written here, so there
+ * is nothing to fetch and nothing that belongs to anyone else.
+ */
+export const PACER = {
+  beep: [{ at: 0, dur: 0.19, hz: 1000, type: 'square', gain: 0.55 }],
+  levelUp: [
+    { at: 0, dur: 0.12, hz: 1000, type: 'square', gain: 0.55 },
+    { at: 0.16, dur: 0.12, hz: 1000, type: 'square', gain: 0.55 },
+    { at: 0.32, dur: 0.2, hz: 1333, type: 'square', gain: 0.6 },
+  ],
+  /** Reps between level-ups. */
+  levelEvery: 10,
+  intro:
+    'The push-up test is a multi-stage exercise that gets more difficult as it continues. ' +
+    'A push-up on every beep. Ready? Begin.',
+  levelLine: (level) => `Level ${level}.`,
+};
+
 /** Draw a different sound each rep. */
 export const SHUFFLE = 'shuffle';
+
+/** Beep per rep, level up every tenth, with an announcement to start. */
+export const PACER_MODE = 'pacer';
 
 /** Played when the sound is on but nothing specific was asked for. */
 export const DEFAULT_PRESET = SHUFFLE;
@@ -85,7 +157,7 @@ export const DEFAULT_PRESET = SHUFFLE;
 export const FALLBACK_PRESET = 'coin';
 
 /** Names `?sound=` accepts without knowing which files exist. */
-export const SOUND_NAMES = [SHUFFLE, ...Object.keys(PRESETS)];
+export const SOUND_NAMES = [SHUFFLE, PACER_MODE, ...Object.keys(PRESETS)];
 
 // Short enough that the note starts at full weight rather than fading in. Any
 // softer and the sound reads as late even when it is not.
@@ -199,7 +271,8 @@ export class RepSound {
    *          contextFactory?: () => AudioContext|null,
    *          fetchAudio?: (src: string) => Promise<ArrayBuffer>,
    *          listSounds?: () => Promise<Array<{name: string, src: string}>>,
-   *          random?: () => number}} [options]
+   *          random?: () => number,
+   *          speech?: SpeechSynthesis, Utterance?: typeof SpeechSynthesisUtterance}} [options]
    */
   constructor({
     preset = DEFAULT_PRESET,
@@ -208,6 +281,8 @@ export class RepSound {
     fetchAudio = defaultFetch,
     listSounds = defaultCatalog,
     random = Math.random,
+    speech = globalThis.speechSynthesis,
+    Utterance = globalThis.SpeechSynthesisUtterance,
   } = {}) {
     this.preset = preset === null || preset === undefined ? null : String(preset).toLowerCase();
     this.volume = clamp(volume);
@@ -226,6 +301,11 @@ export class RepSound {
     this.catalog = [];
     this.loading = null;
     this.lastPlayed = null;
+    this.noise = null;
+    /** Reps this page has sounded. Only the pacer cares. */
+    this.reps = 0;
+    this.speech = speech;
+    this.Utterance = Utterance;
   }
 
   /** Whether this page should be making any noise at all. */
@@ -300,7 +380,8 @@ export class RepSound {
     if (this.loading || !this.enabled) return;
     const ctx = this.ctx;
     if (!ctx.decodeAudioData || !ctx.createBuffer) return;
-    // A synth preset needs no files at all.
+    // A synth preset, or the pacer, needs no files at all.
+    if (this.preset === PACER_MODE) return;
     if (this.preset !== SHUFFLE && this.preset in PRESETS) return;
 
     this.loading = (async () => {
@@ -347,6 +428,11 @@ export class RepSound {
    */
   play() {
     if (!this.arm()) return;
+
+    if (this.preset === PACER_MODE) {
+      this.#playPacer();
+      return;
+    }
 
     const name = this.#choose();
     if (name && this.buffers.has(name)) {
@@ -419,22 +505,110 @@ export class RepSound {
       const at = start + note.at;
       const end = at + note.dur;
       // Exponential ramps cannot reach zero, so the floor is a hair above it
-      // and the oscillator is stopped rather than faded to nothing.
+      // and the source is stopped rather than faded to nothing.
       const peak = Math.max(FLOOR, this.volume * note.gain);
 
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(FLOOR, at);
       gain.gain.exponentialRampToValueAtTime(peak, at + ATTACK_S);
       gain.gain.exponentialRampToValueAtTime(FLOOR, end);
+
+      // A filter is what turns a buzz into a splutter and a hiss into a snare,
+      // so it sits between the source and the volume rather than being optional
+      // decoration on the end.
+      let tail = gain;
+      if (note.filter && ctx.createBiquadFilter) {
+        const filter = ctx.createBiquadFilter();
+        filter.type = note.filter.type;
+        filter.frequency.setValueAtTime(note.filter.hz, at);
+        if (note.filter.to) filter.frequency.exponentialRampToValueAtTime(note.filter.to, end);
+        filter.connect(gain);
+        tail = filter;
+      }
       gain.connect(ctx.destination);
 
-      const osc = ctx.createOscillator();
-      osc.type = note.type;
-      osc.frequency.setValueAtTime(note.hz, at);
-      if (note.to) osc.frequency.exponentialRampToValueAtTime(note.to, end);
-      osc.connect(gain);
-      osc.start(at);
-      osc.stop(end);
+      const source = note.type === 'noise' ? this.#noiseSource() : ctx.createOscillator();
+      if (!source) continue;
+
+      if (note.type !== 'noise') {
+        source.type = note.type;
+        source.frequency.setValueAtTime(note.hz, at);
+        if (note.to) source.frequency.exponentialRampToValueAtTime(note.to, end);
+
+        // Vibrato, and the thing that keeps a fart from sounding like a fault.
+        if (note.wobble && ctx.createOscillator) {
+          const lfo = ctx.createOscillator();
+          const depth = ctx.createGain();
+          lfo.frequency.setValueAtTime(note.wobble.hz, at);
+          depth.gain.setValueAtTime(note.wobble.depth, at);
+          lfo.connect(depth);
+          depth.connect(source.frequency);
+          lfo.start(at);
+          lfo.stop(end);
+        }
+      }
+
+      source.connect(tail);
+      source.start(at);
+      source.stop?.(end);
+    }
+  }
+
+  /**
+   * White noise, made once and replayed. Building a second of random numbers on
+   * every rep is exactly the kind of work this class exists to keep off the
+   * moment the sound has to be instant.
+   */
+  #noiseSource() {
+    const ctx = this.ctx;
+    if (!ctx.createBufferSource || !ctx.createBuffer) return null;
+    if (!this.noise) {
+      const frames = Math.floor((ctx.sampleRate ?? 44100) * 0.5);
+      const buffer = ctx.createBuffer(1, frames, ctx.sampleRate ?? 44100);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < frames; i++) data[i] = this.random() * 2 - 1;
+      this.noise = buffer;
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = this.noise;
+    source.loop = true;
+    return source;
+  }
+
+  /**
+   * The shuttle run, counted in push-ups. A beep a rep, three beeps and a
+   * spoken level every tenth, and the announcement on the first one — which is
+   * the only time a sentence is worth waiting through.
+   */
+  #playPacer() {
+    this.reps += 1;
+
+    if (this.reps === 1) {
+      this.#say(PACER.intro);
+      this.#playNotes(PACER.beep);
+      return;
+    }
+
+    if (this.reps % PACER.levelEvery === 0) {
+      this.#playNotes(PACER.levelUp);
+      this.#say(PACER.levelLine(this.reps / PACER.levelEvery + 1));
+      return;
+    }
+
+    this.#playNotes(PACER.beep);
+  }
+
+  /** Speak, if this browser can, and never mind if it cannot. */
+  #say(text) {
+    try {
+      const speech = this.speech;
+      if (!speech?.speak) return;
+      speech.cancel?.();
+      const utterance = new this.Utterance(text);
+      utterance.rate = 1.05;
+      speech.speak(utterance);
+    } catch {
+      // A browser without speech still beeps, which is the part that matters.
     }
   }
 
@@ -450,6 +624,8 @@ export class RepSound {
     if (next === this.preset) return;
 
     this.preset = next;
+    // Choosing the pacer starts the test again, announcement and all.
+    this.reps = 0;
     // Buffers already decoded stay decoded: switching back is then instant, and
     // the bank is a few hundred kilobytes at worst.
     this.loading = null;
@@ -483,7 +659,8 @@ export class RepSound {
     if (!this.enabled) return 'off';
     if (this.failed) return 'blocked';
     if (!this.ctx) return 'idle';
-    const needsFiles = this.preset === SHUFFLE || !(this.preset in PRESETS);
+    const needsFiles =
+      this.preset !== PACER_MODE && (this.preset === SHUFFLE || !(this.preset in PRESETS));
     if (needsFiles && this.buffers.size === 0) return 'loading';
     return this.ctx.state ?? 'idle';
   }
