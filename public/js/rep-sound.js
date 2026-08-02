@@ -261,17 +261,17 @@ export const PRESETS = {
       at: 0,
       dur: 0.15,
       type: 'noise',
-      gain: 0.38,
+      gain: 0.9,
       filter: { type: 'bandpass', hz: 1100, to: 3400 },
     },
     {
       at: 0.14,
       dur: 0.16,
       type: 'noise',
-      gain: 0.38,
+      gain: 0.9,
       filter: { type: 'bandpass', hz: 3400, to: 850 },
     },
-    { at: 0, dur: 0.3, hz: 320, to: 110, type: 'sawtooth', gain: 0.22, wobble: { hz: 17, depth: 55 } },
+    { at: 0, dur: 0.3, hz: 320, to: 110, type: 'sawtooth', gain: 0.3, wobble: { hz: 17, depth: 55 } },
   ],
   /** One falling syllable of disappointment. */
   bruh: [
@@ -354,14 +354,21 @@ export const PRESETS = {
     { at: 0, dur: 0.28, hz: 262, type: 'sawtooth', gain: 0.2 },
     { at: 0, dur: 0.26, hz: 311, type: 'sawtooth', gain: 0.18 },
   ],
-  /** Something going past your ear. */
+  /**
+   * Something going past your ear.
+   *
+   * The filter closes rather than opens. Every note here is loudest at its
+   * first millisecond and decays from there, so a filter sweeping the other way
+   * is shut during the only part anyone hears — banded or rising, this lands at
+   * a fifth the volume of the rest of the shuffle and reads as a missed rep.
+   */
   whoosh: [
     {
       at: 0,
       dur: 0.3,
       type: 'noise',
-      gain: 0.4,
-      filter: { type: 'bandpass', hz: 320, to: 3200 },
+      gain: 0.5,
+      filter: { type: 'lowpass', hz: 7000, to: 500 },
     },
   ],
 };
