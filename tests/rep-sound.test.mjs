@@ -35,6 +35,30 @@ const bare = (options = {}) =>
 /** How many notes actually sounded, ignoring the silent keep-awake source. */
 const notesPlayed = (ctx) => ctx.started.filter((n) => n.hz !== 20).length;
 
+/**
+ * How many files played. The noise in a synthesised sound is a buffer source
+ * too, so counting every buffer source counts a fart as a file — and which
+ * sounds contain noise is up to the shuffle, which makes that count a coin toss.
+ * Noise is the one that loops.
+ */
+const filesPlayed = (ctx) => ctx.samples.filter((source) => !source.loop).length;
+
+/**
+ * Anything at all reaching the speakers — a pitched note, a burst of noise, or
+ * a file. Some sounds are pure noise and start no oscillator, so "it made a
+ * noise" cannot be measured by counting notes alone.
+ */
+const anythingPlayed = (ctx) => notesPlayed(ctx) + ctx.samples.length;
+
+/**
+ * Oscillators a preset starts: one per pitched note, and one more for every
+ * wobble, because vibrato is its own oscillator. Noise plays from a buffer and
+ * never reaches this count.
+ */
+const oscillators = (name) =>
+  PRESETS[name].filter((note) => note.type !== 'noise').length +
+  PRESETS[name].filter((note) => note.wobble).length;
+
 /** Enough of the Web Audio API to record what a sound asked for. */
 function fakeContext({ state = 'running', decode = null } = {}) {
   const ctx = {
@@ -97,6 +121,7 @@ function fakeContext({ state = 'running', decode = null } = {}) {
     createBufferSource() {
       const node = {
         buffer: null,
+        loop: false,
         stopped: null,
         connect: () => {},
         start: () => ctx.samples.push(node),
@@ -125,7 +150,7 @@ test('a counted rep makes a noise', () => {
 
   sound.play();
 
-  assert.equal(notesPlayed(ctx), NOTES, 'one rep, one sound');
+  assert.equal(notesPlayed(ctx), oscillators(sound.lastPlayed), 'one rep, one sound');
 });
 
 test('the device is opened once and reused, not reopened per rep', () => {
@@ -402,8 +427,8 @@ test('an empty sounds folder still shuffles, because half the bank needs no file
   await sound.loading;
   sound.play();
 
-  assert.equal(ctx.samples.length, 0, 'there were no files to play');
-  assert.ok(notesPlayed(ctx) > 0, 'and a synthesised one was played instead of nothing');
+  assert.equal(filesPlayed(ctx), 0, 'there were no files to play');
+  assert.ok(anythingPlayed(ctx) > 0, 'and a synthesised one was played instead of nothing');
   assert.ok(SHUFFLE_PRESETS.includes(sound.lastPlayed ?? ''), `played ${sound.lastPlayed}`);
 });
 
@@ -446,8 +471,8 @@ test('reps before the files have loaded are answered by the synthesised half', (
 
   sound.play();
 
-  assert.equal(ctx.samples.length, 0, 'no file was ready');
-  assert.ok(notesPlayed(ctx) > 0, 'so one that needs no file played instead');
+  assert.equal(filesPlayed(ctx), 0, 'no file was ready');
+  assert.ok(anythingPlayed(ctx) > 0, 'so one that needs no file played instead');
   assert.ok(SHUFFLE_PRESETS.includes(sound.lastPlayed));
 });
 
@@ -460,7 +485,9 @@ test('a named file that has not loaded yet says so, and still makes a noise', ()
   sound.play();
 
   assert.equal(sound.status, 'loading', 'the readout says what it is waiting for');
-  assert.equal(notesPlayed(ctx), PRESETS[FALLBACK_PRESET].length);
+  assert.equal(filesPlayed(ctx), 0, 'the file it was asked for is not ready');
+  assert.ok(anythingPlayed(ctx) > 0, 'so one that needs no file answered the rep instead');
+  assert.ok(SHUFFLE_PRESETS.includes(sound.lastPlayed), `played ${sound.lastPlayed}`);
 });
 
 test('switching sound keeps what is already decoded', async () => {

@@ -119,6 +119,251 @@ export const PRESETS = {
   ],
   /** The plain rising beep. */
   chirp: [{ at: 0, dur: 0.11, hz: 880, to: 1320, type: 'triangle', gain: 1 }],
+
+  /** A scouter sweeping for a power level. */
+  scouter: [
+    { at: 0, dur: 0.035, hz: 1760, type: 'square', gain: 0.45 },
+    { at: 0.055, dur: 0.035, hz: 2093, type: 'square', gain: 0.45 },
+    { at: 0.11, dur: 0.035, hz: 2489, type: 'square', gain: 0.45 },
+    { at: 0.165, dur: 0.035, hz: 2794, type: 'square', gain: 0.45 },
+    { at: 0.22, dur: 0.1, hz: 3322, type: 'square', gain: 0.5 },
+  ],
+  /** The same scouter reading one number too many. Three beeps, then the crunch. */
+  scouterbreak: [
+    { at: 0, dur: 0.04, hz: 2349, type: 'square', gain: 0.4 },
+    { at: 0.055, dur: 0.04, hz: 2794, type: 'square', gain: 0.4 },
+    { at: 0.11, dur: 0.05, hz: 3520, type: 'square', gain: 0.45 },
+    {
+      at: 0.18,
+      dur: 0.3,
+      type: 'noise',
+      gain: 0.5,
+      filter: { type: 'lowpass', hz: 3200, to: 260 },
+    },
+    { at: 0.18, dur: 0.24, hz: 170, to: 48, type: 'sawtooth', gain: 0.4 },
+  ],
+  /** A ki blast leaving the hand. */
+  kiblast: [
+    {
+      at: 0,
+      dur: 0.2,
+      hz: 1700,
+      to: 210,
+      type: 'sawtooth',
+      gain: 0.5,
+      filter: { type: 'lowpass', hz: 4200, to: 640 },
+    },
+    {
+      at: 0,
+      dur: 0.13,
+      type: 'noise',
+      gain: 0.22,
+      filter: { type: 'bandpass', hz: 2400, to: 560 },
+    },
+  ],
+  /**
+   * Wind-up and release. The charge climbs for a quarter of a second, and the
+   * beam that answers it falls — the drop is the half people actually hum.
+   */
+  kamehameha: [
+    {
+      at: 0,
+      dur: 0.26,
+      hz: 190,
+      to: 940,
+      type: 'sawtooth',
+      gain: 0.28,
+      wobble: { hz: 9, depth: 26 },
+      filter: { type: 'lowpass', hz: 600, to: 3200 },
+    },
+    {
+      at: 0.24,
+      dur: 0.26,
+      type: 'noise',
+      gain: 0.45,
+      filter: { type: 'bandpass', hz: 1100, to: 220 },
+    },
+    {
+      at: 0.24,
+      dur: 0.26,
+      hz: 340,
+      to: 80,
+      type: 'sawtooth',
+      gain: 0.38,
+      filter: { type: 'lowpass', hz: 2600, to: 380 },
+    },
+  ],
+  /**
+   * Going Super Saiyan. Every note here decays from the moment it starts, so
+   * the build is faked by stacking layers that begin late rather than by
+   * swelling any one of them.
+   */
+  supersaiyan: [
+    { at: 0, dur: 0.5, hz: 68, to: 172, type: 'sawtooth', gain: 0.38, wobble: { hz: 13, depth: 15 } },
+    {
+      at: 0,
+      dur: 0.34,
+      type: 'noise',
+      gain: 0.16,
+      filter: { type: 'bandpass', hz: 420, to: 1500 },
+    },
+    {
+      at: 0.16,
+      dur: 0.34,
+      type: 'noise',
+      gain: 0.3,
+      filter: { type: 'bandpass', hz: 950, to: 2800 },
+    },
+    { at: 0.28, dur: 0.22, hz: 740, to: 1660, type: 'square', gain: 0.16 },
+  ],
+  /** Instant Transmission: gone before the noise has finished. */
+  instanttransmission: [
+    {
+      at: 0,
+      dur: 0.14,
+      hz: 2700,
+      to: 320,
+      type: 'sine',
+      gain: 0.5,
+      wobble: { hz: 32, depth: 260 },
+    },
+    {
+      at: 0,
+      dur: 0.1,
+      type: 'noise',
+      gain: 0.18,
+      filter: { type: 'highpass', hz: 2200, to: 7000 },
+    },
+  ],
+
+  /**
+   * The pipe hitting the floor. The partials are deliberately out of tune with
+   * each other — evenly spaced ones ring like a bell, and a bell is not what
+   * falls down the stairs.
+   */
+  metalpipe: [
+    {
+      at: 0,
+      dur: 0.06,
+      type: 'noise',
+      gain: 0.3,
+      filter: { type: 'highpass', hz: 3000, to: 6500 },
+    },
+    { at: 0, dur: 0.5, hz: 622, type: 'triangle', gain: 0.26 },
+    { at: 0, dur: 0.44, hz: 1043, type: 'square', gain: 0.2 },
+    { at: 0, dur: 0.36, hz: 1657, type: 'square', gain: 0.15 },
+    { at: 0, dur: 0.3, hz: 2310, type: 'square', gain: 0.1 },
+    { at: 0.21, dur: 0.29, hz: 1043, type: 'square', gain: 0.12 },
+  ],
+  /** The record coming off mid-song. Up, then down, then the room is quiet. */
+  recordscratch: [
+    {
+      at: 0,
+      dur: 0.15,
+      type: 'noise',
+      gain: 0.38,
+      filter: { type: 'bandpass', hz: 1100, to: 3400 },
+    },
+    {
+      at: 0.14,
+      dur: 0.16,
+      type: 'noise',
+      gain: 0.38,
+      filter: { type: 'bandpass', hz: 3400, to: 850 },
+    },
+    { at: 0, dur: 0.3, hz: 320, to: 110, type: 'sawtooth', gain: 0.22, wobble: { hz: 17, depth: 55 } },
+  ],
+  /** One falling syllable of disappointment. */
+  bruh: [
+    {
+      at: 0,
+      dur: 0.3,
+      hz: 300,
+      to: 118,
+      type: 'sawtooth',
+      gain: 0.5,
+      filter: { type: 'lowpass', hz: 1500, to: 360 },
+    },
+    { at: 0, dur: 0.3, hz: 150, to: 59, type: 'triangle', gain: 0.3 },
+  ],
+  /** Blunt object, meet head. */
+  bonk: [
+    { at: 0, dur: 0.18, hz: 330, to: 66, type: 'sine', gain: 0.9 },
+    {
+      at: 0,
+      dur: 0.05,
+      type: 'noise',
+      gain: 0.28,
+      filter: { type: 'lowpass', hz: 2400, to: 520 },
+    },
+  ],
+  /** Wrong answer. */
+  buzzer: [
+    { at: 0, dur: 0.42, hz: 147, type: 'sawtooth', gain: 0.38, filter: { type: 'lowpass', hz: 1300 } },
+    { at: 0, dur: 0.42, hz: 98, type: 'square', gain: 0.32 },
+  ],
+  /** Money. */
+  kaching: [
+    {
+      at: 0,
+      dur: 0.04,
+      type: 'noise',
+      gain: 0.3,
+      filter: { type: 'highpass', hz: 3200, to: 6000 },
+    },
+    { at: 0.03, dur: 0.3, hz: 1568, type: 'sine', gain: 0.45 },
+    { at: 0.03, dur: 0.3, hz: 2093, type: 'sine', gain: 0.3 },
+    { at: 0.1, dur: 0.3, hz: 2637, type: 'sine', gain: 0.24 },
+  ],
+  /** A duck. No further justification is available. */
+  quack: [
+    {
+      at: 0,
+      dur: 0.19,
+      hz: 500,
+      to: 250,
+      type: 'sawtooth',
+      gain: 0.55,
+      wobble: { hz: 44, depth: 85 },
+      filter: { type: 'bandpass', hz: 1200, to: 680 },
+    },
+  ],
+  /** Two rising woops. */
+  siren: [
+    { at: 0, dur: 0.22, hz: 720, to: 1500, type: 'sine', gain: 0.42 },
+    { at: 0.24, dur: 0.24, hz: 720, to: 1500, type: 'sine', gain: 0.42 },
+  ],
+  /** Four notes down. You are out of lives. */
+  gameover: [
+    { at: 0, dur: 0.1, hz: 784, type: 'square', gain: 0.45 },
+    { at: 0.1, dur: 0.1, hz: 622, type: 'square', gain: 0.45 },
+    { at: 0.2, dur: 0.1, hz: 523, type: 'square', gain: 0.45 },
+    { at: 0.3, dur: 0.2, hz: 392, type: 'square', gain: 0.5 },
+  ],
+  /** The orchestral stab, still going strong since 1987. */
+  orchhit: [
+    {
+      at: 0,
+      dur: 0.06,
+      type: 'noise',
+      gain: 0.22,
+      filter: { type: 'highpass', hz: 2000, to: 5000 },
+    },
+    { at: 0, dur: 0.3, hz: 131, type: 'sawtooth', gain: 0.3 },
+    { at: 0, dur: 0.3, hz: 196, type: 'sawtooth', gain: 0.24 },
+    { at: 0, dur: 0.28, hz: 262, type: 'sawtooth', gain: 0.2 },
+    { at: 0, dur: 0.26, hz: 311, type: 'sawtooth', gain: 0.18 },
+  ],
+  /** Something going past your ear. */
+  whoosh: [
+    {
+      at: 0,
+      dur: 0.3,
+      type: 'noise',
+      gain: 0.4,
+      filter: { type: 'bandpass', hz: 320, to: 3200 },
+    },
+  ],
 };
 
 /**
@@ -153,8 +398,35 @@ export const SHUFFLE = 'shuffle';
  * Not all of them: `coin`, `chirp` and `powerup` are acknowledgements, and the
  * point of shuffling is that a rep might be answered by something ridiculous.
  * Leaving the plain beeps out is what keeps the odds of that high.
+ *
+ * Everything else goes in. A bank this size is the difference between a set of
+ * forty that hears eight sounds and one that rarely hears the same twice.
  */
-export const SHUFFLE_PRESETS = ['fart', 'airhorn', 'slidewhistle', 'rimshot', 'boing', 'sadtrombone'];
+export const SHUFFLE_PRESETS = [
+  'fart',
+  'airhorn',
+  'slidewhistle',
+  'rimshot',
+  'boing',
+  'sadtrombone',
+  'scouter',
+  'scouterbreak',
+  'kiblast',
+  'kamehameha',
+  'supersaiyan',
+  'instanttransmission',
+  'metalpipe',
+  'recordscratch',
+  'bruh',
+  'bonk',
+  'buzzer',
+  'kaching',
+  'quack',
+  'siren',
+  'gameover',
+  'orchhit',
+  'whoosh',
+];
 
 /** Beep per rep, level up every tenth, with an announcement to start. */
 export const PACER_MODE = 'pacer';
