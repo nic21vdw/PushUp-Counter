@@ -20,8 +20,12 @@ import {
   PACER,
   PACER_MODE,
   SAMPLE_WINDOWS,
+  SAYINGS,
+  SAYINGS_MODE,
   SHUFFLE,
   SHUFFLE_PRESETS,
+  isSpoken,
+  spokenLine,
 } from '../public/js/rep-sound.js';
 
 // The default is shuffle, so a bare RepSound in these tests plays the fallback
@@ -557,6 +561,86 @@ test('a sound named that does not exist shuffles rather than beeping forever', a
   assert.deepEqual(sound.loaded, ['fahh', 'vine-boom'], 'the bank is loaded despite the typo');
   assert.equal(ctx.samples.length, 1, 'and a real sound played');
   assert.equal(notesPlayed(ctx), 0);
+});
+
+/* --------------------------------------------------------------- the lines */
+
+/** A browser that can speak, and a record of everything it was asked to say. */
+function fakeVoice() {
+  const said = [];
+  return {
+    said,
+    speech: { speak: (utterance) => said.push(utterance.text), cancel: () => {} },
+    Utterance: class {
+      constructor(text) {
+        this.text = text;
+      }
+    },
+  };
+}
+
+test('a line is said out loud, and not the same one twice running', () => {
+  const { said, speech, Utterance } = fakeVoice();
+  const ctx = fakeContext();
+  const sound = bare({ preset: SAYINGS_MODE, contextFactory: () => ctx, speech, Utterance });
+
+  for (let i = 0; i < 8; i++) sound.play();
+
+  assert.equal(said.length, 8, 'eight reps, eight lines');
+  for (const line of said) assert.ok(SAYINGS.includes(line), `said "${line}"`);
+  for (let i = 1; i < said.length; i++) {
+    assert.notEqual(said[i], said[i - 1], `rep ${i} repeated "${said[i]}"`);
+  }
+});
+
+test('a browser with no voice answers the rep with a noise rather than silence', () => {
+  const ctx = fakeContext();
+  const sound = bare({
+    preset: SAYINGS_MODE,
+    contextFactory: () => ctx,
+    speech: undefined,
+    Utterance: undefined,
+  });
+
+  sound.play();
+
+  assert.ok(anythingPlayed(ctx) > 0, 'something stood in for the line');
+  assert.ok(SHUFFLE_PRESETS.includes(sound.lastPlayed), `played ${sound.lastPlayed}`);
+});
+
+test('shuffle draws on the lines too, once there is a voice to say them', () => {
+  const { speech, Utterance } = fakeVoice();
+  const spoken = bare({ speech, Utterance });
+  const mute = bare({ speech: undefined, Utterance: undefined });
+
+  assert.equal(spoken.bank.length, SHUFFLE_PRESETS.length + SAYINGS.length);
+  assert.ok(spoken.bank.some(isSpoken), 'and a line can be drawn');
+  assert.deepEqual(mute.bank, SHUFFLE_PRESETS, 'a mute browser is left with the noises');
+});
+
+test('a line asked for is the line said', () => {
+  const { said, speech, Utterance } = fakeVoice();
+  const ctx = fakeContext();
+  const sound = bare({
+    preset: SAYINGS_MODE,
+    contextFactory: () => ctx,
+    speech,
+    Utterance,
+    random: () => 0,
+  });
+
+  sound.play();
+
+  assert.equal(said[0], spokenLine(sound.lastPlayed));
+  assert.equal(anythingPlayed(ctx), 0, 'a line is spoken, not played');
+});
+
+test('every saying is short enough to be over before the next rep', () => {
+  for (const line of SAYINGS) {
+    assert.ok(line.trim().length > 0, 'a blank line says nothing');
+    assert.ok(line.length <= 40, `"${line}" is a speech, not a reaction`);
+  }
+  assert.equal(new Set(SAYINGS).size, SAYINGS.length, 'a duplicated line halves its own joke');
 });
 
 /* ---------------------------------------------------------------- the noise */

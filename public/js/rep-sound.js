@@ -4,11 +4,13 @@
  * Mid-set your head is down and the number is off to the side, so the only
  * honest confirmation the tracker can give you is one you can hear.
  *
- * Two kinds of sound live here. A **sample** is an audio file from
+ * Three kinds of sound live here. A **sample** is an audio file from
  * `public/sounds/`, trimmed to the part worth hearing. A **preset** is
  * synthesised from oscillators, needs no file, and is what plays if a sample
- * cannot be loaded. `shuffle` draws a different sample each rep, because the
- * same noise a hundred times in a set stops being funny somewhere around six.
+ * cannot be loaded. A **line** is spoken aloud by the browser, and is the one
+ * still worth hearing on the fortieth rep — a chime can only ever tell you the
+ * rep counted. `shuffle` draws a different one each rep, because the same noise
+ * a hundred times in a set stops being funny somewhere around six.
  *
  * Files are discovered at run time rather than listed here, so dropping an mp3
  * into `public/sounds/` is all it takes to add one. Anything without a measured
@@ -396,6 +398,65 @@ export const PACER = {
   levelLine: (level) => `Level ${level}.`,
 };
 
+/**
+ * Things said out loud instead of played.
+ *
+ * A chime tells you the rep counted and nothing else. A voice is the half of a
+ * meme that survives being heard forty times in one set, because the joke is
+ * the line rather than the waveform.
+ *
+ * Written here and spoken by the browser, exactly as the pacer's announcement
+ * is: there is no recording to fetch, nothing sitting in the repository, and
+ * nothing here that belongs to anyone else. Keep them short. A line still being
+ * said when the next rep lands is cut off by that rep, which is funny twice and
+ * then just sounds broken.
+ */
+export const SAYINGS = [
+  'Sheesh!',
+  'Bruh.',
+  'No way.',
+  'Absolute cinema.',
+  'Skill issue.',
+  'Emotional damage.',
+  'He needs some milk.',
+  'Somebody get this man a towel.',
+  'Certified.',
+  'Nice.',
+  'Too easy.',
+  'Is that it?',
+  'Weak!',
+  'Get up.',
+  'One more.',
+  "That's one.",
+  'Again.',
+  'Push!',
+  "Let's go!",
+  'Your arms are shaking.',
+  'The subscribers are watching.',
+  'Down. Up. Repeat.',
+  "It's over nine thousand!",
+  'Kamehameha!',
+  'Power level rising.',
+  'Not even my final form.',
+];
+
+/** Speak a different line each rep, and never play a noise. */
+export const SAYINGS_MODE = 'sayings';
+
+// Lines live in the bank under a name, so one can be drawn exactly like a file
+// or a preset and the no-repeats rule covers all three kinds at once.
+const SPOKEN_PREFIX = 'say:';
+
+/** The bank name for the line at `index`. */
+export const spokenName = (index) => `${SPOKEN_PREFIX}${index}`;
+
+/** Whether a bank name is a line rather than a file or a preset. */
+export const isSpoken = (name) => typeof name === 'string' && name.startsWith(SPOKEN_PREFIX);
+
+/** The line behind a bank name, or null when that name is not a line. */
+export const spokenLine = (name) =>
+  isSpoken(name) ? (SAYINGS[Number(name.slice(SPOKEN_PREFIX.length))] ?? null) : null;
+
 /** Draw a different sound each rep. */
 export const SHUFFLE = 'shuffle';
 
@@ -404,10 +465,12 @@ export const SHUFFLE = 'shuffle';
  *
  * Not all of them: `coin`, `chirp` and `powerup` are acknowledgements, and the
  * point of shuffling is that a rep might be answered by something ridiculous.
- * Leaving the plain beeps out is what keeps the odds of that high.
+ * Leaving the plain beeps out is what keeps the odds of that high. `siren` and
+ * `whoosh` are out for the same reason — a noise with no joke in it is a chime
+ * wearing a costume. Both are still there to be asked for by name.
  *
- * Everything else goes in. A bank this size is the difference between a set of
- * forty that hears eight sounds and one that rarely hears the same twice.
+ * The lines are added to this on the fly rather than listed here, because
+ * whether the browser can speak at all is only known at run time.
  */
 export const SHUFFLE_PRESETS = [
   'fart',
@@ -429,10 +492,8 @@ export const SHUFFLE_PRESETS = [
   'buzzer',
   'kaching',
   'quack',
-  'siren',
   'gameover',
   'orchhit',
-  'whoosh',
 ];
 
 /** Beep per rep, level up every tenth, with an announcement to start. */
@@ -445,12 +506,18 @@ export const DEFAULT_PRESET = SHUFFLE;
 export const FALLBACK_PRESET = 'coin';
 
 /** Names `?sound=` accepts without knowing which files exist. */
-export const SOUND_NAMES = [SHUFFLE, PACER_MODE, ...Object.keys(PRESETS)];
+export const SOUND_NAMES = [SHUFFLE, SAYINGS_MODE, PACER_MODE, ...Object.keys(PRESETS)];
 
 // Short enough that the note starts at full weight rather than fading in. Any
 // softer and the sound reads as late even when it is not.
 const ATTACK_S = 0.002;
 const FLOOR = 0.0001;
+
+/** The pacer reads out a whole sentence, so it is spoken at about talking speed. */
+const PACER_RATE = 1.05;
+
+/** A reaction is not a sentence. Said faster, or it is still going at the next rep. */
+const SAYING_RATE = 1.15;
 
 /** Nothing may run longer than this: a rep can land 300ms after the last one. */
 const MAX_SAMPLE_MS = 1000;
@@ -613,7 +680,22 @@ export class RepSound {
    * before the mp3s have finished loading.
    */
   get bank() {
-    return [...this.loaded, ...SHUFFLE_PRESETS];
+    return [...this.loaded, ...SHUFFLE_PRESETS, ...this.spokenNames];
+  }
+
+  /**
+   * The lines this browser can actually say, as bank names.
+   *
+   * Empty where there is no speech to be had — an OBS source with no voices
+   * must never draw a line and answer the rep with silence, and whether speech
+   * exists is not knowable until there is a browser to ask.
+   */
+  get spokenNames() {
+    return this.#canSpeak() ? SAYINGS.map((_, index) => spokenName(index)) : [];
+  }
+
+  #canSpeak() {
+    return Boolean(this.speech?.speak && this.Utterance);
   }
 
   /**
@@ -678,8 +760,8 @@ export class RepSound {
     if (this.loading || !this.enabled) return;
     const ctx = this.ctx;
     if (!ctx.decodeAudioData || !ctx.createBuffer) return;
-    // A synth preset, or the pacer, needs no files at all.
-    if (this.preset === PACER_MODE) return;
+    // A synth preset, the pacer, or a spoken line needs no files at all.
+    if (this.preset === PACER_MODE || this.preset === SAYINGS_MODE) return;
     if (this.preset !== SHUFFLE && this.preset in PRESETS) return;
 
     this.loading = (async () => {
@@ -733,9 +815,14 @@ export class RepSound {
     }
 
     const name = this.#choose();
-    // Recorded for both kinds, or shuffle would happily play the same
-    // synthesised sound twice running while carefully not repeating a file.
+    // Recorded for all three kinds, or shuffle would happily repeat the same
+    // synthesised sound or line while carefully not repeating a file.
     this.lastPlayed = name;
+
+    if (isSpoken(name)) {
+      this.#say(spokenLine(name), SAYING_RATE);
+      return;
+    }
 
     if (name && this.buffers.has(name)) {
       this.#playSample(this.buffers.get(name));
@@ -750,16 +837,27 @@ export class RepSound {
    * than random.
    */
   #choose() {
-    if (this.preset !== SHUFFLE && this.buffers.has(this.preset)) return this.preset;
+    const drawing = this.preset === SHUFFLE || this.preset === SAYINGS_MODE;
+    if (!drawing && this.buffers.has(this.preset)) return this.preset;
     // A synthesised preset was asked for by name and needs no bank.
-    if (this.preset !== SHUFFLE && this.preset in PRESETS) return this.preset;
+    if (!drawing && this.preset in PRESETS) return this.preset;
 
-    const bank = this.bank;
-    if (bank.length === 0) return FALLBACK_PRESET;
-    if (bank.length === 1) return bank[0];
+    const pool = this.preset === SAYINGS_MODE ? this.#lines() : this.bank;
+    if (pool.length === 0) return FALLBACK_PRESET;
+    if (pool.length === 1) return pool[0];
 
-    const others = bank.filter((name) => name !== this.lastPlayed);
+    const others = pool.filter((name) => name !== this.lastPlayed);
     return others[Math.floor(this.random() * others.length) % others.length];
+  }
+
+  /**
+   * What lines-only mode draws from, falling back to the synthesised jokes on a
+   * browser with no voice: asking for sayings where none can be said should
+   * cost you the words, not the acknowledgement that the rep counted.
+   */
+  #lines() {
+    const names = this.spokenNames;
+    return names.length > 0 ? names : SHUFFLE_PRESETS;
   }
 
   #playSample(buffer) {
@@ -899,14 +997,20 @@ export class RepSound {
     this.#playNotes(PACER.beep);
   }
 
-  /** Speak, if this browser can, and never mind if it cannot. */
-  #say(text) {
+  /**
+   * Speak, if this browser can, and never mind if it cannot.
+   *
+   * Cancelling first is what keeps a set from turning into a queue: a line
+   * still going when the next rep lands is dropped for the new one, the same
+   * way a sample is ducked rather than left to stack.
+   */
+  #say(text, rate = PACER_RATE) {
     try {
       const speech = this.speech;
       if (!speech?.speak) return;
       speech.cancel?.();
       const utterance = new this.Utterance(text);
-      utterance.rate = 1.05;
+      utterance.rate = rate;
       speech.speak(utterance);
     } catch {
       // A browser without speech still beeps, which is the part that matters.
@@ -963,7 +1067,10 @@ export class RepSound {
     // Shuffle can play the moment the device is open — the synthesised half of
     // the bank needs nothing fetched — so only a named file counts as loading.
     const waitingOnAFile =
-      this.preset !== PACER_MODE && this.preset !== SHUFFLE && !(this.preset in PRESETS);
+      this.preset !== PACER_MODE &&
+      this.preset !== SAYINGS_MODE &&
+      this.preset !== SHUFFLE &&
+      !(this.preset in PRESETS);
     if (waitingOnAFile && !this.buffers.has(this.preset)) return 'loading';
     return this.ctx.state ?? 'idle';
   }
