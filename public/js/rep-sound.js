@@ -820,7 +820,9 @@ export class RepSound {
     this.lastPlayed = name;
 
     if (isSpoken(name)) {
-      this.#say(spokenLine(name), SAYING_RATE);
+      // A line that will not come out must still leave a noise behind, or the
+      // rep goes unacknowledged and reads as one the camera missed.
+      this.#say(spokenLine(name), SAYING_RATE, () => this.#playNotes(PRESETS[FALLBACK_PRESET]));
       return;
     }
 
@@ -1003,17 +1005,33 @@ export class RepSound {
    * Cancelling first is what keeps a set from turning into a queue: a line
    * still going when the next rep lands is dropped for the new one, the same
    * way a sample is ducked rather than left to stack.
+   *
+   * Speech is gated behind a click exactly as the audio device is, and refuses
+   * with `not-allowed` on a page nobody has touched. `onBlocked` is how the
+   * caller puts a noise there instead, because a rep answered by nothing at all
+   * is the one failure this file exists to prevent. Being cut off by the next
+   * rep is not a failure, so an interruption does not trigger it.
    */
-  #say(text, rate = PACER_RATE) {
+  #say(text, rate = PACER_RATE, onBlocked = null) {
     try {
       const speech = this.speech;
-      if (!speech?.speak) return;
+      if (!speech?.speak) {
+        onBlocked?.();
+        return;
+      }
       speech.cancel?.();
       const utterance = new this.Utterance(text);
       utterance.rate = rate;
+      if (onBlocked) {
+        utterance.onerror = (event) => {
+          const why = event?.error;
+          if (why !== 'interrupted' && why !== 'canceled') onBlocked();
+        };
+      }
       speech.speak(utterance);
     } catch {
       // A browser without speech still beeps, which is the part that matters.
+      onBlocked?.();
     }
   }
 

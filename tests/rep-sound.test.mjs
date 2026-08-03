@@ -635,6 +635,44 @@ test('a line asked for is the line said', () => {
   assert.equal(anythingPlayed(ctx), 0, 'a line is spoken, not played');
 });
 
+test('a line the browser refuses to say leaves a noise behind instead', () => {
+  const ctx = fakeContext();
+  const sound = bare({
+    preset: SAYINGS_MODE,
+    contextFactory: () => ctx,
+    // What Chrome does on a page nobody has clicked: it takes the utterance and
+    // then refuses it, rather than throwing.
+    speech: { speak: (u) => u.onerror?.({ error: 'not-allowed' }), cancel: () => {} },
+    Utterance: class {
+      constructor(text) {
+        this.text = text;
+      }
+    },
+  });
+
+  sound.play();
+
+  assert.ok(anythingPlayed(ctx) > 0, 'the rep was answered by something audible');
+});
+
+test('a line cut off by the next rep is not treated as a refusal', () => {
+  const ctx = fakeContext();
+  const sound = bare({
+    preset: SAYINGS_MODE,
+    contextFactory: () => ctx,
+    speech: { speak: (u) => u.onerror?.({ error: 'interrupted' }), cancel: () => {} },
+    Utterance: class {
+      constructor(text) {
+        this.text = text;
+      }
+    },
+  });
+
+  sound.play();
+
+  assert.equal(anythingPlayed(ctx), 0, 'being talked over is what fast reps sound like');
+});
+
 test('every saying is short enough to be over before the next rep', () => {
   for (const line of SAYINGS) {
     assert.ok(line.trim().length > 0, 'a blank line says nothing');
