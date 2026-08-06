@@ -24,12 +24,13 @@ import {
   SAYINGS_MODE,
   SHUFFLE,
   SHUFFLE_PRESETS,
+  VOICES,
   isSpoken,
   spokenLine,
 } from '../public/js/rep-sound.js';
 
-// The default is shuffle, so a bare RepSound in these tests plays the fallback
-// notes until files have been discovered and decoded.
+// The default is the lines, and node has no voice to say them with, so a bare
+// RepSound in these tests falls back to the synthesised noises.
 const NOTES = PRESETS[FALLBACK_PRESET].length;
 
 /** A RepSound with no files to find, so only the synthesised path can run. */
@@ -326,6 +327,9 @@ const makeBuffer = (channels, frames, rate) => {
 function withBank(names, { decode, ...options } = {}) {
   const ctx = fakeContext({ decode: decode ?? (() => Promise.resolve(fakeDecoded())) });
   const sound = new RepSound({
+    // The bank only exists for the sounds, and the default is the lines, which
+    // load nothing. These tests are about files, so they ask for the shuffle.
+    preset: SHUFFLE,
     contextFactory: () => ctx,
     listSounds: () => Promise.resolve(names.map((name) => ({ name, src: `/sounds/${name}.mp3` }))),
     fetchAudio: () => Promise.resolve(new ArrayBuffer(8)),
@@ -671,6 +675,79 @@ test('a line cut off by the next rep is not treated as a refusal', () => {
   sound.play();
 
   assert.equal(anythingPlayed(ctx), 0, 'being talked over is what fast reps sound like');
+});
+
+/** A browser with the three Windows voices, keeping whole utterances. */
+function fakeCast(names = ['Microsoft David', 'Microsoft Mark', 'Microsoft Zira']) {
+  const spoke = [];
+  return {
+    spoke,
+    speech: {
+      speak: (utterance) => spoke.push(utterance),
+      cancel: () => {},
+      getVoices: () => names.map((name) => ({ name, lang: 'en-US', localService: true })),
+    },
+    Utterance: class {
+      constructor(text) {
+        this.text = text;
+      }
+    },
+  };
+}
+
+test('the line is said by one of the characters, and not the same one twice running', () => {
+  const { spoke, speech, Utterance } = fakeCast();
+  const ctx = fakeContext();
+  const sound = bare({ preset: SAYINGS_MODE, contextFactory: () => ctx, speech, Utterance });
+
+  for (let i = 0; i < 10; i++) sound.play();
+
+  for (const utterance of spoke) {
+    const character = VOICES.find((v) => v.pitch === utterance.pitch && v.rate === utterance.rate);
+    assert.ok(character, `pitch ${utterance.pitch} at rate ${utterance.rate} is nobody`);
+    assert.ok(utterance.voice.name.toLowerCase().includes(character.wants[0]));
+  }
+  for (let i = 1; i < spoke.length; i++) {
+    assert.notEqual(spoke[i].pitch, spoke[i - 1].pitch, `rep ${i} used the same voice twice`);
+  }
+});
+
+test('a machine missing a voice still gets the character, in whatever it has', () => {
+  const { spoke, speech, Utterance } = fakeCast(['Microsoft David']);
+  const ctx = fakeContext();
+  const sound = bare({ preset: SAYINGS_MODE, contextFactory: () => ctx, speech, Utterance });
+
+  for (let i = 0; i < 6; i++) sound.play();
+
+  const pitches = new Set(spoke.map((u) => u.pitch));
+  assert.ok(pitches.size > 1, 'one voice at several pitches is still several characters');
+  for (const utterance of spoke) {
+    assert.ok(utterance.voice === undefined || utterance.voice.name === 'Microsoft David');
+  }
+});
+
+test('the network voices are never used, because a late line has been talked over', () => {
+  const { spoke, speech, Utterance } = fakeCast();
+  speech.getVoices = () => [
+    { name: 'Google US English', lang: 'en-US', localService: false },
+    { name: 'Microsoft David', lang: 'en-US', localService: true },
+  ];
+  const sound = bare({
+    preset: SAYINGS_MODE,
+    contextFactory: () => fakeContext(),
+    speech,
+    Utterance,
+  });
+
+  for (let i = 0; i < 6; i++) sound.play();
+
+  for (const utterance of spoke) {
+    assert.notEqual(utterance.voice?.name, 'Google US English');
+  }
+});
+
+test('there are enough lines that a set does not run out of jokes', () => {
+  assert.ok(SAYINGS.length >= 50, `only ${SAYINGS.length} lines`);
 });
 
 test('every saying is short enough to be over before the next rep', () => {

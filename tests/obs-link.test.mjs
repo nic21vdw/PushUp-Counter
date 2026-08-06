@@ -70,10 +70,11 @@ test('muting a source survives the round trip, silence included', () => {
 
   assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: 'boing' })).sound, 'boing');
   assert.equal(
-    buildOverlayUrl(ORIGIN, { sound: 'shuffle' }),
+    buildOverlayUrl(ORIGIN, { sound: 'sayings' }),
     `${ORIGIN}/overlay.html`,
     'the default sound is not worth a query param',
   );
+  assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: 'shuffle' })).sound, 'shuffle');
   assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: 'fahh' })).sound, 'fahh');
   assert.equal(optionsOf(buildOverlayUrl(ORIGIN, { sound: 'coin' })).sound, 'coin');
 

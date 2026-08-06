@@ -438,6 +438,78 @@ export const SAYINGS = [
   'Kamehameha!',
   'Power level rising.',
   'Not even my final form.',
+  'Rep counted. Emotion not found.',
+  'You have gained one strength.',
+  'Congratulations. Nobody saw that.',
+  'Error four oh four. Chest missing.',
+  'That one was legal.',
+  'Your bones approve.',
+  'Push up dot exe is responding.',
+  'Wow. A whole one.',
+  'Gravity remains undefeated.',
+  'Adding one to the number.',
+  'This is my job now.',
+  'Your form is acceptable. Barely.',
+  'Achievement unlocked. Floor toucher.',
+  'I am counting. Not impressed.',
+  'Muscle detected. Loading.',
+  'Please do not stop. Ever.',
+  'Slightly stronger than before.',
+  'The ground says hello again.',
+  'That rep buffered fine.',
+  'Your ancestors are confused.',
+  'Repetition accepted by the system.',
+  'Sixty more and I sleep.',
+  'That was a push up. Probably.',
+  'Skill issue. But improving.',
+  'Repeat until further notice.',
+  'I have logged this event.',
+  'Your arms filed a complaint.',
+  'Big man moment. Small.',
+  'Number go up.',
+  'Okay that one was clean.',
+  'Do not perceive me.',
+  'Rep saved to the cloud.',
+  'Warning. Swole levels rising.',
+  'Cardio has entered the chat.',
+  'That counts. I decided.',
+  'Everyone clap. Nobody clapped.',
+  'Your chest is compiling.',
+  'One push up. Zero personality.',
+  'Please insert more effort.',
+  'I felt nothing. Do another.',
+  'Twitch chat demands more.',
+  'Statistically that happened.',
+  'One percent stronger. Allegedly.',
+  'Beep. Rep. Beep.',
+  'Your shoulders said ow.',
+  'Certified floor enjoyer.',
+  'This unit is proud. Falsely.',
+  'Task failed successfully.',
+  'A protein shake smiled somewhere.',
+  'I have nowhere else to be.',
+];
+
+/**
+ * Who says the line.
+ *
+ * Windows ships three voices Chrome can reach — David, Mark and Zira — and the
+ * joke of the flat robot wears out faster when it is always the same robot.
+ * Pitch and rate turn those three into six characters: the same engine wound
+ * down to a slab of concrete or up to a chipmunk is the sound the whole genre
+ * was built on, and it costs nothing to install.
+ *
+ * `wants` is matched against voice names in order, lower-cased. Nothing here is
+ * guaranteed to exist: an OBS source on a machine with one voice falls through
+ * to whatever the browser has, and the pitch alone still tells them apart.
+ */
+export const VOICES = [
+  { name: 'sam', wants: ['david'], pitch: 0.2, rate: 1.1 },
+  { name: 'mike', wants: ['mark'], pitch: 0.7, rate: 1.15 },
+  { name: 'mary', wants: ['zira'], pitch: 1.3, rate: 1.2 },
+  { name: 'radar', wants: ['zira', 'david'], pitch: 2, rate: 1.45 },
+  { name: 'bass', wants: ['mark', 'david'], pitch: 0, rate: 0.9 },
+  { name: 'anchor', wants: ['david', 'mark'], pitch: 1, rate: 1.2 },
 ];
 
 /** Speak a different line each rep, and never play a noise. */
@@ -499,8 +571,14 @@ export const SHUFFLE_PRESETS = [
 /** Beep per rep, level up every tenth, with an announcement to start. */
 export const PACER_MODE = 'pacer';
 
-/** Played when the sound is on but nothing specific was asked for. */
-export const DEFAULT_PRESET = SHUFFLE;
+/**
+ * Played when the sound is on but nothing specific was asked for.
+ *
+ * The lines, not the shuffle. A noise says the rep counted; a line says
+ * something, and something said on every single rep is the point of the
+ * overlay. Shuffle is still one pick away in the options panel.
+ */
+export const DEFAULT_PRESET = SAYINGS_MODE;
 
 /** Played while a sample is still loading, and if it never loads at all. */
 export const FALLBACK_PRESET = 'coin';
@@ -661,6 +739,8 @@ export class RepSound {
     this.reps = 0;
     this.speech = speech;
     this.Utterance = Utterance;
+    /** Which of `VOICES` last spoke, so the next rep picks a different one. */
+    this.lastVoice = null;
   }
 
   /** Whether this page should be making any noise at all. */
@@ -822,7 +902,12 @@ export class RepSound {
     if (isSpoken(name)) {
       // A line that will not come out must still leave a noise behind, or the
       // rep goes unacknowledged and reads as one the camera missed.
-      this.#say(spokenLine(name), SAYING_RATE, () => this.#playNotes(PRESETS[FALLBACK_PRESET]));
+      this.#say(
+        spokenLine(name),
+        SAYING_RATE,
+        () => this.#playNotes(PRESETS[FALLBACK_PRESET]),
+        this.#castVoice(),
+      );
       return;
     }
 
@@ -860,6 +945,38 @@ export class RepSound {
   #lines() {
     const names = this.spokenNames;
     return names.length > 0 ? names : SHUFFLE_PRESETS;
+  }
+
+  /**
+   * Who says this one. Never the same character twice running, for the reason
+   * the sounds are not either: two identical robots in a row read as one robot.
+   */
+  #castVoice() {
+    const others = VOICES.filter((v) => v.name !== this.lastVoice);
+    const pick = others[Math.floor(this.random() * others.length) % others.length];
+    this.lastVoice = pick.name;
+    return pick;
+  }
+
+  /**
+   * The installed voice a character wants, or null to leave the browser on its
+   * own. Only the local ones are considered: the Google voices are network
+   * calls, and a line that arrives a second late has already been talked over
+   * by the next rep.
+   */
+  #voiceFor(character) {
+    let available;
+    try {
+      available = this.speech?.getVoices?.() ?? [];
+    } catch {
+      return null;
+    }
+    const local = available.filter((v) => v.localService !== false && /^en/i.test(v.lang ?? 'en'));
+    for (const wanted of character.wants) {
+      const found = local.find((v) => (v.name ?? '').toLowerCase().includes(wanted));
+      if (found) return found;
+    }
+    return null;
   }
 
   #playSample(buffer) {
@@ -1012,7 +1129,7 @@ export class RepSound {
    * is the one failure this file exists to prevent. Being cut off by the next
    * rep is not a failure, so an interruption does not trigger it.
    */
-  #say(text, rate = PACER_RATE, onBlocked = null) {
+  #say(text, rate = PACER_RATE, onBlocked = null, character = null) {
     try {
       const speech = this.speech;
       if (!speech?.speak) {
@@ -1021,7 +1138,12 @@ export class RepSound {
       }
       speech.cancel?.();
       const utterance = new this.Utterance(text);
-      utterance.rate = rate;
+      utterance.rate = character?.rate ?? rate;
+      if (character) {
+        utterance.pitch = character.pitch;
+        const voice = this.#voiceFor(character);
+        if (voice) utterance.voice = voice;
+      }
       if (onBlocked) {
         utterance.onerror = (event) => {
           const why = event?.error;
