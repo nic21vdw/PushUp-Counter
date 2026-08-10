@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -7,6 +8,13 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const STATE_FILE = path.join(ROOT, 'state.json');
+// The count is the one thing here that cannot be recreated: push-ups already
+// done are gone if the number goes. So the last-known-good file is kept beside
+// it, every change is appended to a journal, and a file that will not parse is
+// put aside rather than overwritten.
+const BACKUP_FILE = `${STATE_FILE}.bak`;
+const HISTORY_FILE = path.join(ROOT, 'state-history.jsonl');
+const TOKEN_FILE = path.join(ROOT, '.admin-token');
 
 // ---------------------------------------------------------------------------
 // Config (.env file + real environment variables; env wins)
@@ -122,23 +130,118 @@ let lastError = null;
 let saveQueue = Promise.resolve();
 
 function loadState() {
-  if (!fs.existsSync(STATE_FILE)) return;
-  try {
-    const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    state = { ...DEFAULT_STATE, ...saved };
-  } catch (err) {
-    console.error(`[state] could not read ${STATE_FILE}: ${err.message}`);
-    console.error('[state] starting from defaults; the old file is left untouched.');
+  for (const file of [STATE_FILE, BACKUP_FILE]) {
+    if (!fs.existsSync(file)) continue;
+    try {
+      state = { ...DEFAULT_STATE, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
+      if (file === BACKUP_FILE) {
+        console.error('[state] state.json was unreadable — the count came from the backup.');
+        // Loud, because a restored count can be a poll or two behind, and a
+        // silently wrong number is the thing this whole file exists to avoid.
+        lastError = 'The count was restored from a backup — check it before you count on it.';
+      }
+      return;
+    } catch (err) {
+      console.error(`[state] could not read ${path.basename(file)}: ${err.message}`);
+    }
+  }
+
+  // Nothing readable. Move whatever is there aside instead of letting the first
+  // save write zeroes over it: an unparseable file is still the only record of
+  // the count, and a person can pick a number out of it by eye.
+  if (fs.existsSync(STATE_FILE)) {
+    const kept = `${STATE_FILE}.broken`;
+    try {
+      fs.renameSync(STATE_FILE, kept);
+      console.error(`[state] kept the unreadable file as ${path.basename(kept)}`);
+    } catch (err) {
+      console.error(`[state] could not set the unreadable file aside: ${err.message}`);
+    }
+    lastError = 'The saved count could not be read. The counter started from zero.';
   }
 }
 
-function saveState() {
+/**
+ * @param {string|null} reason What moved the count, for the journal. Null for
+ *   the routine saves that only restamp `lastSeenAt`.
+ */
+function saveState(reason = null) {
   const snapshot = JSON.stringify(state, null, 2);
   saveQueue = saveQueue
+    // Yesterday's file, kept one save behind. Written before the new one lands,
+    // so a crash in the middle of a save leaves a readable count either way.
+    .then(() => fsp.copyFile(STATE_FILE, BACKUP_FILE).catch(() => {}))
     .then(() => fsp.writeFile(`${STATE_FILE}.tmp`, snapshot))
     .then(() => fsp.rename(`${STATE_FILE}.tmp`, STATE_FILE))
+    .then(() => appendHistory(reason))
     .catch((err) => console.error(`[state] save failed: ${err.message}`));
   return saveQueue;
+}
+
+/**
+ * Append the count to the journal whenever it moves.
+ *
+ * A counter that resets is unanswerable without this: "it was 40 a minute ago"
+ * and "it has been 0 all night" look identical in a file that only holds the
+ * present. One line per change, so a stream is a few kilobytes.
+ */
+let lastJournalled = null;
+async function appendHistory(reason) {
+  const now = view();
+  const entry = {
+    at: new Date().toISOString(),
+    reason,
+    left: now.left,
+    owed: now.owed,
+    done: now.done,
+    carriedOver: state.carriedOver,
+    subs: state.subs,
+    baselineSubs: state.baselineSubs,
+    streamStartedAt: state.streamStartedAt,
+  };
+
+  const fingerprint = JSON.stringify([
+    entry.left,
+    entry.owed,
+    entry.done,
+    entry.carriedOver,
+    entry.subs,
+    entry.baselineSubs,
+    entry.streamStartedAt,
+  ]);
+  if (fingerprint === lastJournalled && !reason) return;
+  lastJournalled = fingerprint;
+
+  await fsp
+    .appendFile(HISTORY_FILE, `${JSON.stringify(entry)}\n`)
+    .catch((err) => console.error(`[state] could not write the journal: ${err.message}`));
+}
+
+/**
+ * The secret that lets a person at this machine repair the count.
+ *
+ * It is a file rather than a password because of what it has to keep out: an
+ * overlay page. A page can reach every endpoint on this server, and the rule
+ * that only push-ups move the number is worth keeping — so the one endpoint
+ * that can set it asks for something no page can read.
+ */
+let token = null;
+function adminToken() {
+  if (token) return token;
+  try {
+    token = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+  } catch {
+    /* not made yet */
+  }
+  if (!token) {
+    token = crypto.randomUUID();
+    try {
+      fs.writeFileSync(TOKEN_FILE, `${token}\n`);
+    } catch (err) {
+      console.error(`[state] could not save the admin token: ${err.message}`);
+    }
+  }
+  return token;
 }
 
 /**
@@ -185,6 +288,21 @@ function startNewStream(subs, closingSubs = subs) {
   state.baselineSubs = subs ?? state.subs;
   state.streamStartedAt = new Date().toISOString();
   return stillOwed;
+}
+
+/**
+ * Put the number on screen back to what it should be.
+ *
+ * Written as "make the total owed come out at this", not "add this many", so
+ * the number you type is the number you see. Push-ups already done this stream
+ * stay done — they are a record of what happened, and a repair to the owed side
+ * is not a reason to un-count them.
+ */
+function setLeft(left) {
+  const subsGained =
+    state.subs !== null && state.baselineSubs !== null ? state.subs - state.baselineSubs : 0;
+  state.carriedOver = left + state.done - subsGained * CONFIG.perSub;
+  return view().left;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,12 +450,15 @@ async function poll({ quiet = false } = {}) {
     state.subsUpdatedAt = new Date().toISOString();
     lastError = null;
 
+    let reason = null;
+
     // Only subscribers gained during this stream count toward push-ups.
     if (streamDecisionPending) {
       streamDecisionPending = false;
       if (shouldStartNewStream()) {
         // `previous` is where the last stream left off — see startNewStream.
         const carried = startNewStream(subs, previous);
+        reason = `new stream session at ${subs} subs, ${carried} carried over`;
         console.log(
           `[stream] new session at ${subs} subs` +
             (carried ? ` — ${carried} push-ups carried over from last time` : ''),
@@ -368,6 +489,7 @@ async function poll({ quiet = false } = {}) {
     // count downward keeps the next subscriber worth exactly one push-up.
     if (state.baselineSubs !== null && subs < state.baselineSubs) {
       console.log(`[stream] sub count fell to ${subs}; baseline follows it down`);
+      reason ??= `sub count fell to ${subs}; baseline followed it down`;
       state.baselineSubs = subs;
     }
 
@@ -375,7 +497,7 @@ async function poll({ quiet = false } = {}) {
     // restart whether the stream is still going, so it must not go stale while
     // the sub count happens to sit still.
     state.lastSeenAt = new Date().toISOString();
-    await saveState();
+    await saveState(reason);
     broadcast();
   } catch (err) {
     const raw = err.name === 'TimeoutError' ? 'YouTube API request timed out' : err.message;
@@ -454,6 +576,9 @@ async function readJsonBody(req) {
 // just a sanity bound — nobody banks 50 push-ups inside one network blip.
 const MAX_REPS_PER_REPORT = 50;
 
+/** A repaired count is a number someone typed, so it gets a typo-sized bound. */
+const MAX_COUNT = 100_000;
+
 async function serveStatic(req, res, url) {
   const requested = url.pathname === '/' ? '/status.html' : url.pathname;
   const filePath = path.join(PUBLIC_DIR, path.normalize(requested));
@@ -524,9 +649,65 @@ const server = http.createServer(async (req, res) => {
     const clientId = typeof body.clientId === 'string' ? body.clientId.slice(0, 64) : null;
     recordReps(reps, clientId);
 
-    await saveState();
+    await saveState(`${reps} push-up${reps === 1 ? '' : 's'} counted`);
     broadcast();
     return sendJson(res, 200, view());
+  }
+
+  // Putting the number back after it has gone wrong.
+  //
+  // The count is meant to move two ways only — a subscriber adds, a push-up
+  // takes away — and that rule is why no page can set it. But a rule with no
+  // repair door means a count lost to a bad restart is lost for good, mid
+  // stream, with the only remedy being to stop the server and hand-edit a file.
+  // So the door exists and is locked with a token from a file on this machine,
+  // which a browser page cannot read.
+  if (url.pathname === '/api/count' && req.method === 'POST') {
+    if ((req.headers['x-pushup-admin'] ?? '') !== adminToken()) {
+      return sendJson(res, 403, {
+        error: 'the count is set from this machine, with the token in .admin-token',
+      });
+    }
+
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+
+    const left = Number(body.left);
+    if (!Number.isInteger(left) || left < 0 || left > MAX_COUNT) {
+      return sendJson(res, 400, {
+        error: `left must be a whole number between 0 and ${MAX_COUNT}`,
+      });
+    }
+
+    const before = view().left;
+    setLeft(left);
+    console.log(`[state] count set by hand: ${before} -> ${view().left}`);
+    await saveState(`set by hand from ${before} to ${left}`);
+    broadcast();
+    return sendJson(res, 200, view());
+  }
+
+  // The journal, newest last. The question it answers is "what was the count an
+  // hour ago, and what moved it" — unanswerable from state.json, which only
+  // ever holds the present.
+  if (url.pathname === '/api/history' && req.method === 'GET') {
+    const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') ?? 50) || 50));
+    let entries = [];
+    try {
+      entries = fs
+        .readFileSync(HISTORY_FILE, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .slice(-limit)
+        .map((line) => JSON.parse(line));
+    } catch {
+      // No journal yet is not a fault: nothing has moved since this landed.
+    }
+    return sendJson(res, 200, { entries });
   }
 
   // What is in the sounds folder. The page builds its bank from this rather
@@ -625,6 +806,9 @@ loadState();
 
 server.listen(CONFIG.port, CONFIG.host, async () => {
   const base = `http://${CONFIG.host === '0.0.0.0' ? 'localhost' : CONFIG.host}:${CONFIG.port}`;
+  // Made now rather than on first use, so `count.mjs` works the first time it
+  // is reached for — which is always a moment when something has gone wrong.
+  adminToken();
   console.log('');
   console.log('  Push-up counter is running.');
   console.log(`  OBS source    ${base}/overlay.html      <- add this as a Browser Source`);

@@ -26,6 +26,24 @@ The live counter runs from this checkout. After committing:
 The count lives in `state.json`, which is gitignored and never touched by any of
 this. Restarting never loses push-ups.
 
+The OBS browser source keeps its old JavaScript across a restart too. Clear it
+without touching OBS by pressing its *Refresh cache of current page* button over
+obs-websocket (`PressInputPropertiesButton`, `propertyName: 'refreshnocache'`) —
+the password is in `%APPDATA%\obs-studio\plugin_config\obs-websocket\config.json`.
+
+## The count is not reconstructible — treat it that way
+
+Nobody re-does push-ups because a file got clobbered, and there is no upstream
+copy to fetch. So: `state.json.bak` holds the previous save, every change is
+appended to `state-history.jsonl` with a reason, and an unparseable `state.json`
+is renamed to `state.json.broken` rather than written over.
+
+If the owner says the count reset, read the journal first — `node count.mjs
+--history` — instead of reasoning about what might have happened. Put a number
+back with `node count.mjs <n>`, which goes through the running server and needs
+no restart. It is authenticated with `.admin-token` so that no page can do it;
+keep it that way, and do not add an HTTP route that sets the count without it.
+
 ## Two things that make a working tracker look broken
 
 - **The window must be visible.** Chrome throttles a fully-occluded window until

@@ -399,6 +399,39 @@ always start fresh on launch.
 So if you finish a stream owing 120, you come back tomorrow owing 120 — not 120
 plus every subscriber who arrived while you were asleep.
 
+## When the number is wrong
+
+The count is the one thing here that cannot be rebuilt from anywhere else, so it
+is kept three ways: `state.json` is the count, `state.json.bak` is the previous
+save, and `state-history.jsonl` is a line for every change with what caused it.
+A `state.json` that will not parse is renamed to `state.json.broken` rather than
+overwritten, the backup is loaded instead, and the pages say so out loud.
+
+To see what actually happened:
+
+```
+node count.mjs --history
+```
+
+Each line is a time, the number on screen, and the reason — `4 push-ups
+counted`, `new stream session at 1760 subs, 40 carried over`, `set by hand`.
+That is how you tell "it reset an hour ago" from "it has been zero all night".
+
+To put the number back:
+
+```
+node count.mjs 40
+```
+
+Push-ups already done stay done; only what you owe moves. The counter changes
+straight away — no restart, so the camera keeps running and the overlay never
+blanks.
+
+No page can do this. The overlay is a browser source with the same access to
+this server as anything else on the machine, and the rule that only a subscriber
+adds and only a push-up subtracts is worth keeping — so setting the count needs
+the token in `.admin-token`, which is a file, and a page cannot read files.
+
 ## Notes
 
 - The server listens on `127.0.0.1` only. The overlay has to run on the machine

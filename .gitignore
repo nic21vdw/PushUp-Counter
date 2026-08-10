@@ -5,6 +5,10 @@
 !.env.example
 state.json
 state.json.tmp
+state.json.bak
+state.json.broken
+state-history.jsonl
+.admin-token
 node_modules/
 .DS_Store
 
