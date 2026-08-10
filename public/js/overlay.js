@@ -121,9 +121,11 @@ let lastShown = null;
 let detectedThisSession = 0;
 
 /**
- * Which camera to open. A `?camera=` in the URL is an explicit instruction and
- * wins; otherwise the source follows whatever was chosen in the setup view, so
- * swapping cameras does not mean re-pasting a URL into OBS.
+ * Which camera to open. A `?camera=` in the URL says which one to start on; a
+ * camera picked in the options panel is saved on the server and outranks it,
+ * for every page including the OBS source. Any other way round and a source
+ * pasted with `?camera=Camo` can never be pointed at another webcam without
+ * editing the URL in OBS — which is the one place the panel exists to avoid.
  */
 let activeCamera = options.camera;
 
@@ -132,7 +134,7 @@ const client = new CounterClient({
   onState: (state) => {
     serverState = state;
     render();
-    if (!options.camera) followServerCamera(state.camera ?? null);
+    followServerCamera(state);
     followServerSound(state);
   },
   onPending: (count) => {
@@ -364,14 +366,17 @@ async function buildOptions() {
   optCamera.addEventListener('change', async () => {
     const chosen = optCamera.value || null;
     optSaved.textContent = 'Switching…';
-    await switchCamera(chosen);
-    savePrefs({ camera: chosen }, 'Saved');
+    // Saved even when this window cannot open it: on the machine that streams,
+    // "device in use" usually means the OBS source already has it, and the OBS
+    // source is the page the choice was made for.
+    const opened = await switchCamera(chosen);
+    savePrefs({ camera: chosen }, opened ? 'Saved' : 'Saved — this window could not open it');
   });
 
   obsUrl.textContent = buildOverlayUrl(location.origin, { ...options, setup: false });
 
   optionsNote.textContent = options.camera
-    ? `Opened with ?camera=${options.camera}, which overrides the saved camera.`
+    ? `Opened on ?camera=${options.camera}. Picking a camera here replaces it everywhere, OBS included.`
     : 'These are saved on the server, so the OBS source picks them up too.';
 
   await refreshCameraList();
@@ -569,25 +574,38 @@ async function startCamera() {
  * released first or the new one may come back "device in use" against
  * ourselves.
  */
-let switching = false;
-async function switchCamera(name) {
-  if (switching) return;
-  switching = true;
+let switching = null;
+function switchCamera(name) {
+  // Switches queue rather than drop. Dropping one leaves the page on a webcam
+  // nobody asked for while the server holds the name that was picked, and the
+  // two only disagree until someone reloads — the hardest kind of wrong.
+  switching = (switching ?? Promise.resolve()).then(() => openCamera(name));
+  return switching;
+}
+
+/** @returns {Promise<boolean>} whether the camera actually opened. */
+async function openCamera(name) {
   activeCamera = name;
   try {
-    tracker?.stop();
-    tracker = null;
-    await startCamera();
+    if (tracker) await tracker.setCamera(name);
+    else await startCamera();
+    setStatus('camera', '');
+    return true;
   } catch (err) {
     console.error(err);
     setStatus('camera', await describeCameraFailure(err));
-  } finally {
-    switching = false;
+    return false;
   }
 }
 
-/** The OBS source has no controls, so it takes the setup view's choice. */
-function followServerCamera(name) {
+/**
+ * Every page takes the panel's choice, the OBS source included — it has no
+ * controls of its own. Until someone has picked one, a `?camera=` in this
+ * page's URL stands, so a source keeps opening the webcam it was pasted with.
+ */
+function followServerCamera(state) {
+  if (!state.cameraChosen) return;
+  const name = state.camera ?? null;
   if (name === activeCamera) return;
   switchCamera(name);
 }
@@ -649,7 +667,8 @@ async function boot() {
     const state = await (await fetch('/api/state')).json();
     serverState = state;
     render();
-    if (!options.camera && state.camera) activeCamera = state.camera;
+    if (state.cameraChosen) activeCamera = state.camera ?? null;
+    else if (!options.camera && state.camera) activeCamera = state.camera;
   } catch {
     /* the SSE connection below will fill this in */
   }

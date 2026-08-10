@@ -205,6 +205,21 @@ export class PoseTracker {
     return { ...size, deviceId: { exact: match.deviceId } };
   }
 
+  /**
+   * Point this tracker at a different webcam. Only the stream is swapped: the
+   * model is the expensive part, it is already in memory, and a fresh tracker
+   * would fetch it again — several seconds of a blank tile and a counter that
+   * sees nothing, every time you change camera.
+   */
+  async setCamera(camera) {
+    this.camera = camera;
+    // Stopped is the state a failed switch leaves behind, so this reopens
+    // rather than returning early — otherwise the first camera that refuses to
+    // open would be the last one this tracker ever tried.
+    if (this.running) this.stop();
+    await this.start();
+  }
+
   stop() {
     this.running = false;
     if (this.frameHandle !== null) {

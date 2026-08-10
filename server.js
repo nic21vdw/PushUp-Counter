@@ -104,6 +104,11 @@ const DEFAULT_STATE = {
   // because the setup view and the OBS source are two different browsers with
   // separate storage — the server is the only thing they both see.
   camera: null,
+  // Whether that camera is a choice someone made in the panel, or just the
+  // untouched default. A choice outranks the `?camera=` in an OBS source URL;
+  // an untouched default does not, or a source pinned to a name could never be
+  // changed from the panel it is meant to be changed from.
+  cameraChosen: false,
   // Which sound a counted rep makes, and how loud, chosen in the tracker's
   // options panel. Here for the same reason the camera is: the panel you use
   // and the OBS source are two different browsers, and this is what they share.
@@ -215,6 +220,7 @@ function view() {
     streamStartedAt: state.streamStartedAt,
     lastRepAt: state.lastRepAt,
     camera: state.camera,
+    cameraChosen: state.cameraChosen,
     sound: state.sound,
     volume: state.volume,
     countingClientId: activeCameraView(),
@@ -568,6 +574,9 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'camera must be a device name, or null for the default' });
       }
       state.camera = body.camera === null ? null : body.camera.trim().slice(0, 200) || null;
+      // Null here is "the default camera, and I mean it" — still a choice, and
+      // still the thing every page should follow.
+      state.cameraChosen = true;
     }
 
     if ('sound' in body) {

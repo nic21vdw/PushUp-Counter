@@ -114,6 +114,31 @@ test('null is how a preference goes back to the page default', async (t) => {
   assert.equal(state.camera, null);
 });
 
+test('picking a camera marks it as a choice, so a pinned OBS source follows it', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+
+  assert.equal((await server.state()).cameraChosen, false, 'nothing picked yet');
+
+  await server.post('/api/prefs', { camera: 'LifeCam' });
+  assert.equal((await server.state()).cameraChosen, true);
+
+  // The default is a choice too — otherwise "go back to whatever the browser
+  // picks" would silently hand control back to the URL a source was pasted with.
+  await server.post('/api/prefs', { camera: null });
+  const state = await server.state();
+  assert.equal(state.camera, null);
+  assert.equal(state.cameraChosen, true);
+});
+
+test('changing the sound is not picking a camera', async (t) => {
+  const server = await startServer();
+  t.after(() => server.stop());
+
+  await server.post('/api/prefs', { sound: 'boing', volume: 0.5 });
+  assert.equal((await server.state()).cameraChosen, false);
+});
+
 test('a volume outside the dial is refused rather than clamped silently', async (t) => {
   const server = await startServer();
   t.after(() => server.stop());

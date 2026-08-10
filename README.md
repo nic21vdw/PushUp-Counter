@@ -95,15 +95,22 @@ separate storage. So changing the camera or the sound here changes it in OBS too
 `/status.html` still exists as a read-only page for a second monitor, but you no
 longer have to go there for anything.
 
-If you would rather pin a camera to a particular source, name it in the URL and
-that wins over the saved choice:
+A source can be given a camera to start on, for the first run before anything
+has been picked:
 
 ```
 /overlay.html?camera=Brio
 ```
 
-The same goes for `?sound=` and `?volume=`: named in the URL, they win over
+That is a starting point, not a pin. The moment you pick a camera in Options,
+every page switches to it — including a source whose URL still says
+`?camera=Brio`. Otherwise the one setting you most need to change mid-stream
+would be the one you had to stop and edit an OBS URL to change.
+
+`?sound=` and `?volume=` are different: named in the URL they keep winning over
 whatever Options has saved, so one source can be silent while another is not.
+Nothing is gained by two sources disagreeing about the webcam, and plenty is
+lost.
 
 Any part of the camera's name works, case-insensitive. If it can't find it, or
 the camera is busy, the error names every camera on the machine so you know what
