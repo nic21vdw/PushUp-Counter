@@ -288,8 +288,12 @@
 
       function render(state) {
         latest = state;
-        $('banner').textContent = state.error ?? '';
-        $('banner').hidden = !state.error;
+        // A doubt about the count outranks a connection problem: one means the
+        // number on screen may be wrong, the other only means it has stopped
+        // being updated.
+        const banner = state.warning ?? state.error ?? '';
+        $('banner').textContent = banner;
+        $('banner').hidden = !banner;
 
         $('left').textContent = fmt(state.left);
         $('gained').textContent =

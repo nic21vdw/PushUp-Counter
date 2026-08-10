@@ -90,7 +90,9 @@ panel.classList.add('ready');
 // them wiping each other, and let a message be taken back when it stops being
 // true. Nothing is painted outside `?setup`: this source is on stream, and a
 // banner across the scene tells the audience about a problem only you can fix.
-const statuses = new StatusSlots(['camera', 'server']);
+// 'count' outranks the other two: a number that may be wrong is worse than a
+// camera or a connection that has obviously stopped.
+const statuses = new StatusSlots(['count', 'camera', 'server']);
 
 function setStatus(slot, message, tone = 'error') {
   const winner = statuses.set(slot, message, tone);
@@ -134,6 +136,9 @@ const client = new CounterClient({
   onState: (state) => {
     serverState = state;
     render();
+    // Said on the tracker, not just the status page: this is the window that is
+    // open while you decide whether the number in front of you is right.
+    setStatus('count', state.warning ?? '');
     followServerCamera(state);
     followServerSound(state);
   },

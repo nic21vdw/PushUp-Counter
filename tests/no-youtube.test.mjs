@@ -160,6 +160,38 @@ test('a restart does not reset what you still owe', async (t) => {
   assert.equal(state.done, 15, 'and remembers the 15 already done this session');
 });
 
+test('shutting the machine down for the night keeps what you owe', async (t) => {
+  const first = await startServer();
+  const dir = first.dir;
+
+  // Owe 40, do 15, then go to bed. Coming back the next day is a new stream —
+  // the one case where the session is deliberately torn down and rebuilt, and
+  // so the one most able to lose the balance while looking like it worked.
+  const yesterday = new Date(Date.now() - 20 * 3_600_000).toISOString();
+  await fs.writeFile(
+    path.join(dir, 'state.json'),
+    JSON.stringify({
+      carriedOver: 40,
+      done: 15,
+      streamStartedAt: yesterday,
+      lastSeenAt: yesterday,
+    }),
+  );
+  await first.stop({ keepDir: true });
+
+  const second = await startServer({ dir });
+  t.after(() => second.stop());
+
+  const state = await second.state();
+  assert.equal(state.left, 25, 'the 25 still owed came with you');
+  assert.equal(state.carriedOver, 25, 'as the base the new stream counts up from');
+  assert.equal(state.done, 0, 'while push-ups done is a per-stream number, and starts at 0');
+  assert.ok(
+    Date.parse(state.streamStartedAt) > Date.parse(yesterday),
+    'and it really is a new stream, not yesterday resumed',
+  );
+});
+
 test('turning the key on later switches the mode back', async (t) => {
   const server = await startServer({
     env: { YOUTUBE_API_KEY: 'not-a-real-key', YOUTUBE_CHANNEL_ID: 'UCtest' },

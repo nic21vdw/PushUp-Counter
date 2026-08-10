@@ -145,7 +145,30 @@ test('a count that cannot be read comes back from the backup, loudly', async (t)
 
   const state = await third.get('/api/state');
   assert.equal(state.done, 7, 'the backup is one save behind, which beats starting from zero');
-  assert.match(state.error ?? '', /backup/i, 'and the pages say so rather than showing it silently');
+  assert.match(state.warning ?? '', /backup/i, 'and the pages say so rather than showing it silently');
+});
+
+test('a count emptied by a power cut comes back, rather than reading as zero', async (t) => {
+  const dir = await makeDir();
+  const first = await startServer(dir);
+  await first.post('/api/rep', { reps: 6 });
+  await first.stop();
+
+  const second = await startServer(dir);
+  await second.post('/api/rep', { reps: 1 });
+  await second.stop();
+
+  // What a machine that loses power leaves behind: the file is there, the name
+  // is right, and the bytes never made it out of the write cache.
+  await fs.writeFile(path.join(dir, 'state.json'), '');
+
+  const third = await startServer(dir);
+  t.after(async () => {
+    await third.stop();
+    await cleanup(dir);
+  });
+
+  assert.equal((await third.get('/api/state')).done, 6);
 });
 
 test('an unreadable count is kept, not written over', async (t) => {
@@ -162,7 +185,57 @@ test('an unreadable count is kept, not written over', async (t) => {
 
   assert.equal(await fs.readFile(path.join(dir, 'state.json.broken'), 'utf8'), 'half a file');
   const state = await server.get('/api/state');
-  assert.match(state.error ?? '', /could not be read/i);
+  assert.match(state.warning ?? '', /could not be read/i);
+});
+
+test('a count edited by hand on Windows is still readable', async (t) => {
+  const dir = await makeDir();
+  // What Notepad and PowerShell both write. Someone hand-editing this file is
+  // someone already having a bad day, and refusing to read it afterwards turns
+  // a repair into a second outage — this was found doing exactly that.
+  await fs.writeFile(
+    path.join(dir, 'state.json'),
+    `﻿${JSON.stringify({ carriedOver: 40, done: 15 })}`,
+  );
+
+  const server = await startServer(dir);
+  t.after(async () => {
+    await server.stop();
+    await cleanup(dir);
+  });
+
+  const state = await server.get('/api/state');
+  assert.equal(state.left, 25);
+  assert.equal(state.warning, null, 'and it is not treated as a damaged file');
+});
+
+test('a doubt about the count outlives a good poll', async (t) => {
+  const dir = await makeDir();
+  const first = await startServer(dir);
+  await first.post('/api/rep', { reps: 5 });
+  await first.stop();
+
+  const second = await startServer(dir);
+  await second.post('/api/rep', { reps: 1 });
+  await second.stop();
+
+  await fs.writeFile(path.join(dir, 'state.json'), '');
+
+  const third = await startServer(dir);
+  t.after(async () => {
+    await third.stop();
+    await cleanup(dir);
+  });
+
+  // The YouTube line clears itself every time a poll succeeds. A restored count
+  // has to say so until a person settles it, or the warning is gone in thirty
+  // seconds and the number looks as trustworthy as any other.
+  assert.match((await third.get('/api/state')).warning ?? '', /backup/i);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  assert.match((await third.get('/api/state')).warning ?? '', /backup/i);
+
+  await third.post('/api/count', { left: 5 }, { 'x-pushup-admin': await token(dir) });
+  assert.equal((await third.get('/api/state')).warning, null, 'settled by someone saying so');
 });
 
 test('a page cannot set the count, because a page has no token', async (t) => {

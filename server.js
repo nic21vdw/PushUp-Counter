@@ -127,18 +127,32 @@ const DEFAULT_STATE = {
 
 let state = { ...DEFAULT_STATE };
 let lastError = null;
+/**
+ * Something about the count itself is not to be trusted — it came from a
+ * backup, or from nothing at all. Separate from `lastError`, which is the
+ * YouTube connection and is cleared by every successful poll: a doubt about the
+ * count has to outlive thirty seconds of everything else going fine, and only a
+ * person looking at the number can settle it.
+ */
+let warning = null;
 let saveQueue = Promise.resolve();
 
 function loadState() {
   for (const file of [STATE_FILE, BACKUP_FILE]) {
     if (!fs.existsSync(file)) continue;
     try {
-      state = { ...DEFAULT_STATE, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
+      // The byte-order mark is stripped because Windows puts one on any file
+      // saved by Notepad or PowerShell, and hand-editing this file is exactly
+      // what someone does when the count has gone wrong. Refusing to read it
+      // afterwards would turn a repair into a second outage.
+      const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
+      state = { ...DEFAULT_STATE, ...JSON.parse(text) };
       if (file === BACKUP_FILE) {
         console.error('[state] state.json was unreadable — the count came from the backup.');
-        // Loud, because a restored count can be a poll or two behind, and a
-        // silently wrong number is the thing this whole file exists to avoid.
-        lastError = 'The count was restored from a backup — check it before you count on it.';
+        // A restored count can be a poll behind, so it is flagged until someone
+        // confirms it. Not in `lastError`: that is the YouTube line, and the
+        // next successful poll clears it — which would take this with it.
+        warning = 'The count was restored from a backup — check it before you count on it.';
       }
       return;
     } catch (err) {
@@ -157,7 +171,7 @@ function loadState() {
     } catch (err) {
       console.error(`[state] could not set the unreadable file aside: ${err.message}`);
     }
-    lastError = 'The saved count could not be read. The counter started from zero.';
+    warning = 'The saved count could not be read. The counter started from zero.';
   }
 }
 
@@ -366,6 +380,7 @@ function view() {
     // fault — the pages say "off" rather than showing an error.
     subsEnabled: CONFIG.subsEnabled,
     error: lastError,
+    warning,
   };
 }
 
@@ -704,6 +719,9 @@ const server = http.createServer(async (req, res) => {
 
     const before = view().left;
     setLeft(left);
+    // Someone has looked at the number and said what it should be, which is the
+    // only thing that can answer a doubt about where the count came from.
+    warning = null;
     console.log(`[state] count set by hand: ${before} -> ${view().left}`);
     await saveState(`set by hand from ${before} to ${left}`);
     broadcast();
