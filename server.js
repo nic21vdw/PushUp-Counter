@@ -171,11 +171,30 @@ function saveState(reason = null) {
     // Yesterday's file, kept one save behind. Written before the new one lands,
     // so a crash in the middle of a save leaves a readable count either way.
     .then(() => fsp.copyFile(STATE_FILE, BACKUP_FILE).catch(() => {}))
-    .then(() => fsp.writeFile(`${STATE_FILE}.tmp`, snapshot))
+    .then(() => writeDurably(`${STATE_FILE}.tmp`, snapshot))
     .then(() => fsp.rename(`${STATE_FILE}.tmp`, STATE_FILE))
     .then(() => appendHistory(reason))
     .catch((err) => console.error(`[state] save failed: ${err.message}`));
   return saveQueue;
+}
+
+/**
+ * Write, and make sure it is really on the disk before anything renames it.
+ *
+ * A plain write followed by a rename looks atomic and is not: the rename can
+ * reach the disk while the bytes are still in the cache, so a machine that
+ * loses power leaves a state.json that exists, has the right name, and is
+ * empty. This machine hard-crashes often enough for that to be the likely way
+ * a count disappears.
+ */
+async function writeDurably(file, contents) {
+  const handle = await fsp.open(file, 'w');
+  try {
+    await handle.writeFile(contents);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 /**
