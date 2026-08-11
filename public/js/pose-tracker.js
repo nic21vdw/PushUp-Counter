@@ -97,6 +97,10 @@ export class PoseTracker {
     this.connections = null;
     this.stream = null;
     this.running = false;
+    // Opens run one at a time; `stopRequested` is how one already in flight
+    // learns that the page has since finished with the camera.
+    this.queue = null;
+    this.stopRequested = false;
     this.assetSource = null;
     this.lastVideoTime = -1;
     this.lastTimestamp = 0;
@@ -154,15 +158,45 @@ export class PoseTracker {
     this.connections = PoseLandmarker.POSE_CONNECTIONS;
   }
 
-  async start() {
+  /**
+   * Opening a camera takes seconds — the model loads, the device wakes, the
+   * first frame arrives — and a switch arriving inside that window used to
+   * start a second open over the top of the first. `this.stream` then pointed
+   * at the new one and the old one was never stopped: a webcam held by a page
+   * that had forgotten it, until OBS reloaded the source. So opens are queued,
+   * and each one finishes, or fails, before the next begins.
+   */
+  start() {
+    return this.#enqueue(() => this.#open());
+  }
+
+  #enqueue(task) {
+    // A failed open must not poison the queue: the next attempt is usually the
+    // one that works, being a different camera.
+    const next = (this.queue ?? Promise.resolve()).catch(() => {}).then(task);
+    this.queue = next.catch(() => {});
+    return next;
+  }
+
+  async #open() {
     if (this.running) return;
+    this.stopRequested = false;
     await this.load();
 
     this.onStatus('Requesting camera…');
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       video: await this.#videoConstraints(),
       audio: false,
     });
+
+    // Asked to stop while the device was waking up. Hand it straight back: a
+    // camera acquired after the page has finished with it is one nothing will
+    // ever release.
+    if (this.stopRequested) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
+    this.stream = stream;
     this.video.srcObject = this.stream;
     await this.video.play();
     if (this.video.videoWidth === 0) {
@@ -213,15 +247,18 @@ export class PoseTracker {
    */
   async setCamera(camera) {
     this.camera = camera;
-    // Stopped is the state a failed switch leaves behind, so this reopens
-    // rather than returning early — otherwise the first camera that refuses to
-    // open would be the last one this tracker ever tried.
-    if (this.running) this.stop();
-    await this.start();
+    return this.#enqueue(() => {
+      // Stopped is the state a failed switch leaves behind, so this reopens
+      // rather than returning early — otherwise the first camera that refuses
+      // to open would be the last one this tracker ever tried.
+      if (this.running) this.stop();
+      return this.#open();
+    });
   }
 
   stop() {
     this.running = false;
+    this.stopRequested = true;
     if (this.frameHandle !== null) {
       if (this.usingFrameCallback) this.video.cancelVideoFrameCallback?.(this.frameHandle);
       else cancelAnimationFrame(this.frameHandle);
