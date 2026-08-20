@@ -67,3 +67,11 @@ exact get a hand-measured window in `SAMPLE_WINDOWS` in `public/js/rep-sound.js`
 
 Do not download meme audio from the web on the owner's behalf: those are
 copyrighted recordings from untrusted sites. Point at this folder instead.
+
+## The desktop window
+
+`Push-Up Counter.cmd` opens `control.html` as a standalone Chrome app window —
+no tabs, no address bar — starting the server first if port 4747 is dead. It is
+what the Start Menu / Desktop "Push-Up Counter" shortcut points at, with
+`pushup.ico` as its icon. Nothing autostarts at logon; the launcher brings the
+server up on demand and leaves it running.
