@@ -54,6 +54,34 @@ keep it that way, and do not add an HTTP route that sets the count without it.
   interacted with, silently. OBS browser sources are exempt. The framing line
   says "Click the window once to turn the sound on" when this is what is wrong.
 
+## OBS cannot hold the camera, so the tracker runs in Chrome
+
+`overlay.html` as an OBS **Browser Source** will never count. obs-browser refuses
+`getUserMedia` outright — the log line is
+`[obs-browser: '<source>'] Error: [camera] Camera could not start: Permission denied` —
+so the page falls back to a number-only tile and the reps never land.
+
+The arrangement that works, and the one the OBS scene is built around:
+
+- The counting page is a **real Chrome window** on `overlay.html?camera=<name>`,
+  which OBS picks up as a `window_capture` matching the title
+  `Push-Up Tracker - Google Chrome`. Chrome has camera permission; obs-browser
+  does not.
+- The browser source in the scene runs `overlay.html?count=0` — a display-only
+  duplicate. It shows the number everywhere without competing for the webcam or
+  for the counting slot.
+
+Two traps when checking this from a session:
+
+- `count=0&video=0` renders **nothing visible**. `video=0` hides the tile, and
+  the number is white text on a transparent page with no plate behind it. Use
+  `count=0` alone; the tile's own background is what makes the number readable.
+- A `window_capture` does not sample while its scene is off program, so
+  `GetSourceScreenshot` on it fails and `sourceWidth` reads `0x0` even when the
+  window is open and the setting is correct. That is not a broken capture — cut
+  to the scene to see it. Browser and text sources do render off program, which
+  is why the rest of the scene screenshots fine.
+
 ## Ports
 
 `4747` is the real counter. Anything else is a throwaway test server — never
