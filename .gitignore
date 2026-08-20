@@ -15,4 +15,3 @@ node_modules/
 # Pose model + WASM runtime for the camera page (~24 MiB).
 # Populate with: npm run fetch-assets
 public/vendor/
-.server.pid
