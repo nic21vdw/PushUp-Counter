@@ -9,6 +9,10 @@ This overrides the branch-and-PR default in the global `CLAUDE.md`. It is the
 owner's explicit instruction for this repo, given after several rounds where the
 work sat unmerged in a PR while the live counter kept running the old code.
 
+This repo pushes directly to `main`. That sentence is load-bearing: the global
+guardrail hook only permits main commits in a repo whose `AGENTS.md` says so in
+those words, so keep it even if this section is reworded.
+
 The reason it is safe here: this is a single-user project whose only deployment
 is the copy in `C:\Users\nic21\PushUp-Counter`, and the tests are quick. Run
 `npm test` before pushing — that is the whole gate.
@@ -27,7 +31,7 @@ The count lives in `state.json`, which is gitignored and never touched by any of
 this. Restarting never loses push-ups.
 
 The OBS browser source keeps its old JavaScript across a restart too. Clear it
-without touching OBS by pressing its *Refresh cache of current page* button over
+without touching OBS by pressing its _Refresh cache of current page_ button over
 obs-websocket (`PressInputPropertiesButton`, `propertyName: 'refreshnocache'`) —
 the password is in `%APPDATA%\obs-studio\plugin_config\obs-websocket\config.json`.
 
