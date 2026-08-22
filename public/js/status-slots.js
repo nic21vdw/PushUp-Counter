@@ -34,7 +34,7 @@ export class StatusSlots {
    * @param {string} [tone] free-form; 'error' and 'info' are what the pages use
    * @returns {{message: string, tone: string}|null} what should now be shown
    */
-  set(slot, message, tone = 'error') {
+  set(slot, message, tone = "error") {
     if (!this.priority.includes(slot)) {
       throw new Error(`unknown status slot: ${slot}`);
     }

@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <meta name="theme-color" content="#0b0d10" />
     <title>Push-Up Counter — Status</title>
     <style>
@@ -24,7 +27,13 @@
         padding: 16px 16px 48px;
         background: var(--bg);
         color: var(--text);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Arial,
+          sans-serif;
         max-width: 640px;
         -webkit-text-size-adjust: 100%;
       }
@@ -200,7 +209,9 @@
       <div class="bar"><i id="bar"></i></div>
       <p class="sum" id="sum"></p>
       <div class="stats">
-        <div class="stat"><b id="gained">—</b><span>Subs this stream</span></div>
+        <div class="stat">
+          <b id="gained">—</b><span>Subs this stream</span>
+        </div>
         <div class="stat"><b id="done">—</b><span>Done this stream</span></div>
         <div class="stat"><b id="owed">—</b><span>Owed this stream</span></div>
         <div class="stat"><b id="subs">—</b><span>Subs total</span></div>
@@ -216,53 +227,68 @@
       </div>
       <div class="check">
         <span class="dot" id="dot-cam"></span>
-        <div><b id="txt-cam">Checking the camera…</b><em id="sub-cam"></em></div>
+        <div>
+          <b id="txt-cam">Checking the camera…</b><em id="sub-cam"></em>
+        </div>
       </div>
     </section>
 
     <section>
       <h2>The OBS browser source</h2>
       <p class="muted" style="margin-top: 0">
-        One source is the whole tracker: your camera with the pose skeleton on it, and the count
-        beside it, on a transparent background so it composites over your scene. Add it at
-        <b>1100×340</b>, and leave <b>“Shutdown source when not visible”</b> switched
-        <b>off</b> — the camera has to stay open while you are doing push-ups off-scene.
+        One source is the whole tracker: your camera with the pose skeleton on
+        it, and the count beside it, on a transparent background so it
+        composites over your scene. Add it at
+        <b>1100×340</b>, and leave
+        <b>“Shutdown source when not visible”</b> switched <b>off</b> — the
+        camera has to stay open while you are doing push-ups off-scene.
       </p>
       <code id="overlay-url"></code>
       <p class="muted" style="margin-top: 12px">
-        Give it its own webcam — not one OBS has as a Video Capture Device, or they will fight over
-        it. Pick which with <b>?camera=NAME</b>; any part of the name works.
+        Give it its own webcam — not one OBS has as a Video Capture Device, or
+        they will fight over it. Pick which with <b>?camera=NAME</b>; any part
+        of the name works.
         <span id="camera-list"></span>
       </p>
       <p class="muted" style="margin-top: 10px">
         To check your framing and tune the detector, open
-        <a id="setup-link" href="/overlay.html?setup=1">the setup view</a> — it adds a live readout
-        of your elbow angle under the picture. Close it before you go live: two pages counting would
-        bank every push-up twice.
+        <a id="setup-link" href="/overlay.html?setup=1">the setup view</a> — it
+        adds a live readout of your elbow angle under the picture. Close it
+        before you go live: two pages counting would bank every push-up twice.
       </p>
     </section>
 
     <section>
       <h2>How the number moves</h2>
       <table>
-        <tr><td>A subscriber arrives while you are live</td><td id="rule-up">+1</td></tr>
-        <tr><td>The camera sees a push-up</td><td>−1</td></tr>
+        <tr>
+          <td>A subscriber arrives while you are live</td>
+          <td id="rule-up">+1</td>
+        </tr>
+        <tr>
+          <td>The camera sees a push-up</td>
+          <td>−1</td>
+        </tr>
       </table>
       <p class="muted" style="margin-bottom: 0; margin-top: 12px">
-        That is the whole machine. Nothing on this page can change the count — there is no endpoint
-        behind a button, so the only way the number comes down is doing the push-ups.
-        Subscribers gained between streams are free; whatever you still owe carries over.
+        That is the whole machine. Nothing on this page can change the count —
+        there is no endpoint behind a button, so the only way the number comes
+        down is doing the push-ups. Subscribers gained between streams are free;
+        whatever you still owe carries over.
       </p>
     </section>
 
     <script type="module">
-      import { CounterClient } from '/js/counter-client.js';
-      import { buildOverlayUrl } from '/js/obs-link.js';
+      import { CounterClient } from "/js/counter-client.js";
+      import { buildOverlayUrl } from "/js/obs-link.js";
 
       const $ = (id) => document.getElementById(id);
-      const fmt = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US'));
+      const fmt = (n) =>
+        n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US");
 
-      $('overlay-url').textContent = buildOverlayUrl(location.origin, { subs: true });
+      $("overlay-url").textContent = buildOverlayUrl(location.origin, {
+        subs: true,
+      });
 
       // Naming the cameras beats describing them. Labels need camera permission,
       // which this page never asks for, so an empty list is normal here.
@@ -270,15 +296,20 @@
         ?.enumerateDevices()
         .then((devices) => {
           const names = devices
-            .filter((d) => d.kind === 'videoinput' && d.label)
+            .filter((d) => d.kind === "videoinput" && d.label)
             .map((d) => d.label);
-          if (names.length) $('camera-list').textContent = `Seen on this machine: ${names.join(', ')}.`;
+          if (names.length)
+            $("camera-list").textContent =
+              `Seen on this machine: ${names.join(", ")}.`;
         })
         .catch(() => {});
 
       const ago = (iso) => {
         if (!iso) return null;
-        const seconds = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+        const seconds = Math.max(
+          0,
+          Math.round((Date.now() - Date.parse(iso)) / 1000),
+        );
         if (seconds < 60) return `${seconds}s ago`;
         if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
         return `${Math.round(seconds / 3600)} h ago`;
@@ -291,75 +322,81 @@
         // A doubt about the count outranks a connection problem: one means the
         // number on screen may be wrong, the other only means it has stopped
         // being updated.
-        const banner = state.warning ?? state.error ?? '';
-        $('banner').textContent = banner;
-        $('banner').hidden = !banner;
+        const banner = state.warning ?? state.error ?? "";
+        $("banner").textContent = banner;
+        $("banner").hidden = !banner;
 
-        $('left').textContent = fmt(state.left);
-        $('gained').textContent =
+        $("left").textContent = fmt(state.left);
+        $("gained").textContent =
           !state.subsEnabled || state.subs === null
-            ? '—'
-            : `${state.subsGained > 0 ? '+' : ''}${fmt(state.subsGained)}`;
-        $('done').textContent = fmt(state.done);
-        $('owed').textContent = fmt(state.owed);
-        $('subs').textContent = !state.subsEnabled
-          ? 'off'
+            ? "—"
+            : `${state.subsGained > 0 ? "+" : ""}${fmt(state.subsGained)}`;
+        $("done").textContent = fmt(state.done);
+        $("owed").textContent = fmt(state.owed);
+        $("subs").textContent = !state.subsEnabled
+          ? "off"
           : state.hiddenSubscriberCount
-            ? 'hidden'
+            ? "hidden"
             : fmt(state.subs);
-        $('rule-up').textContent = state.subsEnabled ? `+${state.perSub}` : 'off';
+        $("rule-up").textContent = state.subsEnabled
+          ? `+${state.perSub}`
+          : "off";
 
-        const fraction = state.owed > 0 ? Math.min(1, Math.max(0, state.done / state.owed)) : 0;
-        $('bar').style.width = `${(fraction * 100).toFixed(1)}%`;
+        const fraction =
+          state.owed > 0
+            ? Math.min(1, Math.max(0, state.done / state.owed))
+            : 0;
+        $("bar").style.width = `${(fraction * 100).toFixed(1)}%`;
 
         // Once you are ahead, `left` sticks at zero and the sum stops making
         // sense on its own — say how far past the line you are.
         const ahead = Math.max(0, -state.rawLeft);
-        $('sum').innerHTML =
+        $("sum").innerHTML =
           `${fmt(state.carriedOver)} carried over + ${fmt(state.subsGained)} subs × ${state.perSub}` +
           ` − ${fmt(state.done)} done = <b>${fmt(state.left)}</b>` +
-          (ahead ? ` &nbsp;·&nbsp; ${fmt(ahead)} ahead` : '');
+          (ahead ? ` &nbsp;·&nbsp; ${fmt(ahead)} ahead` : "");
 
-        $('stream-since').textContent = state.streamStartedAt
+        $("stream-since").textContent = state.streamStartedAt
           ? `Stream started ${new Date(state.streamStartedAt).toLocaleString()} at ${fmt(
               state.baselineSubs,
             )} subs.`
-          : 'Waiting for the first subscriber count…';
+          : "Waiting for the first subscriber count…";
 
         // --- is it working ---
         // Three states, not two: connected, broken, and deliberately off.
         const apiOk = state.subs !== null && !state.error;
         if (!state.subsEnabled) {
-          $('dot-api').className = 'dot';
-          $('txt-api').textContent = 'Subscribers are off';
-          $('sub-api').textContent =
-            'Nothing is adding push-ups — the camera only counts them down. ' +
-            'Add YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID to .env and restart to turn this on.';
+          $("dot-api").className = "dot";
+          $("txt-api").textContent = "Subscribers are off";
+          $("sub-api").textContent =
+            "Nothing is adding push-ups — the camera only counts them down. " +
+            "Add YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID to .env and restart to turn this on.";
         } else {
-          $('dot-api').className = `dot ${apiOk ? 'ok' : 'bad'}`;
-          $('txt-api').textContent = apiOk
-            ? `YouTube connected — ${state.channelTitle || 'channel'}`
-            : 'YouTube is not answering';
-          $('sub-api').textContent = apiOk
-            ? `${fmt(state.subs)} subs, updated ${ago(state.subsUpdatedAt) ?? 'just now'}. Polling every ${state.pollSeconds}s.`
-            : (state.error ?? 'Check YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID in .env, then restart.');
+          $("dot-api").className = `dot ${apiOk ? "ok" : "bad"}`;
+          $("txt-api").textContent = apiOk
+            ? `YouTube connected — ${state.channelTitle || "channel"}`
+            : "YouTube is not answering";
+          $("sub-api").textContent = apiOk
+            ? `${fmt(state.subs)} subs, updated ${ago(state.subsUpdatedAt) ?? "just now"}. Polling every ${state.pollSeconds}s.`
+            : (state.error ??
+              "Check YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID in .env, then restart.");
         }
 
         const counting = Boolean(state.countingClientId);
-        $('dot-cam').className = `dot ${counting ? 'ok' : ''}`;
-        $('txt-cam').textContent = counting
-          ? 'A camera source is counting'
-          : 'Nothing has counted a push-up recently';
-        $('sub-cam').textContent = state.lastRepAt
+        $("dot-cam").className = `dot ${counting ? "ok" : ""}`;
+        $("txt-cam").textContent = counting
+          ? "A camera source is counting"
+          : "Nothing has counted a push-up recently";
+        $("sub-cam").textContent = state.lastRepAt
           ? `Last rep banked ${ago(state.lastRepAt)}.`
-          : 'No reps yet this stream. Add the browser source below and get in frame.';
+          : "No reps yet this stream. Add the browser source below and get in frame.";
       }
 
       // Read-only: this page never reports a rep, so it never claims the count.
       const client = new CounterClient({ onState: render });
       client.connect();
 
-      fetch('/api/state')
+      fetch("/api/state")
         .then((res) => res.json())
         .then(render)
         .catch(() => {});

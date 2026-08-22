@@ -32,7 +32,7 @@
         align-items: center;
         gap: clamp(14px, 2.2vw, 30px);
         padding: 14px;
-        font-family: var(--font, 'Inter', 'Helvetica Neue', Arial, sans-serif);
+        font-family: var(--font, "Inter", "Helvetica Neue", Arial, sans-serif);
         color: var(--color, #ffffff);
         -webkit-font-smoothing: antialiased;
         /* Held back until the URL options have been applied, so nothing flashes
@@ -70,17 +70,17 @@
         height: 100%;
         object-fit: cover;
       }
-      body[data-mirror='1'] #stage {
+      body[data-mirror="1"] #stage {
         transform: scaleX(-1);
       }
-      body[data-video='0'] #tile {
+      body[data-video="0"] #tile {
         display: none;
       }
 
       /* A quiet ring that pulses when a rep lands, so the tile itself
          acknowledges the push-up rather than only the number moving. */
       #tile::after {
-        content: '';
+        content: "";
         position: absolute;
         inset: 0;
         border-radius: inherit;
@@ -176,12 +176,12 @@
       /* ---- fill layout: the picture is the source, number laid over it ----
          This is what you want when the point of the source is watching
          yourself. The tile stops being a tile and becomes the whole frame. */
-      body[data-layout='fill'] #panel {
+      body[data-layout="fill"] #panel {
         display: block;
         padding: 0;
         position: relative;
       }
-      body[data-layout='fill'] #tile {
+      body[data-layout="fill"] #tile {
         position: absolute;
         inset: 0;
         height: 100%;
@@ -190,7 +190,7 @@
         aspect-ratio: auto;
         box-shadow: none;
       }
-      body[data-layout='fill'] #readout {
+      body[data-layout="fill"] #readout {
         position: absolute;
         left: 0;
         right: 0;
@@ -198,18 +198,22 @@
         padding: 2.2em 1.1em 0.9em;
         /* Footage is unpredictable; without a scrim the number lands on a
            bright patch sooner or later and stops being readable. */
-        background: linear-gradient(to top, rgba(6, 9, 12, 0.82), rgba(6, 9, 12, 0));
+        background: linear-gradient(
+          to top,
+          rgba(6, 9, 12, 0.82),
+          rgba(6, 9, 12, 0)
+        );
         z-index: 2;
         pointer-events: none;
       }
       /* With the picture filling the frame, the detector readout would land on
          top of the number. Put it at the other end. */
-      body[data-layout='fill'] #tune {
+      body[data-layout="fill"] #tune {
         top: 0;
         bottom: auto;
       }
       /* With no picture there is nothing to lay the number over. */
-      body[data-layout='fill'][data-video='0'] #readout {
+      body[data-layout="fill"][data-video="0"] #readout {
         position: static;
         background: none;
         padding: 14px;
@@ -232,7 +236,7 @@
         background: rgba(9, 12, 16, 0.86);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
         color: #f4f8fb;
-        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
         font-size: 15px;
         font-weight: 600;
         line-height: 1.3;
@@ -240,7 +244,7 @@
         text-shadow: none;
         pointer-events: none;
       }
-      #coach[data-severity='wait'] {
+      #coach[data-severity="wait"] {
         opacity: 0.82;
         font-weight: 500;
       }
@@ -271,7 +275,7 @@
         pointer-events: none;
         transition: opacity 160ms linear;
       }
-      body[data-pointer='1'] #options-open {
+      body[data-pointer="1"] #options-open {
         opacity: 1;
         pointer-events: auto;
       }
@@ -300,7 +304,7 @@
         box-shadow:
           inset 0 0 0 1px rgba(255, 255, 255, 0.14),
           0 18px 44px rgba(0, 0, 0, 0.55);
-        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
         font-size: 13px;
         text-shadow: none;
       }
@@ -338,7 +342,7 @@
         font-weight: 700;
       }
       .field select,
-      .field input[type='range'] {
+      .field input[type="range"] {
         width: 100%;
         font: inherit;
       }
@@ -419,15 +423,15 @@
         font-size: 12px;
         opacity: 0.8;
       }
-      .stat-line[data-tone='good'] {
+      .stat-line[data-tone="good"] {
         color: #7fe3a6;
         opacity: 1;
       }
-      .stat-line[data-tone='warn'] {
+      .stat-line[data-tone="warn"] {
         color: #f0c674;
         opacity: 1;
       }
-      .stat-line[data-tone='bad'] {
+      .stat-line[data-tone="bad"] {
         color: #ff9b9b;
         opacity: 1;
       }
@@ -488,11 +492,11 @@
         border-radius: 8px;
         background: rgba(120, 20, 24, 0.92);
         color: #ffdcdc;
-        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
         font-size: 14px;
         line-height: 1.4;
       }
-      #status[data-tone='info'] {
+      #status[data-tone="info"] {
         background: rgba(16, 20, 26, 0.86);
         color: #d5dde6;
       }
@@ -532,10 +536,19 @@
       </div>
     </div>
 
-    <button id="options-open" type="button" title="Options" aria-label="Options">⚙</button>
+    <button
+      id="options-open"
+      type="button"
+      title="Options"
+      aria-label="Options"
+    >
+      ⚙
+    </button>
 
     <div id="options" hidden>
-      <button id="options-close" type="button" aria-label="Close options">×</button>
+      <button id="options-close" type="button" aria-label="Close options">
+        ×
+      </button>
       <h2>Now</h2>
 
       <div class="stats">
@@ -575,13 +588,16 @@
         <button id="obs-copy" type="button">Copy</button>
       </div>
       <p id="obs-note">
-        Add at 1100&times;340, and leave the source running while you are off-scene so the camera
-        stays open. Give it a camera OBS is not also using. Nothing in this panel is drawn
-        without a mouse, so none of it reaches the stream.
+        Add at 1100&times;340, and leave the source running while you are
+        off-scene so the camera stays open. Give it a camera OBS is not also
+        using. Nothing in this panel is drawn without a mouse, so none of it
+        reaches the stream.
       </p>
 
       <footer>
-        <a id="opt-dashboard" href="/status.html" target="_blank" rel="noopener">Full status page →</a>
+        <a id="opt-dashboard" href="/status.html" target="_blank" rel="noopener"
+          >Full status page →</a
+        >
         <span id="opt-saved" aria-live="polite"></span>
       </footer>
     </div>

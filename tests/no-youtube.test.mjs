@@ -7,14 +7,14 @@
  * session still opens, and that restarting does not eat your progress.
  */
 
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -24,7 +24,7 @@ let nextPort = 15031;
 // A 'dir' symlink on Windows needs Developer Mode or an elevated shell, so the
 // whole suite fails with EPERM on a stock machine. A junction is the same thing
 // for our purposes and needs neither.
-const LINK_TYPE = process.platform === 'win32' ? 'junction' : 'dir';
+const LINK_TYPE = process.platform === "win32" ? "junction" : "dir";
 
 /**
  * Boot the server in a throwaway cwd. `dir` is returned so a test can stop the
@@ -32,40 +32,51 @@ const LINK_TYPE = process.platform === 'win32' ? 'junction' : 'dir';
  * restart actually is.
  */
 async function startServer({ dir = null, env = {} } = {}) {
-  const cwd = dir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'pushup-nokey-')));
+  const cwd =
+    dir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "pushup-nokey-")));
   if (!dir) {
-    await fs.copyFile(path.join(ROOT, 'server.js'), path.join(cwd, 'server.js'));
-    await fs.symlink(path.join(ROOT, 'public'), path.join(cwd, 'public'), LINK_TYPE);
+    await fs.copyFile(
+      path.join(ROOT, "server.js"),
+      path.join(cwd, "server.js"),
+    );
+    await fs.symlink(
+      path.join(ROOT, "public"),
+      path.join(cwd, "public"),
+      LINK_TYPE,
+    );
   }
 
   const port = nextPort++;
-  const child = spawn(process.execPath, ['server.js'], {
+  const child = spawn(process.execPath, ["server.js"], {
     cwd,
     env: {
       ...process.env,
       PORT: String(port),
-      HOST: '127.0.0.1',
+      HOST: "127.0.0.1",
       // Explicitly blank, so a .env on the dev machine cannot leak in.
-      YOUTUBE_API_KEY: '',
-      YOUTUBE_CHANNEL_ID: '',
-      YOUTUBE_HANDLE: '',
+      YOUTUBE_API_KEY: "",
+      YOUTUBE_CHANNEL_ID: "",
+      YOUTUBE_HANDLE: "",
       ...env,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
-  let banner = '';
+  let banner = "";
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('server did not start')), 15_000);
-    child.stdout.on('data', (chunk) => {
+    const timer = setTimeout(
+      () => reject(new Error("server did not start")),
+      15_000,
+    );
+    child.stdout.on("data", (chunk) => {
       banner += chunk.toString();
-      if (banner.includes('Status ')) {
+      if (banner.includes("Status ")) {
         clearTimeout(timer);
         // Let the rest of the banner arrive before anyone reads it.
         setTimeout(resolve, 120);
       }
     });
-    child.on('error', reject);
+    child.on("error", reject);
   });
 
   const base = `http://127.0.0.1:${port}`;
@@ -74,8 +85,8 @@ async function startServer({ dir = null, env = {} } = {}) {
     banner: () => banner,
     async rep(reps = 1) {
       return fetch(`${base}/api/rep`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reps }),
       });
     },
@@ -83,37 +94,50 @@ async function startServer({ dir = null, env = {} } = {}) {
       return (await fetch(`${base}/api/state`)).json();
     },
     async stop({ keepDir = false } = {}) {
-      const exited = once(child, 'exit');
-      child.kill('SIGKILL');
+      const exited = once(child, "exit");
+      child.kill("SIGKILL");
       await exited;
       if (!keepDir) {
-        await fs.rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+        await fs.rm(cwd, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 50,
+        });
       }
     },
   };
 }
 
-test('with no key there is no error to display', async (t) => {
+test("with no key there is no error to display", async (t) => {
   const server = await startServer();
   t.after(() => server.stop());
 
   const state = await server.state();
-  assert.equal(state.error, null, 'a deliberate choice must not look like a fault');
+  assert.equal(
+    state.error,
+    null,
+    "a deliberate choice must not look like a fault",
+  );
   assert.equal(state.subsEnabled, false);
   assert.equal(state.subs, null);
 });
 
-test('the banner presents it as a mode rather than a missing key', async (t) => {
+test("the banner presents it as a mode rather than a missing key", async (t) => {
   const server = await startServer();
   t.after(() => server.stop());
 
   const banner = server.banner();
   assert.match(banner, /Subscribers: off/);
-  assert.match(banner, /YOUTUBE_API_KEY/, 'still says how to turn it on');
-  assert.doesNotMatch(banner, /!\s*YOUTUBE_API_KEY is missing/, 'but not as a warning');
+  assert.match(banner, /YOUTUBE_API_KEY/, "still says how to turn it on");
+  assert.doesNotMatch(
+    banner,
+    /!\s*YOUTUBE_API_KEY is missing/,
+    "but not as a warning",
+  );
 });
 
-test('the stream session opens without a successful poll', async (t) => {
+test("the stream session opens without a successful poll", async (t) => {
   const server = await startServer();
   t.after(() => server.stop());
 
@@ -121,11 +145,11 @@ test('the stream session opens without a successful poll', async (t) => {
   assert.notEqual(
     state.streamStartedAt,
     null,
-    'the session used to wait forever for a poll that never came',
+    "the session used to wait forever for a poll that never came",
   );
 });
 
-test('push-ups still count, and still come off the total', async (t) => {
+test("push-ups still count, and still come off the total", async (t) => {
   const server = await startServer();
   t.after(() => server.stop());
 
@@ -137,7 +161,7 @@ test('push-ups still count, and still come off the total', async (t) => {
   assert.equal(after.rawLeft, before.rawLeft - 4);
 });
 
-test('a restart does not reset what you still owe', async (t) => {
+test("a restart does not reset what you still owe", async (t) => {
   // Without a key there is never a baseline sub count, and "no baseline" used
   // to mean "start a new stream" — so every restart wiped the session.
   const first = await startServer();
@@ -147,8 +171,13 @@ test('a restart does not reset what you still owe', async (t) => {
   // a crash mid-session, not as coming back the next day.
   const now = new Date().toISOString();
   await fs.writeFile(
-    path.join(dir, 'state.json'),
-    JSON.stringify({ carriedOver: 40, done: 15, streamStartedAt: now, lastSeenAt: now }),
+    path.join(dir, "state.json"),
+    JSON.stringify({
+      carriedOver: 40,
+      done: 15,
+      streamStartedAt: now,
+      lastSeenAt: now,
+    }),
   );
   await first.stop({ keepDir: true });
 
@@ -156,11 +185,15 @@ test('a restart does not reset what you still owe', async (t) => {
   t.after(() => second.stop());
 
   const state = await second.state();
-  assert.equal(state.left, 25, 'still owes 25 after a restart');
-  assert.equal(state.done, 15, 'and remembers the 15 already done this session');
+  assert.equal(state.left, 25, "still owes 25 after a restart");
+  assert.equal(
+    state.done,
+    15,
+    "and remembers the 15 already done this session",
+  );
 });
 
-test('shutting the machine down for the night keeps what you owe', async (t) => {
+test("shutting the machine down for the night keeps what you owe", async (t) => {
   const first = await startServer();
   const dir = first.dir;
 
@@ -169,7 +202,7 @@ test('shutting the machine down for the night keeps what you owe', async (t) => 
   // so the one most able to lose the balance while looking like it worked.
   const yesterday = new Date(Date.now() - 20 * 3_600_000).toISOString();
   await fs.writeFile(
-    path.join(dir, 'state.json'),
+    path.join(dir, "state.json"),
     JSON.stringify({
       carriedOver: 40,
       done: 15,
@@ -183,22 +216,34 @@ test('shutting the machine down for the night keeps what you owe', async (t) => 
   t.after(() => second.stop());
 
   const state = await second.state();
-  assert.equal(state.left, 25, 'the 25 still owed came with you');
-  assert.equal(state.carriedOver, 25, 'as the base the new stream counts up from');
-  assert.equal(state.done, 0, 'while push-ups done is a per-stream number, and starts at 0');
+  assert.equal(state.left, 25, "the 25 still owed came with you");
+  assert.equal(
+    state.carriedOver,
+    25,
+    "as the base the new stream counts up from",
+  );
+  assert.equal(
+    state.done,
+    0,
+    "while push-ups done is a per-stream number, and starts at 0",
+  );
   assert.ok(
     Date.parse(state.streamStartedAt) > Date.parse(yesterday),
-    'and it really is a new stream, not yesterday resumed',
+    "and it really is a new stream, not yesterday resumed",
   );
 });
 
-test('turning the key on later switches the mode back', async (t) => {
+test("turning the key on later switches the mode back", async (t) => {
   const server = await startServer({
-    env: { YOUTUBE_API_KEY: 'not-a-real-key', YOUTUBE_CHANNEL_ID: 'UCtest' },
+    env: { YOUTUBE_API_KEY: "not-a-real-key", YOUTUBE_CHANNEL_ID: "UCtest" },
   });
   t.after(() => server.stop());
 
-  assert.equal((await server.state()).subsEnabled, true, 'both halves present means it polls');
+  assert.equal(
+    (await server.state()).subsEnabled,
+    true,
+    "both halves present means it polls",
+  );
 
   // The key is junk, so an error here is correct — that is a real fault, and
   // the point is that it only appears once something was actually asked for.
@@ -208,10 +253,10 @@ test('turning the key on later switches the mode back', async (t) => {
     await new Promise((resolve) => setTimeout(resolve, 250));
     error = (await server.state()).error;
   }
-  assert.notEqual(error, null, 'a bad key should be reported');
+  assert.notEqual(error, null, "a bad key should be reported");
 });
 
-test('the baseline follows the sub count down, so the next sub always counts', async (t) => {
+test("the baseline follows the sub count down, so the next sub always counts", async (t) => {
   // YouTube's public number swings. A baseline stamped on a high reading used
   // to strand the counter: every later reading sat "below baseline", so real
   // subscribers bought nothing until the count climbed back through the gap.
@@ -220,8 +265,13 @@ test('the baseline follows the sub count down, so the next sub always counts', a
   const now = new Date().toISOString();
 
   await fs.writeFile(
-    path.join(dir, 'state.json'),
-    JSON.stringify({ baselineSubs: 947, subs: 947, streamStartedAt: now, lastSeenAt: now }),
+    path.join(dir, "state.json"),
+    JSON.stringify({
+      baselineSubs: 947,
+      subs: 947,
+      streamStartedAt: now,
+      lastSeenAt: now,
+    }),
   );
   await first.stop({ keepDir: true });
 
@@ -229,7 +279,7 @@ test('the baseline follows the sub count down, so the next sub always counts', a
   // lower count than the baseline.
   const second = await startServer({
     dir,
-    env: { YOUTUBE_API_KEY: 'x', YOUTUBE_CHANNEL_ID: 'UCx' },
+    env: { YOUTUBE_API_KEY: "x", YOUTUBE_CHANNEL_ID: "UCx" },
   });
   t.after(() => second.stop());
 
@@ -237,15 +287,19 @@ test('the baseline follows the sub count down, so the next sub always counts', a
   // The poll fails against the real API with a junk key, so the baseline is
   // untouched here — what matters is that it is never left above the count.
   assert.ok(
-    state.baselineSubs === null || state.subs === null || state.baselineSubs <= state.subs,
-    'the baseline must never sit above the current count',
+    state.baselineSubs === null ||
+      state.subs === null ||
+      state.baselineSubs <= state.subs,
+    "the baseline must never sit above the current count",
   );
 });
 
-test('half a configuration is not a configuration', async (t) => {
+test("half a configuration is not a configuration", async (t) => {
   // A key with no channel cannot ask YouTube anything, so it stays off rather
   // than erroring once every poll for the rest of the stream.
-  const server = await startServer({ env: { YOUTUBE_API_KEY: 'key-but-no-channel' } });
+  const server = await startServer({
+    env: { YOUTUBE_API_KEY: "key-but-no-channel" },
+  });
   t.after(() => server.stop());
 
   const state = await server.state();

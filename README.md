@@ -68,7 +68,7 @@ npm start
 
 Open **`/overlay.html`** in a browser. It is the same page OBS renders — your
 camera filling the window with the count over it — but opened in a window with a
-mouse it *is* the setup view: the detector's live readout appears under the
+mouse it _is_ the setup view: the detector's live readout appears under the
 picture, and a **gear** in the top right opens everything else.
 
 Nothing in that second group is drawn until a pointer moves, and OBS has no
@@ -127,17 +127,17 @@ over it, and two pages counting would bank every push-up twice.
 
 **Sources → + → Browser**, then:
 
-| Field  | Value                                                |
-| ------ | ---------------------------------------------------- |
-| URL    | `http://127.0.0.1:4747/overlay.html?camera=Brio`     |
-| Width  | `1100`                                               |
-| Height | `340`                                                |
+| Field  | Value                                            |
+| ------ | ------------------------------------------------ |
+| URL    | `http://127.0.0.1:4747/overlay.html?camera=Brio` |
+| Width  | `1100`                                           |
+| Height | `340`                                            |
 
 Leave the custom CSS box alone — the page is already transparent. Any size works;
 the camera tile is 16:9 and grows with the height you give it, and is capped at
 62% of the width so it can never crowd the number out.
 
-**Untick "Shutdown source when not visible."** This source *is* the thing doing
+**Untick "Shutdown source when not visible."** This source _is_ the thing doing
 the counting, so the camera has to stay open while you are doing push-ups
 off-scene. If you shut it down between scenes, nothing counts.
 
@@ -172,20 +172,20 @@ or no network each print a line and start what you already have.
 
 ### Making it look right
 
-| Param      | Example              | What it does                                |
-| ---------- | -------------------- | ------------------------------------------- |
-| `size`     | `size=120`           | Font size of the number, in px              |
-| `color`    | `color=%23ffffff`    | Text colour (URL-encode `#` as `%23`)       |
-| `label`    | `label=TO GO`        | Text under the number; `label=` hides it    |
-| `font`     | `font=Impact`        | Any font installed on the machine           |
-| `weight`   | `weight=900`         | Font weight                                 |
-| `shadow`   | `shadow=none`        | Drop the text shadow                        |
-| `bar`      | `bar=0`              | Hide the progress bar (on by default)       |
-| `subs`     | `subs=1`             | Extra line with the subscriber count        |
-| `radius`   | `radius=0`           | Square off the camera tile's corners        |
-| `mirror`   | `mirror=0`           | Stop flipping the picture                   |
-| `skeleton` | `skeleton=0`         | Hide the pose skeleton, keep the picture    |
-| `video`    | `video=0`            | Hide the tile — number only, still counting |
+| Param      | Example           | What it does                                |
+| ---------- | ----------------- | ------------------------------------------- |
+| `size`     | `size=120`        | Font size of the number, in px              |
+| `color`    | `color=%23ffffff` | Text colour (URL-encode `#` as `%23`)       |
+| `label`    | `label=TO GO`     | Text under the number; `label=` hides it    |
+| `font`     | `font=Impact`     | Any font installed on the machine           |
+| `weight`   | `weight=900`      | Font weight                                 |
+| `shadow`   | `shadow=none`     | Drop the text shadow                        |
+| `bar`      | `bar=0`           | Hide the progress bar (on by default)       |
+| `subs`     | `subs=1`          | Extra line with the subscriber count        |
+| `radius`   | `radius=0`        | Square off the camera tile's corners        |
+| `mirror`   | `mirror=0`        | Stop flipping the picture                   |
+| `skeleton` | `skeleton=0`      | Hide the pose skeleton, keep the picture    |
+| `video`    | `video=0`         | Hide the tile — number only, still counting |
 
 Example: `overlay.html?camera=Brio&size=140&subs=1&radius=8`
 
@@ -193,13 +193,13 @@ The status page shows the finished URL for you.
 
 ### Other options
 
-| Param    | Example         | What it does                                        |
-| -------- | --------------- | --------------------------------------------------- |
-| `camera` | `camera=Brio`   | Which webcam to open (part of its name)             |
-| `setup`  | `setup=1`       | Add the detector readout and the fault box. Never use on stream |
-| `count`  | `count=0`       | Display only — shows the picture but banks nothing  |
-| `sound`  | `sound=coin`    | Which noise a counted rep makes; `sound=0` for none |
-| `volume` | `volume=0.2`    | How loud that noise is, `0` to `1`                  |
+| Param    | Example       | What it does                                                    |
+| -------- | ------------- | --------------------------------------------------------------- |
+| `camera` | `camera=Brio` | Which webcam to open (part of its name)                         |
+| `setup`  | `setup=1`     | Add the detector readout and the fault box. Never use on stream |
+| `count`  | `count=0`     | Display only — shows the picture but banks nothing              |
+| `sound`  | `sound=coin`  | Which noise a counted rep makes; `sound=0` for none             |
+| `volume` | `volume=0.2`  | How loud that noise is, `0` to `1`                              |
 
 `count=0` is there for a second source showing the same thing on another scene.
 Only ever run **one** counting source, or every push-up lands twice.
@@ -214,16 +214,16 @@ the floor is indistinguishable from the thing being broken.
 
 So the tracker says which it is, in one instruction at a time, over the picture:
 
-| What it sees | What it says |
-| --- | --- |
-| Nothing | Step into frame — nothing to track yet |
-| You running off an edge | You are cut off on the left — shift right |
-| You filling the frame | Move further back — you fill the whole frame |
-| You too small to measure | Move closer — you are too small to measure |
-| Arms not visible | Your arms are hidden — turn so the camera sees them |
-| You upright | Get down into a plank — nothing counts standing up |
-| You facing the camera | Turn side-on — the camera should see you from the side |
-| A half-sure detector | Hard to see you — try more light or a plainer background |
+| What it sees             | What it says                                             |
+| ------------------------ | -------------------------------------------------------- |
+| Nothing                  | Step into frame — nothing to track yet                   |
+| You running off an edge  | You are cut off on the left — shift right                |
+| You filling the frame    | Move further back — you fill the whole frame             |
+| You too small to measure | Move closer — you are too small to measure               |
+| Arms not visible         | Your arms are hidden — turn so the camera sees them      |
+| You upright              | Get down into a plank — nothing counts standing up       |
+| You facing the camera    | Turn side-on — the camera should see you from the side   |
+| A half-sure detector     | Hard to see you — try more light or a plainer background |
 
 It waits about 700 ms before speaking, so settling into position does not make it
 flicker, and it disappears the moment the framing is good. Once you are counting
@@ -239,13 +239,13 @@ The bank is just the files in **`public/sounds/`**. Drop an mp3 in there and it
 joins the rotation; no code to edit, nothing to restart but the page. What ships
 is `fahh`, `vine-boom`, `roblox-oof` and `among-us`.
 
-| `sound=` | What you get |
-| --- | --- |
-| `shuffle` | A different file each rep, never the same one twice running. The default |
-| *a file name* | Only that one, e.g. `sound=vine-boom` |
-| `pacer` | The shuttle run, for push-ups: a beep a rep, a level every ten, and a spoken start |
-| `coin` `powerup` `pop` `boing` `sadtrombone` `fart` `airhorn` `slidewhistle` `rimshot` `chirp` | Synthesised, no file needed |
-| `0` | Silence |
+| `sound=`                                                                                       | What you get                                                                       |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `shuffle`                                                                                      | A different file each rep, never the same one twice running. The default           |
+| _a file name_                                                                                  | Only that one, e.g. `sound=vine-boom`                                              |
+| `pacer`                                                                                        | The shuttle run, for push-ups: a beep a rep, a level every ten, and a spoken start |
+| `coin` `powerup` `pop` `boing` `sadtrombone` `fart` `airhorn` `slidewhistle` `rimshot` `chirp` | Synthesised, no file needed                                                        |
+| `0`                                                                                            | Silence                                                                            |
 
 The synthesised ones are built from oscillators, noise and filters in the page —
 `fart` is noise through a closing lowpass with a wobbling saw under it, `rimshot`
@@ -338,22 +338,22 @@ you can go: a 300 ms rep seen 30 times a second is nine samples end to end.
 
 ### Tuning it to you
 
-Range of motion varies. Open `?setup=1`, do a few reps *at the speed you actually
-train at* while watching the readout under the picture. It shows the live elbow
+Range of motion varies. Open `?setup=1`, do a few reps _at the speed you actually
+train at_ while watching the readout under the picture. It shows the live elbow
 and plank angles, the range of the last rep it counted, and the sample rate.
 
-| Param        | Default | What it does                                        |
-| ------------ | ------- | --------------------------------------------------- |
-| `down`       | `100`   | How bent your arms must get to register the bottom   |
-| `up`         | `155`   | How straight they must get to complete the rep       |
+| Param        | Default | What it does                                            |
+| ------------ | ------- | ------------------------------------------------------- |
+| `down`       | `100`   | How bent your arms must get to register the bottom      |
+| `up`         | `155`   | How straight they must get to complete the rep          |
 | `uptol`      | `25`    | How far short of `up` a rep may stop if you turn around |
-| `reversal`   | `10`    | Degrees back down that mark the top of such a rep    |
-| `plank`      | `140`   | How straight your body must be for a rep to count    |
-| `smoothing`  | `0.85`  | Lower = steadier but laggier; higher = twitchier     |
-| `minrep`     | `220`   | Minimum ms between reps                              |
-| `minphase`   | `60`    | Minimum ms the bottom of a rep must last             |
-| `gap`        | `250`   | Ms of lost pose tolerated before the rep is dropped  |
-| `plankgrace` | `300`   | Ms of ragged form tolerated before the rep is dropped |
+| `reversal`   | `10`    | Degrees back down that mark the top of such a rep       |
+| `plank`      | `140`   | How straight your body must be for a rep to count       |
+| `smoothing`  | `0.85`  | Lower = steadier but laggier; higher = twitchier        |
+| `minrep`     | `220`   | Minimum ms between reps                                 |
+| `minphase`   | `60`    | Minimum ms the bottom of a rep must last                |
+| `gap`        | `250`   | Ms of lost pose tolerated before the rep is dropped     |
+| `plankgrace` | `300`   | Ms of ragged form tolerated before the rep is dropped   |
 
 Reps **missed when you go fast**? Check the sample rate first — under about 25/s
 no threshold will save you, and the fix is more light on you or a camera that

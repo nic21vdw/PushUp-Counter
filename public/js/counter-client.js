@@ -44,7 +44,7 @@ export class CounterClient {
   /** Subscribe to server state over SSE, reconnecting on drop. */
   connect() {
     if (this.stopped) return;
-    this.source = new EventSource('/api/events');
+    this.source = new EventSource("/api/events");
     this.source.onmessage = (event) => {
       this.onConnection(true);
       try {
@@ -81,9 +81,9 @@ export class CounterClient {
     // Snapshot what we're sending so reps detected mid-request aren't lost.
     const reps = this.pending;
     try {
-      const res = await fetch('/api/rep', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/rep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reps, clientId: this.clientId }),
       });
       const data = await res.json().catch(() => ({}));
@@ -93,9 +93,11 @@ export class CounterClient {
         if (res.status === 400) {
           this.pending -= reps;
           this.onPending(this.pending);
-          this.onError(data.error ?? 'Server rejected the rep count.');
+          this.onError(data.error ?? "Server rejected the rep count.");
         } else {
-          this.onError(data.error ?? `Server error (${res.status}) — retrying.`);
+          this.onError(
+            data.error ?? `Server error (${res.status}) — retrying.`,
+          );
           this.#scheduleRetry();
         }
         return;
@@ -103,10 +105,12 @@ export class CounterClient {
 
       this.pending -= reps;
       this.onPending(this.pending);
-      this.onError('');
+      this.onError("");
       this.onState(data);
     } catch {
-      this.onError('Lost the server — reps are being held and will be sent when it is back.');
+      this.onError(
+        "Lost the server — reps are being held and will be sent when it is back.",
+      );
       this.#scheduleRetry();
     } finally {
       this.flushing = false;

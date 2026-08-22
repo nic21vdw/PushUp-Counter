@@ -52,10 +52,10 @@ export const DEFAULT_OPTIONS = {
 };
 
 export const STATE = {
-  NO_POSE: 'no-pose',
-  UNKNOWN: 'unknown',
-  UP: 'up',
-  DOWN: 'down',
+  NO_POSE: "no-pose",
+  UNKNOWN: "unknown",
+  UP: "up",
+  DOWN: "down",
 };
 
 export class RepCounter {
@@ -86,7 +86,7 @@ export class RepCounter {
     this.peakSinceBottom = null;
     this.lastRepDepth = null;
     this.lastRepTop = null;
-    this.feedback = 'Waiting for a body in frame…';
+    this.feedback = "Waiting for a body in frame…";
   }
 
   /** Forget the current phase but keep the rep count (used after a manual undo). */
@@ -115,9 +115,10 @@ export class RepCounter {
       // Motion blur costs you the odd frame, and it costs you most of them
       // exactly when you are moving fastest. Hold the rep across a short gap;
       // only a real absence ends it.
-      const gap = this.lastSampleAt === null ? Infinity : timestamp - this.lastSampleAt;
+      const gap =
+        this.lastSampleAt === null ? Infinity : timestamp - this.lastSampleAt;
       if (this.state !== STATE.NO_POSE && gap <= o.maxGapMs) {
-        this.feedback = 'Lost you for a frame — keep going.';
+        this.feedback = "Lost you for a frame — keep going.";
         return this.#snapshot(false, this.smoothedAngle);
       }
 
@@ -130,7 +131,7 @@ export class RepCounter {
       this.minAngleThisPhase = 180;
       this.peakSinceBottom = null;
       this.inPlank = true;
-      this.feedback = 'No body detected — step into frame.';
+      this.feedback = "No body detected — step into frame.";
       return this.#snapshot(false, null);
     }
 
@@ -145,7 +146,8 @@ export class RepCounter {
 
     // Plank gate: only enforced when we could actually measure the torso.
     const plankKnown = Number.isFinite(plankAngle);
-    const inPlank = !o.requirePlank || !plankKnown || plankAngle >= o.minPlankAngle;
+    const inPlank =
+      !o.requirePlank || !plankKnown || plankAngle >= o.minPlankAngle;
     this.inPlank = inPlank;
 
     if (inPlank) {
@@ -159,7 +161,7 @@ export class RepCounter {
         this.phaseStartedAt = null;
         this.minAngleThisPhase = 180;
         this.peakSinceBottom = null;
-        this.feedback = 'Straighten up — hips are sagging or piked.';
+        this.feedback = "Straighten up — hips are sagging or piked.";
         return this.#snapshot(false, angle);
       }
     }
@@ -171,7 +173,7 @@ export class RepCounter {
       this.phaseStartedAt = timestamp;
       this.minAngleThisPhase = angle;
       this.peakSinceBottom = angle;
-      this.feedback = 'Down — now push.';
+      this.feedback = "Down — now push.";
     } else if (this.state === STATE.DOWN) {
       if (angle < this.minAngleThisPhase) {
         // Still sinking, so whatever we had climbed to was part of the descent.
@@ -187,9 +189,10 @@ export class RepCounter {
         this.peakSinceBottom - angle >= o.reversalDeg;
 
       if (!inPlank) {
-        this.feedback = 'Straighten up — hips are sagging or piked.';
+        this.feedback = "Straighten up — hips are sagging or piked.";
       } else if (lockedOut || turnedAround) {
-        const heldLongEnough = timestamp - (this.phaseStartedAt ?? timestamp) >= o.minPhaseMs;
+        const heldLongEnough =
+          timestamp - (this.phaseStartedAt ?? timestamp) >= o.minPhaseMs;
         const notTooSoon = timestamp - this.lastRepAt >= o.minRepMs;
         if (heldLongEnough && notTooSoon) {
           this.reps += 1;
@@ -199,23 +202,23 @@ export class RepCounter {
           repCompleted = true;
           this.feedback = this.#depthFeedback(this.minAngleThisPhase);
         } else {
-          this.feedback = 'Too fast to count — control the rep.';
+          this.feedback = "Too fast to count — control the rep.";
         }
         this.state = STATE.UP;
         this.phaseStartedAt = timestamp;
         this.minAngleThisPhase = 180;
         this.peakSinceBottom = null;
       } else {
-        this.feedback = 'Pushing up…';
+        this.feedback = "Pushing up…";
       }
     } else if (angle >= o.upAngle) {
       if (this.state !== STATE.UP) this.phaseStartedAt = timestamp;
       this.state = STATE.UP;
-      this.feedback = 'Top position — go down.';
+      this.feedback = "Top position — go down.";
     } else if (this.state === STATE.UNKNOWN) {
-      this.feedback = 'Extend your arms to set the top position.';
+      this.feedback = "Extend your arms to set the top position.";
     } else {
-      this.feedback = 'Lower your chest.';
+      this.feedback = "Lower your chest.";
     }
 
     return this.#snapshot(repCompleted, angle);
@@ -235,9 +238,9 @@ export class RepCounter {
   }
 
   #depthFeedback(depth) {
-    if (depth <= 80) return 'Rep counted — great depth.';
-    if (depth <= 95) return 'Rep counted.';
-    return 'Rep counted — try going a little lower.';
+    if (depth <= 80) return "Rep counted — great depth.";
+    if (depth <= 95) return "Rep counted.";
+    return "Rep counted — try going a little lower.";
   }
 
   #snapshot(repCompleted, angle) {

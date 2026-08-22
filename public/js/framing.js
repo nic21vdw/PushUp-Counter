@@ -18,18 +18,18 @@
  * itself wrong.
  */
 
-import { LM } from './pose-math.js';
+import { LM } from "./pose-math.js";
 
 export const FRAMING = {
-  OK: 'ok',
-  NO_POSE: 'no-pose',
-  CROPPED: 'cropped',
-  TOO_CLOSE: 'too-close',
-  TOO_FAR: 'too-far',
-  ARMS_HIDDEN: 'arms-hidden',
-  STANDING: 'standing',
-  FACE_ON: 'face-on',
-  UNSURE: 'unsure',
+  OK: "ok",
+  NO_POSE: "no-pose",
+  CROPPED: "cropped",
+  TOO_CLOSE: "too-close",
+  TOO_FAR: "too-far",
+  ARMS_HIDDEN: "arms-hidden",
+  STANDING: "standing",
+  FACE_ON: "face-on",
+  UNSURE: "unsure",
 };
 
 export const DEFAULT_FRAMING_OPTIONS = {
@@ -85,7 +85,7 @@ export function checkFraming(landmarks, overrides = {}) {
   const seen = (index) => {
     const lm = landmarks?.[index];
     if (!lm || !Number.isFinite(lm.x) || !Number.isFinite(lm.y)) return null;
-    const visibility = typeof lm.visibility === 'number' ? lm.visibility : 1;
+    const visibility = typeof lm.visibility === "number" ? lm.visibility : 1;
     return visibility >= o.minVisibility ? lm : null;
   };
 
@@ -94,7 +94,11 @@ export function checkFraming(landmarks, overrides = {}) {
   // Two joints is not a body. Anything less than a torso's worth of points and
   // there is nothing to give advice about.
   if (core.length < 4) {
-    return result(FRAMING.NO_POSE, 'Step into frame — nothing to track yet.', null);
+    return result(
+      FRAMING.NO_POSE,
+      "Step into frame — nothing to track yet.",
+      null,
+    );
   }
 
   const xs = core.map((p) => p.x);
@@ -118,33 +122,76 @@ export function checkFraming(landmarks, overrides = {}) {
   const offBottom = box.bottom >= 1 - o.edge;
 
   if (offLeft && offRight) {
-    return result(FRAMING.TOO_CLOSE, 'Move further back — you fill the whole frame.', span);
+    return result(
+      FRAMING.TOO_CLOSE,
+      "Move further back — you fill the whole frame.",
+      span,
+    );
   }
-  if (offLeft) return result(FRAMING.CROPPED, 'You are cut off on the left — shift right.', span);
-  if (offRight) return result(FRAMING.CROPPED, 'You are cut off on the right — shift left.', span);
+  if (offLeft)
+    return result(
+      FRAMING.CROPPED,
+      "You are cut off on the left — shift right.",
+      span,
+    );
+  if (offRight)
+    return result(
+      FRAMING.CROPPED,
+      "You are cut off on the right — shift left.",
+      span,
+    );
   if (offTop && offBottom) {
-    return result(FRAMING.TOO_CLOSE, 'Move further back — you fill the whole frame.', span);
+    return result(
+      FRAMING.TOO_CLOSE,
+      "Move further back — you fill the whole frame.",
+      span,
+    );
   }
-  if (offTop) return result(FRAMING.CROPPED, 'Your head is out of frame — tilt the camera up.', span);
+  if (offTop)
+    return result(
+      FRAMING.CROPPED,
+      "Your head is out of frame — tilt the camera up.",
+      span,
+    );
   if (offBottom) {
-    return result(FRAMING.CROPPED, 'You are cut off at the bottom — tilt the camera down.', span);
+    return result(
+      FRAMING.CROPPED,
+      "You are cut off at the bottom — tilt the camera down.",
+      span,
+    );
   }
 
   if (span > o.maxSpan) {
-    return result(FRAMING.TOO_CLOSE, 'Move further back — you fill the whole frame.', span);
+    return result(
+      FRAMING.TOO_CLOSE,
+      "Move further back — you fill the whole frame.",
+      span,
+    );
   }
   if (span < o.minSpan) {
-    return result(FRAMING.TOO_FAR, 'Move closer — you are too small to measure.', span);
+    return result(
+      FRAMING.TOO_FAR,
+      "Move closer — you are too small to measure.",
+      span,
+    );
   }
 
   // The elbow angle is the entire measurement, so an arm that is not visible is
   // not a detail — it is the thing.
   if (ARMS.map(seen).filter(Boolean).length < 2) {
-    return result(FRAMING.ARMS_HIDDEN, 'Your arms are hidden — turn so the camera sees them.', span);
+    return result(
+      FRAMING.ARMS_HIDDEN,
+      "Your arms are hidden — turn so the camera sees them.",
+      span,
+    );
   }
 
   if (height > width * o.standingRatio) {
-    return result(FRAMING.STANDING, 'Get down into a plank — nothing counts standing up.', span);
+    return result(
+      FRAMING.STANDING,
+      "Get down into a plank — nothing counts standing up.",
+      span,
+    );
   }
 
   const left = seen(LM.LEFT_SHOULDER);
@@ -155,22 +202,31 @@ export function checkFraming(landmarks, overrides = {}) {
     const torso = Math.hypot(shoulder.x - hip.x, shoulder.y - hip.y);
     const spread = Math.hypot(left.x - right.x, left.y - right.y);
     if (torso > 0 && spread / torso > o.maxShoulderSpread) {
-      return result(FRAMING.FACE_ON, 'Turn side-on — the camera should see you from the side.', span);
+      return result(
+        FRAMING.FACE_ON,
+        "Turn side-on — the camera should see you from the side.",
+        span,
+      );
     }
   }
 
   // Everything is in shot and the right size, but the detector is only half
   // sure of what it is looking at. More light usually fixes it; a plainer wall
   // fixes the rest.
-  const confidence = core.reduce(
-    (sum, p) => sum + (typeof p.visibility === 'number' ? p.visibility : 1),
-    0,
-  ) / core.length;
+  const confidence =
+    core.reduce(
+      (sum, p) => sum + (typeof p.visibility === "number" ? p.visibility : 1),
+      0,
+    ) / core.length;
   if (confidence < 0.65) {
-    return result(FRAMING.UNSURE, 'Hard to see you — try more light or a plainer background.', span);
+    return result(
+      FRAMING.UNSURE,
+      "Hard to see you — try more light or a plainer background.",
+      span,
+    );
   }
 
-  return result(FRAMING.OK, '', span);
+  return result(FRAMING.OK, "", span);
 }
 
 function result(code, message, span) {

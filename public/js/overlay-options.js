@@ -15,19 +15,19 @@
  * off halfway through a stream.
  */
 
-import { SOUND_NAMES, DEFAULT_PRESET } from './rep-sound.js';
+import { SOUND_NAMES, DEFAULT_PRESET } from "./rep-sound.js";
 
 export const DEFAULT_OVERLAY_OPTIONS = {
   /** Height of the number, in px. */
   size: 88,
   /** Colour of the number. White on transparent is the OBS default for a reason. */
-  color: '#ffffff',
+  color: "#ffffff",
   /**
    * Text under the number. An empty string hides it. "To do" rather than
    * "left": the figure is work outstanding, and leftovers are what you have
    * when you are finished.
    */
-  label: 'PUSH-UPS TO DO',
+  label: "PUSH-UPS TO DO",
   /** Any font installed on the machine; null keeps the built-in stack. */
   font: null,
   /** Font weight of the number. */
@@ -57,7 +57,7 @@ export const DEFAULT_OVERLAY_OPTIONS = {
    * `fill` by default: this source is how you watch yourself, and a preview you
    * cannot make out is not worth the space it takes.
    */
-  layout: 'fill',
+  layout: "fill",
   /** Corner radius of the camera tile, in px. */
   radius: 18,
   /** Open the webcam and count reps. Off is a display-only duplicate. */
@@ -96,27 +96,27 @@ export const DEFAULT_OVERLAY_OPTIONS = {
  * no way to ask for a strict full lockout.
  */
 export const DETECTION_PARAMS = [
-  ['down', 'downAngle', false],
-  ['up', 'upAngle', false],
-  ['uptol', 'upTolerance', true],
-  ['reversal', 'reversalDeg', false],
-  ['plank', 'minPlankAngle', false],
-  ['smoothing', 'smoothing', false],
-  ['minrep', 'minRepMs', true],
-  ['minphase', 'minPhaseMs', true],
-  ['gap', 'maxGapMs', true],
-  ['plankgrace', 'plankGraceMs', true],
+  ["down", "downAngle", false],
+  ["up", "upAngle", false],
+  ["uptol", "upTolerance", true],
+  ["reversal", "reversalDeg", false],
+  ["plank", "minPlankAngle", false],
+  ["smoothing", "smoothing", false],
+  ["minrep", "minRepMs", true],
+  ["minphase", "minPhaseMs", true],
+  ["gap", "maxGapMs", true],
+  ["plankgrace", "plankGraceMs", true],
 ];
 
-const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
-const FALSY = new Set(['0', 'false', 'no', 'off']);
-const LAYOUTS = new Set(['fill', 'side']);
+const TRUTHY = new Set(["1", "true", "yes", "on"]);
+const FALSY = new Set(["0", "false", "no", "off"]);
+const LAYOUTS = new Set(["fill", "side"]);
 
 function bool(raw, fallback) {
   if (raw === null) return fallback;
   const value = raw.trim().toLowerCase();
   // A bare `?setup` reads as "turn it on".
-  if (value === '') return true;
+  if (value === "") return true;
   if (TRUTHY.has(value)) return true;
   if (FALSY.has(value)) return false;
   return fallback;
@@ -126,8 +126,9 @@ function bool(raw, fallback) {
 export function normalizeColor(raw, fallback = null) {
   if (raw === null) return fallback;
   const value = raw.trim();
-  if (value === '') return fallback;
-  if (/^[0-9a-f]{3}$|^[0-9a-f]{4}$|^[0-9a-f]{6}$|^[0-9a-f]{8}$/i.test(value)) return `#${value}`;
+  if (value === "") return fallback;
+  if (/^[0-9a-f]{3}$|^[0-9a-f]{4}$|^[0-9a-f]{6}$|^[0-9a-f]{8}$/i.test(value))
+    return `#${value}`;
   return value;
 }
 
@@ -144,7 +145,7 @@ function positive(raw, fallback) {
 function soundPreset(raw, fallback) {
   if (raw === null) return fallback;
   const value = raw.trim().toLowerCase();
-  if (value === '') return fallback;
+  if (value === "") return fallback;
   if (FALSY.has(value)) return null;
   // `sound=1` is the old on-switch and means "the default one", not a file
   // called 1 — checked before the file-name shape below, which would match it.
@@ -160,7 +161,7 @@ function soundPreset(raw, fallback) {
 function fraction(raw, fallback) {
   // Silence is a real answer — `volume=0` is how you mute one source without
   // giving up the chirp on the others — so absence has to be ruled out first.
-  if (raw === null || raw.trim() === '') return fallback;
+  if (raw === null || raw.trim() === "") return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0) return fallback;
   return Math.min(1, value);
@@ -169,7 +170,7 @@ function fraction(raw, fallback) {
 function nonNegative(raw, fallback) {
   // Zero is a legitimate answer here (square corners), so absence has to be
   // ruled out first — `Number(null)` is 0, which would read as "squared off".
-  if (raw === null || raw.trim() === '') return fallback;
+  if (raw === null || raw.trim() === "") return fallback;
   const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
@@ -183,31 +184,34 @@ export function parseOverlayOptions(params) {
 
   // A label of '' is meaningful — it is how you keep only the digits — so a
   // present-but-empty param is not the same as an absent one.
-  const rawLabel = params.get('label');
+  const rawLabel = params.get("label");
 
   return {
-    size: positive(params.get('size'), d.size),
-    color: normalizeColor(params.get('color'), d.color),
+    size: positive(params.get("size"), d.size),
+    color: normalizeColor(params.get("color"), d.color),
     label: rawLabel === null ? d.label : rawLabel,
-    font: params.get('font')?.trim() || d.font,
-    weight: positive(params.get('weight'), d.weight),
+    font: params.get("font")?.trim() || d.font,
+    weight: positive(params.get("weight"), d.weight),
     // `shadow=none` is the spelling the README has always documented.
-    shadow: params.get('shadow') === 'none' ? false : bool(params.get('shadow'), d.shadow),
-    bar: bool(params.get('bar'), d.bar),
-    subs: bool(params.get('subs'), d.subs),
-    mirror: bool(params.get('mirror'), d.mirror),
-    skeleton: bool(params.get('skeleton'), d.skeleton),
-    video: bool(params.get('video'), d.video),
-    layout: LAYOUTS.has((params.get('layout') ?? '').trim().toLowerCase())
-      ? params.get('layout').trim().toLowerCase()
+    shadow:
+      params.get("shadow") === "none"
+        ? false
+        : bool(params.get("shadow"), d.shadow),
+    bar: bool(params.get("bar"), d.bar),
+    subs: bool(params.get("subs"), d.subs),
+    mirror: bool(params.get("mirror"), d.mirror),
+    skeleton: bool(params.get("skeleton"), d.skeleton),
+    video: bool(params.get("video"), d.video),
+    layout: LAYOUTS.has((params.get("layout") ?? "").trim().toLowerCase())
+      ? params.get("layout").trim().toLowerCase()
       : d.layout,
-    radius: nonNegative(params.get('radius'), d.radius),
-    count: bool(params.get('count'), d.count),
-    camera: params.get('camera')?.trim() || d.camera,
-    coach: bool(params.get('coach'), d.coach),
-    sound: soundPreset(params.get('sound'), d.sound),
-    volume: fraction(params.get('volume'), d.volume),
-    setup: bool(params.get('setup'), d.setup),
+    radius: nonNegative(params.get("radius"), d.radius),
+    count: bool(params.get("count"), d.count),
+    camera: params.get("camera")?.trim() || d.camera,
+    coach: bool(params.get("coach"), d.coach),
+    sound: soundPreset(params.get("sound"), d.sound),
+    volume: fraction(params.get("volume"), d.volume),
+    setup: bool(params.get("setup"), d.setup),
   };
 }
 
@@ -223,7 +227,8 @@ export function parseDetectionOptions(params) {
   for (const [key, option, zeroAllowed] of DETECTION_PARAMS) {
     if (!params.has(key)) continue;
     const value = Number(params.get(key));
-    if (Number.isFinite(value) && (zeroAllowed ? value >= 0 : value > 0)) patch[option] = value;
+    if (Number.isFinite(value) && (zeroAllowed ? value >= 0 : value > 0))
+      patch[option] = value;
   }
   return patch;
 }

@@ -1,33 +1,33 @@
-import http from 'node:http';
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import http from "node:http";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC_DIR = path.join(ROOT, 'public');
-const STATE_FILE = path.join(ROOT, 'state.json');
+const PUBLIC_DIR = path.join(ROOT, "public");
+const STATE_FILE = path.join(ROOT, "state.json");
 // The count is the one thing here that cannot be recreated: push-ups already
 // done are gone if the number goes. So the last-known-good file is kept beside
 // it, every change is appended to a journal, and a file that will not parse is
 // put aside rather than overwritten.
 const BACKUP_FILE = `${STATE_FILE}.bak`;
-const HISTORY_FILE = path.join(ROOT, 'state-history.jsonl');
-const TOKEN_FILE = path.join(ROOT, '.admin-token');
+const HISTORY_FILE = path.join(ROOT, "state-history.jsonl");
+const TOKEN_FILE = path.join(ROOT, ".admin-token");
 
 // ---------------------------------------------------------------------------
 // Config (.env file + real environment variables; env wins)
 // ---------------------------------------------------------------------------
 
 function loadDotEnv() {
-  const file = path.join(ROOT, '.env');
+  const file = path.join(ROOT, ".env");
   if (!fs.existsSync(file)) return {};
   const out = {};
-  for (const rawLine of fs.readFileSync(file, 'utf8').split('\n')) {
+  for (const rawLine of fs.readFileSync(file, "utf8").split("\n")) {
     const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
     if (eq === -1) continue;
     const key = line.slice(0, eq).trim();
     let value = line.slice(eq + 1).trim();
@@ -43,34 +43,35 @@ function loadDotEnv() {
 }
 
 const fileEnv = loadDotEnv();
-const env = (key, fallback = '') => process.env[key] ?? fileEnv[key] ?? fallback;
+const env = (key, fallback = "") =>
+  process.env[key] ?? fileEnv[key] ?? fallback;
 
 const CONFIG = {
-  apiKey: env('YOUTUBE_API_KEY'),
-  channelId: env('YOUTUBE_CHANNEL_ID'),
-  handle: env('YOUTUBE_HANDLE'),
+  apiKey: env("YOUTUBE_API_KEY"),
+  channelId: env("YOUTUBE_CHANNEL_ID"),
+  handle: env("YOUTUBE_HANDLE"),
   // Without both halves there is nothing to ask YouTube, so don't ask. Counting
   // push-ups works on its own; a setup that is deliberately key-less should not
   // spend the whole stream showing an error about a key it never wanted.
   get subsEnabled() {
     return Boolean(this.apiKey && (this.channelId || this.handle));
   },
-  port: Number(env('PORT', '4747')),
-  host: env('HOST', '127.0.0.1'),
-  pollSeconds: Math.max(15, Number(env('POLL_SECONDS', '30'))),
+  port: Number(env("PORT", "4747")),
+  host: env("HOST", "127.0.0.1"),
+  pollSeconds: Math.max(15, Number(env("POLL_SECONDS", "30"))),
   // One subscriber, one push-up. Configurable because the arithmetic stops
   // being survivable somewhere north of a few hundred subs a stream, but it is
   // a number you set once in .env — not something a page can move.
   perSub: (() => {
-    const value = Number(env('PUSHUPS_PER_SUB', '1'));
+    const value = Number(env("PUSHUPS_PER_SUB", "1"));
     return Number.isFinite(value) && value > 0 ? value : 1;
   })(),
   // Restarting after this long counts as a new stream. Short gaps (a crash, a
   // reboot, closing the laptop between scenes) resume the session in progress.
   // "off" never starts one automatically; "0" always does.
   newStreamAfterHours: (() => {
-    const raw = env('NEW_STREAM_AFTER_HOURS', '6').toLowerCase();
-    if (raw === 'off' || raw === 'never') return Infinity;
+    const raw = env("NEW_STREAM_AFTER_HOURS", "6").toLowerCase();
+    if (raw === "off" || raw === "never") return Infinity;
     const hours = Number(raw);
     return Number.isFinite(hours) && hours >= 0 ? hours : 6;
   })(),
@@ -100,7 +101,7 @@ const DEFAULT_STATE = {
   subs: null,
   subsUpdatedAt: null,
   hiddenSubscriberCount: false,
-  channelTitle: '',
+  channelTitle: "",
   // When the current stream session began, and when the server last ran. The
   // gap between the two is how we tell "crashed mid-stream" from "next stream".
   streamStartedAt: null,
@@ -145,18 +146,23 @@ function loadState() {
       // saved by Notepad or PowerShell, and hand-editing this file is exactly
       // what someone does when the count has gone wrong. Refusing to read it
       // afterwards would turn a repair into a second outage.
-      const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
+      const text = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
       state = { ...DEFAULT_STATE, ...JSON.parse(text) };
       if (file === BACKUP_FILE) {
-        console.error('[state] state.json was unreadable — the count came from the backup.');
+        console.error(
+          "[state] state.json was unreadable — the count came from the backup.",
+        );
         // A restored count can be a poll behind, so it is flagged until someone
         // confirms it. Not in `lastError`: that is the YouTube line, and the
         // next successful poll clears it — which would take this with it.
-        warning = 'The count was restored from a backup — check it before you count on it.';
+        warning =
+          "The count was restored from a backup — check it before you count on it.";
       }
       return;
     } catch (err) {
-      console.error(`[state] could not read ${path.basename(file)}: ${err.message}`);
+      console.error(
+        `[state] could not read ${path.basename(file)}: ${err.message}`,
+      );
     }
   }
 
@@ -167,11 +173,16 @@ function loadState() {
     const kept = `${STATE_FILE}.broken`;
     try {
       fs.renameSync(STATE_FILE, kept);
-      console.error(`[state] kept the unreadable file as ${path.basename(kept)}`);
+      console.error(
+        `[state] kept the unreadable file as ${path.basename(kept)}`,
+      );
     } catch (err) {
-      console.error(`[state] could not set the unreadable file aside: ${err.message}`);
+      console.error(
+        `[state] could not set the unreadable file aside: ${err.message}`,
+      );
     }
-    warning = 'The saved count could not be read. The counter started from zero.';
+    warning =
+      "The saved count could not be read. The counter started from zero.";
   }
 }
 
@@ -202,7 +213,7 @@ function saveState(reason = null) {
  * a count disappears.
  */
 async function writeDurably(file, contents) {
-  const handle = await fsp.open(file, 'w');
+  const handle = await fsp.open(file, "w");
   try {
     await handle.writeFile(contents);
     await handle.sync();
@@ -247,7 +258,9 @@ async function appendHistory(reason) {
 
   await fsp
     .appendFile(HISTORY_FILE, `${JSON.stringify(entry)}\n`)
-    .catch((err) => console.error(`[state] could not write the journal: ${err.message}`));
+    .catch((err) =>
+      console.error(`[state] could not write the journal: ${err.message}`),
+    );
 }
 
 /**
@@ -262,7 +275,7 @@ let token = null;
 function adminToken() {
   if (token) return token;
   try {
-    token = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+    token = fs.readFileSync(TOKEN_FILE, "utf8").trim();
   } catch {
     /* not made yet */
   }
@@ -313,8 +326,13 @@ function recordReps(reps, clientId = null) {
  */
 function startNewStream(subs, closingSubs = subs) {
   const gained =
-    closingSubs !== null && state.baselineSubs !== null ? closingSubs - state.baselineSubs : 0;
-  const stillOwed = Math.max(0, state.carriedOver + gained * CONFIG.perSub - state.done);
+    closingSubs !== null && state.baselineSubs !== null
+      ? closingSubs - state.baselineSubs
+      : 0;
+  const stillOwed = Math.max(
+    0,
+    state.carriedOver + gained * CONFIG.perSub - state.done,
+  );
 
   state.carriedOver = stillOwed;
   state.done = 0;
@@ -333,7 +351,9 @@ function startNewStream(subs, closingSubs = subs) {
  */
 function setLeft(left) {
   const subsGained =
-    state.subs !== null && state.baselineSubs !== null ? state.subs - state.baselineSubs : 0;
+    state.subs !== null && state.baselineSubs !== null
+      ? state.subs - state.baselineSubs
+      : 0;
   state.carriedOver = left + state.done - subsGained * CONFIG.perSub;
   return view().left;
 }
@@ -401,43 +421,47 @@ function view() {
  */
 function redactSecrets(text) {
   let safe = String(text);
-  if (CONFIG.apiKey) safe = safe.split(CONFIG.apiKey).join('***');
+  if (CONFIG.apiKey) safe = safe.split(CONFIG.apiKey).join("***");
   // Belt and braces: any `key=` in a quoted URL, whatever its value.
-  return safe.replace(/([?&]key=)[^&\s'")]+/gi, '$1***');
+  return safe.replace(/([?&]key=)[^&\s'")]+/gi, "$1***");
 }
 
 async function fetchSubscriberCount() {
-  if (!CONFIG.apiKey) throw new Error('YOUTUBE_API_KEY is not set (see .env.example)');
+  if (!CONFIG.apiKey)
+    throw new Error("YOUTUBE_API_KEY is not set (see .env.example)");
   if (!CONFIG.channelId && !CONFIG.handle) {
-    throw new Error('Set YOUTUBE_CHANNEL_ID or YOUTUBE_HANDLE in .env');
+    throw new Error("Set YOUTUBE_CHANNEL_ID or YOUTUBE_HANDLE in .env");
   }
 
-  const url = new URL('https://www.googleapis.com/youtube/v3/channels');
-  url.searchParams.set('part', 'statistics,snippet');
-  url.searchParams.set('key', CONFIG.apiKey);
+  const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+  url.searchParams.set("part", "statistics,snippet");
+  url.searchParams.set("key", CONFIG.apiKey);
   if (CONFIG.channelId) {
-    url.searchParams.set('id', CONFIG.channelId);
+    url.searchParams.set("id", CONFIG.channelId);
   } else {
-    url.searchParams.set('forHandle', CONFIG.handle.replace(/^@/, ''));
+    url.searchParams.set("forHandle", CONFIG.handle.replace(/^@/, ""));
   }
 
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   const body = await res.json().catch(() => null);
 
   if (!res.ok) {
-    const reason = body?.error?.errors?.[0]?.reason ?? '';
+    const reason = body?.error?.errors?.[0]?.reason ?? "";
     const message = body?.error?.message ?? res.statusText;
-    throw new Error(`YouTube API ${res.status}${reason ? ` (${reason})` : ''}: ${message}`);
+    throw new Error(
+      `YouTube API ${res.status}${reason ? ` (${reason})` : ""}: ${message}`,
+    );
   }
 
   const channel = body?.items?.[0];
-  if (!channel) throw new Error('YouTube API returned no channel — check the ID or handle');
+  if (!channel)
+    throw new Error("YouTube API returned no channel — check the ID or handle");
 
   const stats = channel.statistics ?? {};
   return {
     subs: Number(stats.subscriberCount ?? 0),
     hidden: Boolean(stats.hiddenSubscriberCount),
-    title: channel.snippet?.title ?? '',
+    title: channel.snippet?.title ?? "",
   };
 }
 
@@ -495,7 +519,9 @@ async function poll({ quiet = false } = {}) {
         reason = `new stream session at ${subs} subs, ${carried} carried over`;
         console.log(
           `[stream] new session at ${subs} subs` +
-            (carried ? ` — ${carried} push-ups carried over from last time` : ''),
+            (carried
+              ? ` — ${carried} push-ups carried over from last time`
+              : ""),
         );
       } else {
         console.log(
@@ -508,7 +534,7 @@ async function poll({ quiet = false } = {}) {
     if (!quiet && previous !== null && previous !== subs) {
       const delta = subs - previous;
       console.log(
-        `[youtube] ${previous} -> ${subs} subs (${delta > 0 ? '+' : ''}${delta}) ` +
+        `[youtube] ${previous} -> ${subs} subs (${delta > 0 ? "+" : ""}${delta}) ` +
           `= ${view().left} push-ups left`,
       );
     }
@@ -522,7 +548,9 @@ async function poll({ quiet = false } = {}) {
     // count has to climb back through the phantom deficit first. Following the
     // count downward keeps the next subscriber worth exactly one push-up.
     if (state.baselineSubs !== null && subs < state.baselineSubs) {
-      console.log(`[stream] sub count fell to ${subs}; baseline follows it down`);
+      console.log(
+        `[stream] sub count fell to ${subs}; baseline follows it down`,
+      );
       reason ??= `sub count fell to ${subs}; baseline followed it down`;
       state.baselineSubs = subs;
     }
@@ -534,7 +562,10 @@ async function poll({ quiet = false } = {}) {
     await saveState(reason);
     broadcast();
   } catch (err) {
-    const raw = err.name === 'TimeoutError' ? 'YouTube API request timed out' : err.message;
+    const raw =
+      err.name === "TimeoutError"
+        ? "YouTube API request timed out"
+        : err.message;
     // Redacted before it is stored, not just before it is shown — `lastError`
     // goes out over SSE to every page, including ones that are on stream.
     const message = redactSecrets(raw);
@@ -562,33 +593,33 @@ function broadcast() {
 // ---------------------------------------------------------------------------
 
 const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
   // The vendored pose runtime ships as .mjs, and browsers refuse to import a
   // module that isn't served as JavaScript.
-  '.mjs': 'text/javascript; charset=utf-8',
+  ".mjs": "text/javascript; charset=utf-8",
   // WebAssembly.instantiateStreaming rejects anything but application/wasm.
-  '.wasm': 'application/wasm',
-  '.task': 'application/octet-stream',
-  '.json': 'application/json; charset=utf-8',
+  ".wasm": "application/wasm",
+  ".task": "application/octet-stream",
+  ".json": "application/json; charset=utf-8",
   // The rep sounds. `decodeAudioData` will take almost anything, but a wrong
   // Content-Type is one of the ways a file arrives and still will not play.
-  '.mp3': 'audio/mpeg',
-  '.ogg': 'audio/ogg',
-  '.wav': 'audio/wav',
-  '.m4a': 'audio/mp4',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
 };
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(payload),
-    'Cache-Control': 'no-store',
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(payload),
+    "Cache-Control": "no-store",
   });
   res.end(payload);
 }
@@ -598,11 +629,11 @@ async function readJsonBody(req) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 64 * 1024) throw new Error('Request body too large');
+    if (size > 64 * 1024) throw new Error("Request body too large");
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 // A rep report can carry more than one because the overlay holds reps while the
@@ -614,47 +645,48 @@ const MAX_REPS_PER_REPORT = 50;
 const MAX_COUNT = 100_000;
 
 async function serveStatic(req, res, url) {
-  const requested = url.pathname === '/' ? '/status.html' : url.pathname;
+  const requested = url.pathname === "/" ? "/status.html" : url.pathname;
   const filePath = path.join(PUBLIC_DIR, path.normalize(requested));
   if (!filePath.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403).end('Forbidden');
+    res.writeHead(403).end("Forbidden");
     return;
   }
   try {
     const body = await fsp.readFile(filePath);
     res.writeHead(200, {
-      'Content-Type': MIME[path.extname(filePath)] ?? 'application/octet-stream',
-      'Content-Length': body.length,
-      'Cache-Control': 'no-store',
+      "Content-Type":
+        MIME[path.extname(filePath)] ?? "application/octet-stream",
+      "Content-Length": body.length,
+      "Cache-Control": "no-store",
     });
     // HEAD gets the headers only — the overlay uses it to check whether the
     // pose model has been vendored before deciding to fall back to the CDN.
-    res.end(req.method === 'HEAD' ? undefined : body);
+    res.end(req.method === "HEAD" ? undefined : body);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Not found');
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Not found");
   }
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
+  const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
 
   // --- read-only -----------------------------------------------------------
-  if (url.pathname === '/api/state' && req.method === 'GET') {
+  if (url.pathname === "/api/state" && req.method === "GET") {
     return sendJson(res, 200, view());
   }
 
-  if (url.pathname === '/api/events' && req.method === 'GET') {
+  if (url.pathname === "/api/events" && req.method === "GET") {
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     });
     res.write(`data: ${JSON.stringify(view())}\n\n`);
     clients.add(res);
-    const heartbeat = setInterval(() => res.write(': ping\n\n'), 20_000);
-    req.on('close', () => {
+    const heartbeat = setInterval(() => res.write(": ping\n\n"), 20_000);
+    req.on("close", () => {
       clearInterval(heartbeat);
       clients.delete(res);
     });
@@ -665,7 +697,7 @@ const server = http.createServer(async (req, res) => {
   //
   // Push-ups the camera saw. Whole positive numbers only: there is no way to
   // hand back a rep, and no other endpoint touches the count.
-  if (url.pathname === '/api/rep' && req.method === 'POST') {
+  if (url.pathname === "/api/rep" && req.method === "POST") {
     let body;
     try {
       body = await readJsonBody(req);
@@ -680,10 +712,11 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    const clientId = typeof body.clientId === 'string' ? body.clientId.slice(0, 64) : null;
+    const clientId =
+      typeof body.clientId === "string" ? body.clientId.slice(0, 64) : null;
     recordReps(reps, clientId);
 
-    await saveState(`${reps} push-up${reps === 1 ? '' : 's'} counted`);
+    await saveState(`${reps} push-up${reps === 1 ? "" : "s"} counted`);
     broadcast();
     return sendJson(res, 200, view());
   }
@@ -696,10 +729,11 @@ const server = http.createServer(async (req, res) => {
   // stream, with the only remedy being to stop the server and hand-edit a file.
   // So the door exists and is locked with a token from a file on this machine,
   // which a browser page cannot read.
-  if (url.pathname === '/api/count' && req.method === 'POST') {
-    if ((req.headers['x-pushup-admin'] ?? '') !== adminToken()) {
+  if (url.pathname === "/api/count" && req.method === "POST") {
+    if ((req.headers["x-pushup-admin"] ?? "") !== adminToken()) {
       return sendJson(res, 403, {
-        error: 'the count is set from this machine, with the token in .admin-token',
+        error:
+          "the count is set from this machine, with the token in .admin-token",
       });
     }
 
@@ -731,13 +765,16 @@ const server = http.createServer(async (req, res) => {
   // The journal, newest last. The question it answers is "what was the count an
   // hour ago, and what moved it" — unanswerable from state.json, which only
   // ever holds the present.
-  if (url.pathname === '/api/history' && req.method === 'GET') {
-    const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') ?? 50) || 50));
+  if (url.pathname === "/api/history" && req.method === "GET") {
+    const limit = Math.min(
+      500,
+      Math.max(1, Number(url.searchParams.get("limit") ?? 50) || 50),
+    );
     let entries = [];
     try {
       entries = fs
-        .readFileSync(HISTORY_FILE, 'utf8')
-        .split('\n')
+        .readFileSync(HISTORY_FILE, "utf8")
+        .split("\n")
         .filter(Boolean)
         .slice(-limit)
         .map((line) => JSON.parse(line));
@@ -751,14 +788,16 @@ const server = http.createServer(async (req, res) => {
   // than from a list in the code, so adding a noise to a rep is a matter of
   // dropping an mp3 in `public/sounds/` — no edit, no restart of anything but
   // the page. Read-only, and it only ever names files that are already served.
-  if (url.pathname === '/api/sounds' && req.method === 'GET') {
+  if (url.pathname === "/api/sounds" && req.method === "GET") {
     let sounds = [];
     try {
       sounds = fs
-        .readdirSync(path.join(PUBLIC_DIR, 'sounds'), { withFileTypes: true })
-        .filter((entry) => entry.isFile() && /\.(mp3|ogg|wav|m4a)$/i.test(entry.name))
+        .readdirSync(path.join(PUBLIC_DIR, "sounds"), { withFileTypes: true })
+        .filter(
+          (entry) => entry.isFile() && /\.(mp3|ogg|wav|m4a)$/i.test(entry.name),
+        )
         .map((entry) => ({
-          name: entry.name.replace(/\.[^.]+$/, '').toLowerCase(),
+          name: entry.name.replace(/\.[^.]+$/, "").toLowerCase(),
           src: `/sounds/${encodeURIComponent(entry.name)}`,
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -777,7 +816,10 @@ const server = http.createServer(async (req, res) => {
   //
   // `/api/camera` is the older spelling of the same thing, kept because it is
   // in URLs and notes that predate the panel.
-  if ((url.pathname === '/api/prefs' || url.pathname === '/api/camera') && req.method === 'POST') {
+  if (
+    (url.pathname === "/api/prefs" || url.pathname === "/api/camera") &&
+    req.method === "POST"
+  ) {
     let body;
     try {
       body = await readJsonBody(req);
@@ -787,30 +829,43 @@ const server = http.createServer(async (req, res) => {
 
     // Only what was sent is changed. Absent is "leave it alone", which is not
     // the same as null — null is how you go back to the page's own default.
-    if ('camera' in body) {
-      if (body.camera !== null && typeof body.camera !== 'string') {
-        return sendJson(res, 400, { error: 'camera must be a device name, or null for the default' });
+    if ("camera" in body) {
+      if (body.camera !== null && typeof body.camera !== "string") {
+        return sendJson(res, 400, {
+          error: "camera must be a device name, or null for the default",
+        });
       }
-      state.camera = body.camera === null ? null : body.camera.trim().slice(0, 200) || null;
+      state.camera =
+        body.camera === null ? null : body.camera.trim().slice(0, 200) || null;
       // Null here is "the default camera, and I mean it" — still a choice, and
       // still the thing every page should follow.
       state.cameraChosen = true;
     }
 
-    if ('sound' in body) {
-      if (body.sound !== null && typeof body.sound !== 'string') {
-        return sendJson(res, 400, { error: 'sound must be a name, or null for the default' });
+    if ("sound" in body) {
+      if (body.sound !== null && typeof body.sound !== "string") {
+        return sendJson(res, 400, {
+          error: "sound must be a name, or null for the default",
+        });
       }
       // The server does not know which sounds exist, and should not: the page
       // owns that list and falls back on its own when handed a name it cannot
       // place. All that matters here is that it is a short, plain word.
-      state.sound = body.sound === null ? null : body.sound.trim().toLowerCase().slice(0, 32) || null;
+      state.sound =
+        body.sound === null
+          ? null
+          : body.sound.trim().toLowerCase().slice(0, 32) || null;
     }
 
-    if ('volume' in body) {
+    if ("volume" in body) {
       const volume = body.volume === null ? null : Number(body.volume);
-      if (volume !== null && (!Number.isFinite(volume) || volume < 0 || volume > 1)) {
-        return sendJson(res, 400, { error: 'volume must be between 0 and 1, or null for the default' });
+      if (
+        volume !== null &&
+        (!Number.isFinite(volume) || volume < 0 || volume > 1)
+      ) {
+        return sendJson(res, 400, {
+          error: "volume must be between 0 and 1, or null for the default",
+        });
       }
       state.volume = volume;
     }
@@ -823,12 +878,12 @@ const server = http.createServer(async (req, res) => {
   // `/api/rep` is the only endpoint that writes the count. Anything else under /api/ is
   // gone on purpose — say so plainly rather than letting it fall through to the
   // static handler and come back as a confusing 405.
-  if (url.pathname.startsWith('/api/')) {
-    return sendJson(res, 404, { error: 'Unknown endpoint' });
+  if (url.pathname.startsWith("/api/")) {
+    return sendJson(res, 404, { error: "Unknown endpoint" });
   }
 
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { Allow: 'GET, HEAD, POST' }).end('Method not allowed');
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, { Allow: "GET, HEAD, POST" }).end("Method not allowed");
     return;
   }
 
@@ -842,31 +897,41 @@ const server = http.createServer(async (req, res) => {
 loadState();
 
 server.listen(CONFIG.port, CONFIG.host, async () => {
-  const base = `http://${CONFIG.host === '0.0.0.0' ? 'localhost' : CONFIG.host}:${CONFIG.port}`;
+  const base = `http://${CONFIG.host === "0.0.0.0" ? "localhost" : CONFIG.host}:${CONFIG.port}`;
   // Made now rather than on first use, so `count.mjs` works the first time it
   // is reached for — which is always a moment when something has gone wrong.
   adminToken();
-  console.log('');
-  console.log('  Push-up counter is running.');
-  console.log(`  OBS source    ${base}/overlay.html      <- add this as a Browser Source`);
-  console.log(`  Set it up     ${base}/overlay.html?setup=1   <- pick a camera, check framing`);
+  console.log("");
+  console.log("  Push-up counter is running.");
+  console.log(
+    `  OBS source    ${base}/overlay.html      <- add this as a Browser Source`,
+  );
+  console.log(
+    `  Set it up     ${base}/overlay.html?setup=1   <- pick a camera, check framing`,
+  );
   console.log(`  Status        ${base}/status.html`);
   if (CONFIG.subsEnabled) {
-    const plural = CONFIG.perSub === 1 ? '' : 's';
-    console.log(`  ${CONFIG.perSub} push-up${plural} per subscriber gained while live.`);
+    const plural = CONFIG.perSub === 1 ? "" : "s";
+    console.log(
+      `  ${CONFIG.perSub} push-up${plural} per subscriber gained while live.`,
+    );
   } else {
     // A mode, not a missing key. Plenty of setups never want the YouTube half.
-    console.log('  Subscribers: off. The camera counts your push-ups down; nothing adds to them.');
-    console.log('  Add YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID to .env to have subscribers add.');
+    console.log(
+      "  Subscribers: off. The camera counts your push-ups down; nothing adds to them.",
+    );
+    console.log(
+      "  Add YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID to .env to have subscribers add.",
+    );
   }
-  console.log('');
+  console.log("");
 
   await poll();
   // Nothing to poll for when subscribers are off, so don't wake up to do it.
   if (CONFIG.subsEnabled) setInterval(poll, CONFIG.pollSeconds * 1000);
 });
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
+for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
     saveQueue.finally(() => process.exit(0));
   });

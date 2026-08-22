@@ -7,29 +7,29 @@
  * Kept pure and DOM-free so the rules below can be tested.
  */
 
-import { DEFAULT_OVERLAY_OPTIONS } from './overlay-options.js';
+import { DEFAULT_OVERLAY_OPTIONS } from "./overlay-options.js";
 
 /** Query keys, in the order they should appear, mapped to their option name. */
 const KEYS = [
-  ['size', 'size'],
-  ['color', 'color'],
-  ['font', 'font'],
-  ['weight', 'weight'],
-  ['subs', 'subs'],
-  ['bar', 'bar'],
-  ['mirror', 'mirror'],
-  ['skeleton', 'skeleton'],
-  ['video', 'video'],
-  ['layout', 'layout'],
-  ['radius', 'radius'],
-  ['count', 'count'],
-  ['coach', 'coach'],
-  ['volume', 'volume'],
-  ['camera', 'camera'],
+  ["size", "size"],
+  ["color", "color"],
+  ["font", "font"],
+  ["weight", "weight"],
+  ["subs", "subs"],
+  ["bar", "bar"],
+  ["mirror", "mirror"],
+  ["skeleton", "skeleton"],
+  ["video", "video"],
+  ["layout", "layout"],
+  ["radius", "radius"],
+  ["count", "count"],
+  ["coach", "coach"],
+  ["volume", "volume"],
+  ["camera", "camera"],
 ];
 
 /** `shadow` is spelled as a word, not a flag, because `shadow=none` predates it. */
-const SHADOW_OFF = 'none';
+const SHADOW_OFF = "none";
 
 /**
  * Only params that differ from the page's own defaults are emitted. A URL that
@@ -49,40 +49,44 @@ export function buildOverlayUrl(origin, choices = {}) {
     const value = choices[option];
     const fallback = DEFAULT_OVERLAY_OPTIONS[option];
 
-    if (value === null || value === undefined || value === '') continue;
+    if (value === null || value === undefined || value === "") continue;
     if (value === fallback) continue;
 
-    if (typeof value === 'boolean') params.set(key, value ? '1' : '0');
-    else if (key === 'color') params.set(key, stripHash(String(value)));
+    if (typeof value === "boolean") params.set(key, value ? "1" : "0");
+    else if (key === "color") params.set(key, stripHash(String(value)));
     else params.set(key, String(value));
   }
 
   // A label of '' is meaningful — it is how you hide the words after the number
   // — so it is checked separately from the falsy skips above.
-  if (choices.label !== null && choices.label !== undefined && choices.label !== DEFAULT_OVERLAY_OPTIONS.label) {
-    params.set('label', choices.label);
+  if (
+    choices.label !== null &&
+    choices.label !== undefined &&
+    choices.label !== DEFAULT_OVERLAY_OPTIONS.label
+  ) {
+    params.set("label", choices.label);
   }
 
   // `sound` is a name or silence, and silence is spelled with the switch it was
   // always spelled with — so null cannot ride the skip-empty rule above.
-  if (choices.sound === null) params.set('sound', '0');
+  if (choices.sound === null) params.set("sound", "0");
   else if (choices.sound && choices.sound !== DEFAULT_OVERLAY_OPTIONS.sound) {
-    params.set('sound', String(choices.sound));
+    params.set("sound", String(choices.sound));
   }
 
-  if (choices.shadow === false) params.set('shadow', SHADOW_OFF);
+  if (choices.shadow === false) params.set("shadow", SHADOW_OFF);
 
   return withQuery(`${origin}/overlay.html`, params);
 }
 
 function stripHash(value) {
   // `#` starts a fragment; a raw one truncates the URL at the colour.
-  return value.startsWith('#') ? value.slice(1) : value;
+  return value.startsWith("#") ? value.slice(1) : value;
 }
 
 function withQuery(base, params) {
   const query = params.toString();
   // URLSearchParams percent-encodes spaces as `+`, which is correct for form
   // bodies but reads as a literal plus in a browser-source box on some builds.
-  return query ? `${base}?${query.replace(/\+/g, '%20')}` : base;
+  return query ? `${base}?${query.replace(/\+/g, "%20")}` : base;
 }

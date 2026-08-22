@@ -10,14 +10,17 @@
  * over your scene as a single browser source.
  */
 
-import { RepCounter, DEFAULT_OPTIONS } from './rep-counter.js';
-import { anglesFromLandmarks } from './pose-math.js';
-import { CounterClient } from './counter-client.js';
-import { StatusSlots } from './status-slots.js';
-import { RepSound, SOUND_NAMES } from './rep-sound.js';
-import { parseOverlayOptions, parseDetectionOptions } from './overlay-options.js';
-import { checkFraming, FRAMING } from './framing.js';
-import { buildOverlayUrl } from './obs-link.js';
+import { RepCounter, DEFAULT_OPTIONS } from "./rep-counter.js";
+import { anglesFromLandmarks } from "./pose-math.js";
+import { CounterClient } from "./counter-client.js";
+import { StatusSlots } from "./status-slots.js";
+import { RepSound, SOUND_NAMES } from "./rep-sound.js";
+import {
+  parseOverlayOptions,
+  parseDetectionOptions,
+} from "./overlay-options.js";
+import { checkFraming, FRAMING } from "./framing.js";
+import { buildOverlayUrl } from "./obs-link.js";
 
 const params = new URLSearchParams(location.search);
 const options = parseOverlayOptions(params);
@@ -32,57 +35,57 @@ const options = parseOverlayOptions(params);
  * `?setup=1` forces it on regardless, and `?setup=0` off, for the cases where
  * you want to be sure rather than to be clever.
  */
-const setupWasNamed = params.has('setup');
+const setupWasNamed = params.has("setup");
 let pointerSeen = false;
 const isSetupView = () => (setupWasNamed ? options.setup : pointerSeen);
 
-const video = document.getElementById('video');
-const canvas = document.getElementById('stage');
-const panel = document.getElementById('panel');
-const tile = document.getElementById('tile');
-const countEl = document.getElementById('count');
-const labelEl = document.getElementById('label');
-const progressEl = document.getElementById('progress');
-const progressText = document.getElementById('progress-text');
-const barFill = document.getElementById('bar').querySelector('i');
-const sublineEl = document.getElementById('subline');
-const tuneEl = document.getElementById('tune');
-const coachEl = document.getElementById('coach');
-const statusEl = document.getElementById('status');
-const optionsEl = document.getElementById('options');
-const optionsOpen = document.getElementById('options-open');
-const optionsClose = document.getElementById('options-close');
-const optCamera = document.getElementById('opt-camera');
-const optSound = document.getElementById('opt-sound');
-const optVolume = document.getElementById('opt-volume');
-const optVolumeValue = document.getElementById('opt-volume-value');
-const optionsNote = document.getElementById('options-note');
-const optSaved = document.getElementById('opt-saved');
-const statTodo = document.getElementById('stat-todo');
-const statDone = document.getElementById('stat-done');
-const statOwed = document.getElementById('stat-owed');
-const statSubs = document.getElementById('stat-subs');
-const statDetector = document.getElementById('stat-detector');
-const statLastRep = document.getElementById('stat-lastrep');
-const obsUrl = document.getElementById('obs-url');
-const obsCopy = document.getElementById('obs-copy');
+const video = document.getElementById("video");
+const canvas = document.getElementById("stage");
+const panel = document.getElementById("panel");
+const tile = document.getElementById("tile");
+const countEl = document.getElementById("count");
+const labelEl = document.getElementById("label");
+const progressEl = document.getElementById("progress");
+const progressText = document.getElementById("progress-text");
+const barFill = document.getElementById("bar").querySelector("i");
+const sublineEl = document.getElementById("subline");
+const tuneEl = document.getElementById("tune");
+const coachEl = document.getElementById("coach");
+const statusEl = document.getElementById("status");
+const optionsEl = document.getElementById("options");
+const optionsOpen = document.getElementById("options-open");
+const optionsClose = document.getElementById("options-close");
+const optCamera = document.getElementById("opt-camera");
+const optSound = document.getElementById("opt-sound");
+const optVolume = document.getElementById("opt-volume");
+const optVolumeValue = document.getElementById("opt-volume-value");
+const optionsNote = document.getElementById("options-note");
+const optSaved = document.getElementById("opt-saved");
+const statTodo = document.getElementById("stat-todo");
+const statDone = document.getElementById("stat-done");
+const statOwed = document.getElementById("stat-owed");
+const statSubs = document.getElementById("stat-subs");
+const statDetector = document.getElementById("stat-detector");
+const statLastRep = document.getElementById("stat-lastrep");
+const obsUrl = document.getElementById("obs-url");
+const obsCopy = document.getElementById("obs-copy");
 
 /* ------------------------------------------------------------------ look */
 
-document.body.dataset.mirror = options.mirror ? '1' : '0';
-document.body.dataset.video = options.video ? '1' : '0';
+document.body.dataset.mirror = options.mirror ? "1" : "0";
+document.body.dataset.video = options.video ? "1" : "0";
 document.body.dataset.layout = options.layout;
 
-panel.style.setProperty('--size', `${options.size}px`);
-panel.style.setProperty('--color', options.color);
-panel.style.setProperty('--weight', String(options.weight));
-panel.style.setProperty('--radius', `${options.radius}px`);
-if (options.font) panel.style.setProperty('--font', options.font);
-if (!options.shadow) panel.style.setProperty('--shadow', 'none');
+panel.style.setProperty("--size", `${options.size}px`);
+panel.style.setProperty("--color", options.color);
+panel.style.setProperty("--weight", String(options.weight));
+panel.style.setProperty("--radius", `${options.radius}px`);
+if (options.font) panel.style.setProperty("--font", options.font);
+if (!options.shadow) panel.style.setProperty("--shadow", "none");
 
 labelEl.textContent = options.label;
-labelEl.hidden = options.label === '';
-panel.classList.add('ready');
+labelEl.hidden = options.label === "";
+panel.classList.add("ready");
 
 /* ---------------------------------------------------------------- status */
 
@@ -92,20 +95,20 @@ panel.classList.add('ready');
 // banner across the scene tells the audience about a problem only you can fix.
 // 'count' outranks the other two: a number that may be wrong is worse than a
 // camera or a connection that has obviously stopped.
-const statuses = new StatusSlots(['count', 'camera', 'server']);
+const statuses = new StatusSlots(["count", "camera", "server"]);
 
-function setStatus(slot, message, tone = 'error') {
+function setStatus(slot, message, tone = "error") {
   const winner = statuses.set(slot, message, tone);
 
   // The fault is recorded either way — `setup` decides who is shown it, not
   // whether a dead camera goes unnoticed. This is the log you open when the
   // tile is blank and the source is saying nothing about why.
-  if (message && tone === 'error') console.error(`[${slot}] ${message}`);
+  if (message && tone === "error") console.error(`[${slot}] ${message}`);
 
   const show = winner && isSetupView();
-  statusEl.textContent = show ? winner.message : '';
+  statusEl.textContent = show ? winner.message : "";
   statusEl.hidden = !show;
-  statusEl.dataset.tone = winner?.tone ?? 'error';
+  statusEl.dataset.tone = winner?.tone ?? "error";
 }
 
 /* ----------------------------------------------------------------- state */
@@ -114,7 +117,10 @@ function setStatus(slot, message, tone = 'error') {
 // push-ups shows up as a warning instead of a silently doubled total.
 const clientId = `tracker-${Math.random().toString(36).slice(2, 10)}`;
 
-const counter = new RepCounter({ ...DEFAULT_OPTIONS, ...parseDetectionOptions(params) });
+const counter = new RepCounter({
+  ...DEFAULT_OPTIONS,
+  ...parseDetectionOptions(params),
+});
 
 let serverState = null;
 let pendingReps = 0;
@@ -138,7 +144,7 @@ const client = new CounterClient({
     render();
     // Said on the tracker, not just the status page: this is the window that is
     // open while you decide whether the number in front of you is right.
-    setStatus('count', state.warning ?? '');
+    setStatus("count", state.warning ?? "");
     followServerCamera(state);
     followServerSound(state);
   },
@@ -146,12 +152,12 @@ const client = new CounterClient({
     pendingReps = count;
     render();
   },
-  onError: (message) => setStatus('server', message),
+  onError: (message) => setStatus("server", message),
   // A number that stopped updating is worse than an obviously dimmed one.
-  onConnection: (up) => panel.classList.toggle('offline', !up),
+  onConnection: (up) => panel.classList.toggle("offline", !up),
 });
 
-const format = (n) => Number(n).toLocaleString('en-US');
+const format = (n) => Number(n).toLocaleString("en-US");
 
 function render() {
   if (!serverState) return;
@@ -163,10 +169,13 @@ function render() {
   countEl.textContent = format(left);
 
   if (lastShown !== null && left !== lastShown) {
-    countEl.classList.remove('bump');
+    countEl.classList.remove("bump");
     void countEl.offsetWidth; // restart the animation
-    countEl.style.setProperty('--pulse', left < lastShown ? '#4ade80' : '#ff5a5a');
-    countEl.classList.add('bump');
+    countEl.style.setProperty(
+      "--pulse",
+      left < lastShown ? "#4ade80" : "#ff5a5a",
+    );
+    countEl.classList.add("bump");
   }
   lastShown = left;
   renderPanelStatus(rawLeft);
@@ -186,7 +195,8 @@ function render() {
     // are — which is the part the zero was hiding.
     const ahead = Math.max(0, -rawLeft);
     progressText.textContent =
-      `${format(done)} done · ${format(owed)} owed` + (ahead ? ` · ${format(ahead)} ahead` : '');
+      `${format(done)} done · ${format(owed)} owed` +
+      (ahead ? ` · ${format(ahead)} ahead` : "");
     progressEl.hidden = false;
   }
 
@@ -198,8 +208,8 @@ function render() {
     const fromSubs = serverState.fromSubs ?? 0;
     sublineEl.textContent =
       gained > 0
-        ? `+${format(fromSubs)} from ${format(gained)} sub${gained === 1 ? '' : 's'} this stream`
-        : 'No subs yet this stream';
+        ? `+${format(fromSubs)} from ${format(gained)} sub${gained === 1 ? "" : "s"} this stream`
+        : "No subs yet this stream";
     sublineEl.hidden = false;
   } else {
     sublineEl.hidden = true;
@@ -217,8 +227,8 @@ function onFrame({ ctx, canvas: c, video: v, landmarks }) {
 
 /** Acknowledge a counted rep on the tile, for when you cannot see the number. */
 function flashRep() {
-  tile.classList.add('rep');
-  setTimeout(() => tile.classList.remove('rep'), 240);
+  tile.classList.add("rep");
+  setTimeout(() => tile.classList.remove("rep"), 240);
 }
 
 /* ----------------------------------------------------------------- sound */
@@ -237,7 +247,7 @@ const repSound = new RepSound({
 // you leave running — so the first click or key anywhere on it opens the device.
 if (repSound.enabled) {
   const arm = () => repSound.arm();
-  for (const event of ['pointerdown', 'keydown']) {
+  for (const event of ["pointerdown", "keydown"]) {
     window.addEventListener(event, arm, { once: true, passive: true });
   }
   repSound.arm();
@@ -261,7 +271,7 @@ function renderPanelStatus(rawLeft) {
 
   const subs = serverState.subsEnabled
     ? `+${format(serverState.fromSubs ?? 0)} from ${format(serverState.subsGained ?? 0)} subs`
-    : 'Subscribers off — nothing is adding push-ups';
+    : "Subscribers off — nothing is adding push-ups";
   statSubs.textContent = subs;
 
   // "Is it working" is a question about this minute, not about the totals: a
@@ -269,20 +279,22 @@ function renderPanelStatus(rawLeft) {
   // running perfectly.
   const rate = Math.round(tracker?.sampleRate ?? 0);
   const seenAgo = serverState.lastRepAt
-    ? Math.round((Date.now() - new Date(serverState.lastRepAt).getTime()) / 1000)
+    ? Math.round(
+        (Date.now() - new Date(serverState.lastRepAt).getTime()) / 1000,
+      )
     : null;
 
   statDetector.textContent =
     rate === 0
-      ? 'Not sampling — is this window behind another one?'
+      ? "Not sampling — is this window behind another one?"
       : rate < 25
         ? `${rate}/s — too slow for fast reps; bring this window to the front`
         : `${rate}/s — good`;
-  statDetector.dataset.tone = rate === 0 ? 'bad' : rate < 25 ? 'warn' : 'good';
+  statDetector.dataset.tone = rate === 0 ? "bad" : rate < 25 ? "warn" : "good";
 
   statLastRep.textContent =
     seenAgo === null
-      ? 'Nothing counted yet'
+      ? "Nothing counted yet"
       : seenAgo < 90
         ? `Last rep ${seenAgo}s ago`
         : `Last rep ${Math.round(seenAgo / 60)} min ago`;
@@ -294,14 +306,14 @@ function renderPanelStatus(rawLeft) {
 // the only thing this window and the OBS source both see — they are separate
 // browsers with separate storage. A `?sound=` in the URL is an explicit
 // instruction and still wins, the same way `?camera=` does.
-const soundFromUrl = params.has('sound');
-const volumeFromUrl = params.has('volume');
+const soundFromUrl = params.has("sound");
+const volumeFromUrl = params.has("volume");
 
 function followServerSound(state) {
   if (!soundFromUrl && state.sound !== undefined && state.sound !== null) {
     repSound.setPreset(options.count ? state.sound : null);
   }
-  if (!volumeFromUrl && typeof state.volume === 'number') {
+  if (!volumeFromUrl && typeof state.volume === "number") {
     repSound.setVolume(state.volume);
     if (optVolume) syncVolumeInput(state.volume);
   }
@@ -314,9 +326,9 @@ function syncVolumeInput(volume) {
 
 async function savePrefs(patch, message) {
   try {
-    const res = await fetch('/api/prefs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("/api/prefs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
     if (!res.ok) throw new Error(String(res.status));
@@ -324,65 +336,71 @@ async function savePrefs(patch, message) {
   } catch {
     // Saying "saved" when it was not is worse than saying nothing: the setting
     // would come back next launch and look like the panel had lied.
-    optSaved.textContent = 'Not saved — server did not answer';
+    optSaved.textContent = "Not saved — server did not answer";
   }
   setTimeout(() => {
-    optSaved.textContent = '';
+    optSaved.textContent = "";
   }, 2600);
 }
 
 async function buildOptions() {
   let files = [];
   try {
-    files = (await (await fetch('/api/sounds')).json()).sounds ?? [];
+    files = (await (await fetch("/api/sounds")).json()).sounds ?? [];
   } catch {
     // Only the synthesised ones, then. They need no files.
   }
 
-  optSound.append(new Option('shuffle — a different one each rep', 'shuffle'));
+  optSound.append(new Option("shuffle — a different one each rep", "shuffle"));
   for (const file of files) optSound.append(new Option(file.name, file.name));
-  for (const name of SOUND_NAMES.filter((n) => n !== 'shuffle')) {
+  for (const name of SOUND_NAMES.filter((n) => n !== "shuffle")) {
     optSound.append(new Option(name, name));
   }
-  optSound.append(new Option('none', 'off'));
-  optSound.value = options.sound ?? 'off';
+  optSound.append(new Option("none", "off"));
+  optSound.value = options.sound ?? "off";
 
   syncVolumeInput(options.volume);
 
-  optSound.addEventListener('change', () => {
-    const chosen = optSound.value === 'off' ? null : optSound.value;
+  optSound.addEventListener("change", () => {
+    const chosen = optSound.value === "off" ? null : optSound.value;
     repSound.setPreset(options.count ? chosen : null);
     // A sound you cannot hear is indistinguishable from one that failed, and
     // this is the moment you are listening for it.
     repSound.play();
-    savePrefs({ sound: chosen }, 'Saved');
+    savePrefs({ sound: chosen }, "Saved");
   });
 
-  optVolume.addEventListener('input', () => {
+  optVolume.addEventListener("input", () => {
     const volume = Number(optVolume.value) / 100;
     syncVolumeInput(volume);
     repSound.setVolume(volume);
   });
-  optVolume.addEventListener('change', () => {
+  optVolume.addEventListener("change", () => {
     repSound.play();
-    savePrefs({ volume: Number(optVolume.value) / 100 }, 'Saved');
+    savePrefs({ volume: Number(optVolume.value) / 100 }, "Saved");
   });
 
-  optCamera.addEventListener('change', async () => {
+  optCamera.addEventListener("change", async () => {
     const chosen = optCamera.value || null;
-    optSaved.textContent = 'Switching…';
+    optSaved.textContent = "Switching…";
     // Saved even when this window cannot open it: on the machine that streams,
     // "device in use" usually means the OBS source already has it, and the OBS
     // source is the page the choice was made for.
     const opened = await switchCamera(chosen);
-    savePrefs({ camera: chosen }, opened ? 'Saved' : 'Saved — this window could not open it');
+    savePrefs(
+      { camera: chosen },
+      opened ? "Saved" : "Saved — this window could not open it",
+    );
   });
 
-  obsUrl.textContent = buildOverlayUrl(location.origin, { ...options, setup: false });
+  obsUrl.textContent = buildOverlayUrl(location.origin, {
+    ...options,
+    setup: false,
+  });
 
   optionsNote.textContent = options.camera
     ? `Opened on ?camera=${options.camera}. Picking a camera here replaces it everywhere, OBS included.`
-    : 'These are saved on the server, so the OBS source picks them up too.';
+    : "These are saved on the server, so the OBS source picks them up too.";
 
   await refreshCameraList();
 }
@@ -394,22 +412,24 @@ async function buildOptions() {
 async function refreshCameraList() {
   let cameras = [];
   try {
-    const { listCameras } = await import('./pose-tracker.js');
+    const { listCameras } = await import("./pose-tracker.js");
     cameras = await listCameras();
   } catch {
     /* leave the list with just the default entry */
   }
 
   optCamera.replaceChildren();
-  optCamera.append(new Option('Default (whatever the browser picks)', ''));
+  optCamera.append(new Option("Default (whatever the browser picks)", ""));
   for (const device of cameras) {
     // Match by label, not deviceId: ids are rotated per browser profile, so an
     // id chosen here would mean nothing to the OBS source.
-    optCamera.append(new Option(device.label || '(unnamed camera)', device.label));
+    optCamera.append(
+      new Option(device.label || "(unnamed camera)", device.label),
+    );
   }
 
   const current = cameras.find((d) => matches(d.label, activeCamera));
-  optCamera.value = current ? current.label : '';
+  optCamera.value = current ? current.label : "";
 }
 
 // This page is the browser source as well as the window you set it up in, so
@@ -418,15 +438,15 @@ async function refreshCameraList() {
 let hideControls;
 function showControls() {
   pointerSeen = true;
-  document.body.dataset.pointer = '1';
+  document.body.dataset.pointer = "1";
   clearTimeout(hideControls);
   hideControls = setTimeout(() => {
-    if (optionsEl.hidden) document.body.dataset.pointer = '0';
+    if (optionsEl.hidden) document.body.dataset.pointer = "0";
   }, 2600);
 }
 
-window.addEventListener('pointermove', showControls, { passive: true });
-optionsOpen.addEventListener('click', () => {
+window.addEventListener("pointermove", showControls, { passive: true });
+optionsOpen.addEventListener("click", () => {
   optionsEl.hidden = false;
   optionsOpen.hidden = true;
   refreshCameraList();
@@ -435,24 +455,24 @@ optionsOpen.addEventListener('click', () => {
 
 // The URL to paste into OBS, with the options you are actually using folded in
 // — which is the one thing the old status page was genuinely useful for.
-obsCopy.addEventListener('click', async () => {
+obsCopy.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(obsUrl.textContent);
-    obsCopy.textContent = 'Copied';
+    obsCopy.textContent = "Copied";
   } catch {
-    obsCopy.textContent = 'Select it and copy';
+    obsCopy.textContent = "Select it and copy";
   }
   setTimeout(() => {
-    obsCopy.textContent = 'Copy';
+    obsCopy.textContent = "Copy";
   }, 2200);
 });
-optionsClose.addEventListener('click', () => {
+optionsClose.addEventListener("click", () => {
   optionsEl.hidden = true;
   optionsOpen.hidden = false;
   showControls();
 });
-window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !optionsEl.hidden) optionsClose.click();
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !optionsEl.hidden) optionsClose.click();
 });
 
 /* -------------------------------------------------------------- counting */
@@ -464,7 +484,9 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     counter.options.minVisibility,
   );
   const result = counter.update({ elbowAngle, plankAngle, timestamp });
-  const framing = checkFraming(landmarks, { minVisibility: counter.options.minVisibility });
+  const framing = checkFraming(landmarks, {
+    minVisibility: counter.options.minVisibility,
+  });
   showCoaching(framing, result);
 
   if (isSetupView()) {
@@ -480,17 +502,17 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     // reps go missing: below about 25/s a half-second rep is only a handful of
     // samples wide, and no threshold will save it. The last rep's range is the
     // second thing — it says whether you are actually reaching `down` and `up`.
-    const deg = (value) => (value === null ? '—' : `${Math.round(value)}°`);
+    const deg = (value) => (value === null ? "—" : `${Math.round(value)}°`);
     tuneEl.hidden = false;
     tuneEl.innerHTML =
-      `<b>${detectedThisSession}</b> rep${detectedThisSession === 1 ? '' : 's'} detected · ` +
+      `<b>${detectedThisSession}</b> rep${detectedThisSession === 1 ? "" : "s"} detected · ` +
       `elbow <b>${deg(result.angle)}</b> · ` +
       `plank <b>${deg(result.plankAngle)}</b> · ` +
       `last <b>${deg(result.lastRepDepth)}→${deg(result.lastRepTop)}</b> · ` +
       `<b>${Math.round(tracker?.sampleRate ?? 0)}</b>/s · ` +
       `<b>${result.state}</b> · ` +
-      `sound <b>${repSound.preset ?? 'off'}/${repSound.status}` +
-      `${repSound.latencyMs === null ? '' : ` ${repSound.latencyMs}ms`}</b> · ${result.feedback}`;
+      `sound <b>${repSound.preset ?? "off"}/${repSound.status}` +
+      `${repSound.latencyMs === null ? "" : ` ${repSound.latencyMs}ms`}</b> · ${result.feedback}`;
   }
 
   if (result.repCompleted) {
@@ -528,7 +550,9 @@ function showCoaching(framing, result) {
   // measure in the first place.
   // Nothing else on screen explains a silent tracker, and a browser will hold
   // the sound back for ever until the page has been clicked once.
-  const muted = repSound.needsGesture ? 'Click the window once to turn the sound on.' : null;
+  const muted = repSound.needsGesture
+    ? "Click the window once to turn the sound on."
+    : null;
   const message = framing.ok ? (muted ?? formNote(result)) : framing.message;
   const code = framing.ok ? (message ? `form:${message}` : null) : framing.code;
 
@@ -540,13 +564,14 @@ function showCoaching(framing, result) {
 
   // Nothing to say, or not for long enough yet to be worth saying.
   const settled = now - coachSince >= COACH_HOLD_MS;
-  const next = code && settled ? message : coachShown && code ? coachShown : null;
+  const next =
+    code && settled ? message : coachShown && code ? coachShown : null;
 
   if (next === coachShown) return;
   coachShown = next;
-  coachEl.textContent = next ?? '';
+  coachEl.textContent = next ?? "";
   coachEl.hidden = !next;
-  coachEl.dataset.severity = framing.code === FRAMING.NO_POSE ? 'wait' : 'fix';
+  coachEl.dataset.severity = framing.code === FRAMING.NO_POSE ? "wait" : "fix";
 }
 
 /**
@@ -555,23 +580,26 @@ function showCoaching(framing, result) {
  * belong on screen.
  */
 function formNote(result) {
-  if (result.feedback === 'Straighten up — hips are sagging or piked.') return result.feedback;
-  if (result.feedback === 'Too fast to count — control the rep.') return result.feedback;
+  if (result.feedback === "Straighten up — hips are sagging or piked.")
+    return result.feedback;
+  if (result.feedback === "Too fast to count — control the rep.")
+    return result.feedback;
   return null;
 }
 
 async function startCamera() {
-  const { PoseTracker } = await import('./pose-tracker.js');
+  const { PoseTracker } = await import("./pose-tracker.js");
   tracker = new PoseTracker({
     video,
     canvas,
     camera: activeCamera,
     onPose: handlePose,
     onFrame,
-    onStatus: (message) => setStatus('camera', message === 'Tracking' ? '' : message, 'info'),
+    onStatus: (message) =>
+      setStatus("camera", message === "Tracking" ? "" : message, "info"),
   });
   await tracker.start();
-  setStatus('camera', '');
+  setStatus("camera", "");
 }
 
 /**
@@ -594,11 +622,11 @@ async function openCamera(name) {
   try {
     if (tracker) await tracker.setCamera(name);
     else await startCamera();
-    setStatus('camera', '');
+    setStatus("camera", "");
     return true;
   } catch (err) {
     console.error(err);
-    setStatus('camera', await describeCameraFailure(err));
+    setStatus("camera", await describeCameraFailure(err));
     return false;
   }
 }
@@ -621,17 +649,17 @@ function followServerCamera(state) {
  * four video inputs is not a diagnosis on its own.
  */
 async function describeCameraFailure(err) {
-  if (err?.name !== 'NotReadableError' && err?.name !== 'NotFoundError') {
+  if (err?.name !== "NotReadableError" && err?.name !== "NotFoundError") {
     return `Camera could not start: ${err?.message ?? err}`;
   }
 
-  let names = '';
+  let names = "";
   try {
-    const { listCameras } = await import('./pose-tracker.js');
+    const { listCameras } = await import("./pose-tracker.js");
     names = (await listCameras())
       .map((d) => d.label)
       .filter(Boolean)
-      .join(', ');
+      .join(", ");
   } catch {
     /* nothing to add */
   }
@@ -639,15 +667,19 @@ async function describeCameraFailure(err) {
   // Name the camera actually being opened, which after a switch is not the one
   // in the URL — reporting "the default camera" while trying to open a named
   // one sends you looking in the wrong place.
-  const wanted = activeCamera ? `The "${activeCamera}" camera` : 'The default camera';
+  const wanted = activeCamera
+    ? `The "${activeCamera}" camera`
+    : "The default camera";
   const problem =
-    err.name === 'NotFoundError'
-      ? 'was not found'
-      : 'is already in use — remove any Video Capture Device for it from your OBS scenes';
+    err.name === "NotFoundError"
+      ? "was not found"
+      : "is already in use — remove any Video Capture Device for it from your OBS scenes";
 
   return (
     `${wanted} ${problem}.` +
-    (names ? ` Cameras on this machine: ${names}. Pick one with ?camera=NAME.` : '')
+    (names
+      ? ` Cameras on this machine: ${names}. Pick one with ?camera=NAME.`
+      : "")
   );
 }
 
@@ -658,7 +690,7 @@ function matches(label, wanted) {
 
 // OBS reloads a browser source when the scene comes back; release the camera on
 // the way out so the next load isn't fighting a stream that never stopped.
-window.addEventListener('pagehide', () => {
+window.addEventListener("pagehide", () => {
   tracker?.stop();
   client.stop();
   repSound.stop();
@@ -669,7 +701,7 @@ async function boot() {
   // learn the saved camera before opening one — starting on the default and
   // swapping a moment later would drop and re-acquire the device for nothing.
   try {
-    const state = await (await fetch('/api/state')).json();
+    const state = await (await fetch("/api/state")).json();
     serverState = state;
     render();
     if (state.cameraChosen) activeCamera = state.camera ?? null;
@@ -686,7 +718,7 @@ async function boot() {
       await startCamera();
     } catch (err) {
       console.error(err);
-      setStatus('camera', await describeCameraFailure(err));
+      setStatus("camera", await describeCameraFailure(err));
     }
     // Camera labels only exist once permission has been granted, so the list
     // in the options panel is filled in after the first attempt, failed or not.

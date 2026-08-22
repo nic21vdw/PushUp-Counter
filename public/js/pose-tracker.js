@@ -11,25 +11,25 @@
  * browser source down mid-stream.
  */
 
-const CDN_VERSION = '0.10.14';
+const CDN_VERSION = "0.10.14";
 const LOCAL = {
-  bundle: '/vendor/tasks-vision/vision_bundle.mjs',
-  wasm: '/vendor/tasks-vision/wasm',
-  model: '/vendor/models/pose_landmarker_lite.task',
+  bundle: "/vendor/tasks-vision/vision_bundle.mjs",
+  wasm: "/vendor/tasks-vision/wasm",
+  model: "/vendor/models/pose_landmarker_lite.task",
 };
 const CDN = {
   bundle: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${CDN_VERSION}/vision_bundle.mjs`,
   wasm: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${CDN_VERSION}/wasm`,
   model:
-    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
 };
 
 /** True when the vendored runtime is actually present and served. */
 async function hasLocalAssets() {
   try {
     const [bundle, model] = await Promise.all([
-      fetch(LOCAL.bundle, { method: 'HEAD' }),
-      fetch(LOCAL.model, { method: 'HEAD' }),
+      fetch(LOCAL.bundle, { method: "HEAD" }),
+      fetch(LOCAL.model, { method: "HEAD" }),
     ]);
     return bundle.ok && model.ok;
   } catch {
@@ -44,12 +44,16 @@ async function hasLocalAssets() {
  */
 export async function listCameras() {
   const videoInputs = async () =>
-    (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    (await navigator.mediaDevices.enumerateDevices()).filter(
+      (d) => d.kind === "videoinput",
+    );
 
   let cameras = await videoInputs();
   if (cameras.length && cameras.every((d) => !d.label)) {
     try {
-      const priming = await navigator.mediaDevices.getUserMedia({ video: true });
+      const priming = await navigator.mediaDevices.getUserMedia({
+        video: true,
+      });
       for (const track of priming.getTracks()) track.stop();
       cameras = await videoInputs();
     } catch {
@@ -79,7 +83,7 @@ export class PoseTracker {
   }) {
     this.video = video;
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    this.ctx = canvas.getContext("2d");
     this.onPose = onPose;
     this.onStatus = onStatus;
     // Which webcam to open: part of a device label, or a full deviceId. Null
@@ -126,17 +130,22 @@ export class PoseTracker {
     let lastError;
     for (const assets of order) {
       const isLocal = assets === LOCAL;
-      this.onStatus(isLocal ? 'Loading pose model…' : 'Loading pose model (CDN)…');
+      this.onStatus(
+        isLocal ? "Loading pose model…" : "Loading pose model (CDN)…",
+      );
       try {
         await this.#loadFrom(assets);
-        this.assetSource = isLocal ? 'local' : 'cdn';
+        this.assetSource = isLocal ? "local" : "cdn";
         return;
       } catch (err) {
         lastError = err;
-        console.warn(`pose assets failed to load from ${isLocal ? 'vendor/' : 'the CDN'}`, err);
+        console.warn(
+          `pose assets failed to load from ${isLocal ? "vendor/" : "the CDN"}`,
+          err,
+        );
       }
     }
-    throw lastError ?? new Error('Could not load the pose model');
+    throw lastError ?? new Error("Could not load the pose model");
   }
 
   async #loadFrom(assets) {
@@ -146,8 +155,8 @@ export class PoseTracker {
 
     const fileset = await FilesetResolver.forVisionTasks(assets.wasm);
     this.landmarker = await PoseLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: assets.model, delegate: 'GPU' },
-      runningMode: 'VIDEO',
+      baseOptions: { modelAssetPath: assets.model, delegate: "GPU" },
+      runningMode: "VIDEO",
       numPoses: 1,
       outputSegmentationMasks: this.segmentation,
       minPoseDetectionConfidence: 0.5,
@@ -183,7 +192,7 @@ export class PoseTracker {
     this.stopRequested = false;
     await this.load();
 
-    this.onStatus('Requesting camera…');
+    this.onStatus("Requesting camera…");
     const stream = await navigator.mediaDevices.getUserMedia({
       video: await this.#videoConstraints(),
       audio: false,
@@ -200,13 +209,15 @@ export class PoseTracker {
     this.video.srcObject = this.stream;
     await this.video.play();
     if (this.video.videoWidth === 0) {
-      await new Promise((resolve) => this.video.addEventListener('loadeddata', resolve, { once: true }));
+      await new Promise((resolve) =>
+        this.video.addEventListener("loadeddata", resolve, { once: true }),
+      );
     }
 
     this.canvas.width = this.video.videoWidth;
     this.canvas.height = this.video.videoHeight;
     this.running = true;
-    this.onStatus('Tracking');
+    this.onStatus("Tracking");
     this.#loop();
   }
 
@@ -221,8 +232,12 @@ export class PoseTracker {
    * samples wide to begin with.
    */
   async #videoConstraints() {
-    const size = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } };
-    if (!this.camera) return { ...size, facingMode: 'user' };
+    const size = {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 60 },
+    };
+    if (!this.camera) return { ...size, facingMode: "user" };
 
     const cameras = await listCameras();
     const needle = this.camera.trim().toLowerCase();
@@ -231,9 +246,11 @@ export class PoseTracker {
       cameras.find((d) => d.label.toLowerCase().includes(needle));
 
     if (!match) {
-      const names = cameras.map((d) => d.label || d.deviceId.slice(0, 8)).join(', ');
+      const names = cameras
+        .map((d) => d.label || d.deviceId.slice(0, 8))
+        .join(", ");
       throw new Error(
-        `No camera matching "${this.camera}". This machine has: ${names || 'none'}`,
+        `No camera matching "${this.camera}". This machine has: ${names || "none"}`,
       );
     }
     return { ...size, deviceId: { exact: match.deviceId } };
@@ -260,7 +277,8 @@ export class PoseTracker {
     this.running = false;
     this.stopRequested = true;
     if (this.frameHandle !== null) {
-      if (this.usingFrameCallback) this.video.cancelVideoFrameCallback?.(this.frameHandle);
+      if (this.usingFrameCallback)
+        this.video.cancelVideoFrameCallback?.(this.frameHandle);
       else cancelAnimationFrame(this.frameHandle);
       this.frameHandle = null;
     }
@@ -273,7 +291,7 @@ export class PoseTracker {
     this.lastSampleAt = null;
     this.sampleRate = 0;
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.onStatus('Camera off');
+    this.onStatus("Camera off");
   }
 
   /** Briefly tint the skeleton to acknowledge a counted rep. */
@@ -294,7 +312,7 @@ export class PoseTracker {
    * way comes straight off the resolution of a fast rep.
    */
   #loop() {
-    if (typeof this.video.requestVideoFrameCallback === 'function') {
+    if (typeof this.video.requestVideoFrameCallback === "function") {
       this.usingFrameCallback = true;
       const step = () => {
         if (!this.running) return;
@@ -334,7 +352,7 @@ export class PoseTracker {
       result = this.landmarker.detectForVideo(this.video, timestamp);
     } catch (err) {
       // A single bad frame shouldn't kill the loop.
-      console.warn('pose detection frame failed', err);
+      console.warn("pose detection frame failed", err);
       return;
     }
 
@@ -378,13 +396,13 @@ export class PoseTracker {
   drawSkeleton(landmarks, { highlight = this.highlight } = {}) {
     if (!landmarks || !this.drawingUtils) return;
     const { canvas } = this;
-    const accent = highlight ? '#4ade80' : '#38bdf8';
+    const accent = highlight ? "#4ade80" : "#38bdf8";
     this.drawingUtils.drawConnectors(landmarks, this.connections, {
       color: accent,
       lineWidth: Math.max(2, canvas.width / 300),
     });
     this.drawingUtils.drawLandmarks(landmarks, {
-      color: highlight ? '#bbf7d0' : '#f8fafc',
+      color: highlight ? "#bbf7d0" : "#f8fafc",
       fillColor: accent,
       radius: Math.max(2, canvas.width / 450),
     });

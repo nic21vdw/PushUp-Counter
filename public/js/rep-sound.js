@@ -51,27 +51,27 @@ export const SAMPLE_WINDOWS = {
 export const PRESETS = {
   /** Two-note arcade pickup. */
   coin: [
-    { at: 0, dur: 0.05, hz: 1046, type: 'square', gain: 0.7 },
-    { at: 0.045, dur: 0.13, hz: 1568, type: 'square', gain: 0.7 },
+    { at: 0, dur: 0.05, hz: 1046, type: "square", gain: 0.7 },
+    { at: 0.045, dur: 0.13, hz: 1568, type: "square", gain: 0.7 },
   ],
   /** Four-note run up. */
   powerup: [
-    { at: 0, dur: 0.05, hz: 523, type: 'square', gain: 0.55 },
-    { at: 0.045, dur: 0.05, hz: 659, type: 'square', gain: 0.55 },
-    { at: 0.09, dur: 0.05, hz: 784, type: 'square', gain: 0.55 },
-    { at: 0.135, dur: 0.075, hz: 1046, type: 'square', gain: 0.6 },
+    { at: 0, dur: 0.05, hz: 523, type: "square", gain: 0.55 },
+    { at: 0.045, dur: 0.05, hz: 659, type: "square", gain: 0.55 },
+    { at: 0.09, dur: 0.05, hz: 784, type: "square", gain: 0.55 },
+    { at: 0.135, dur: 0.075, hz: 1046, type: "square", gain: 0.6 },
   ],
   /** Bubble. */
-  pop: [{ at: 0, dur: 0.09, hz: 900, to: 260, type: 'sine', gain: 0.9 }],
+  pop: [{ at: 0, dur: 0.09, hz: 900, to: 260, type: "sine", gain: 0.9 }],
   /** Cartoon spring. */
   boing: [
-    { at: 0, dur: 0.07, hz: 420, to: 780, type: 'triangle', gain: 0.8 },
-    { at: 0.065, dur: 0.14, hz: 780, to: 180, type: 'triangle', gain: 0.8 },
+    { at: 0, dur: 0.07, hz: 420, to: 780, type: "triangle", gain: 0.8 },
+    { at: 0.065, dur: 0.14, hz: 780, to: 180, type: "triangle", gain: 0.8 },
   ],
   /** The two-note fall of a joke landing badly. */
   sadtrombone: [
-    { at: 0, dur: 0.16, hz: 233, to: 208, type: 'sawtooth', gain: 0.5 },
-    { at: 0.15, dur: 0.06, hz: 196, type: 'sawtooth', gain: 0.5 },
+    { at: 0, dur: 0.16, hz: 233, to: 208, type: "sawtooth", gain: 0.5 },
+    { at: 0.15, dur: 0.06, hz: 196, type: "sawtooth", gain: 0.5 },
   ],
   /**
    * Exactly what it sounds like. Noise pushed through a closing lowpass for the
@@ -84,65 +84,73 @@ export const PRESETS = {
       dur: 0.32,
       hz: 95,
       to: 62,
-      type: 'sawtooth',
+      type: "sawtooth",
       gain: 0.55,
       wobble: { hz: 22, depth: 26 },
-      filter: { type: 'lowpass', hz: 900, to: 260 },
+      filter: { type: "lowpass", hz: 900, to: 260 },
     },
     {
       at: 0.02,
       dur: 0.3,
-      type: 'noise',
+      type: "noise",
       gain: 0.3,
-      filter: { type: 'lowpass', hz: 700, to: 180 },
+      filter: { type: "lowpass", hz: 700, to: 180 },
     },
   ],
   /** Three detuned stabs. Loud on purpose; it is an air horn. */
   airhorn: [
-    { at: 0, dur: 0.26, hz: 415, type: 'sawtooth', gain: 0.28 },
-    { at: 0, dur: 0.26, hz: 622, type: 'sawtooth', gain: 0.24 },
-    { at: 0, dur: 0.26, hz: 311, type: 'sawtooth', gain: 0.26 },
+    { at: 0, dur: 0.26, hz: 415, type: "sawtooth", gain: 0.28 },
+    { at: 0, dur: 0.26, hz: 622, type: "sawtooth", gain: 0.24 },
+    { at: 0, dur: 0.26, hz: 311, type: "sawtooth", gain: 0.26 },
   ],
   /** Up and away. Vibrato is what makes it a whistle instead of a beep. */
   slidewhistle: [
-    { at: 0, dur: 0.28, hz: 700, to: 2200, type: 'sine', gain: 0.75, wobble: { hz: 7, depth: 40 } },
+    {
+      at: 0,
+      dur: 0.28,
+      hz: 700,
+      to: 2200,
+      type: "sine",
+      gain: 0.75,
+      wobble: { hz: 7, depth: 40 },
+    },
   ],
   /** Ba-dum-tss. The joke has been made; move on. */
   rimshot: [
-    { at: 0, dur: 0.07, hz: 220, to: 120, type: 'sine', gain: 0.8 },
-    { at: 0.1, dur: 0.07, hz: 180, to: 100, type: 'sine', gain: 0.8 },
+    { at: 0, dur: 0.07, hz: 220, to: 120, type: "sine", gain: 0.8 },
+    { at: 0.1, dur: 0.07, hz: 180, to: 100, type: "sine", gain: 0.8 },
     {
       at: 0.2,
       dur: 0.22,
-      type: 'noise',
+      type: "noise",
       gain: 0.35,
-      filter: { type: 'highpass', hz: 4000, to: 7000 },
+      filter: { type: "highpass", hz: 4000, to: 7000 },
     },
   ],
   /** The plain rising beep. */
-  chirp: [{ at: 0, dur: 0.11, hz: 880, to: 1320, type: 'triangle', gain: 1 }],
+  chirp: [{ at: 0, dur: 0.11, hz: 880, to: 1320, type: "triangle", gain: 1 }],
 
   /** A scouter sweeping for a power level. */
   scouter: [
-    { at: 0, dur: 0.035, hz: 1760, type: 'square', gain: 0.45 },
-    { at: 0.055, dur: 0.035, hz: 2093, type: 'square', gain: 0.45 },
-    { at: 0.11, dur: 0.035, hz: 2489, type: 'square', gain: 0.45 },
-    { at: 0.165, dur: 0.035, hz: 2794, type: 'square', gain: 0.45 },
-    { at: 0.22, dur: 0.1, hz: 3322, type: 'square', gain: 0.5 },
+    { at: 0, dur: 0.035, hz: 1760, type: "square", gain: 0.45 },
+    { at: 0.055, dur: 0.035, hz: 2093, type: "square", gain: 0.45 },
+    { at: 0.11, dur: 0.035, hz: 2489, type: "square", gain: 0.45 },
+    { at: 0.165, dur: 0.035, hz: 2794, type: "square", gain: 0.45 },
+    { at: 0.22, dur: 0.1, hz: 3322, type: "square", gain: 0.5 },
   ],
   /** The same scouter reading one number too many. Three beeps, then the crunch. */
   scouterbreak: [
-    { at: 0, dur: 0.04, hz: 2349, type: 'square', gain: 0.4 },
-    { at: 0.055, dur: 0.04, hz: 2794, type: 'square', gain: 0.4 },
-    { at: 0.11, dur: 0.05, hz: 3520, type: 'square', gain: 0.45 },
+    { at: 0, dur: 0.04, hz: 2349, type: "square", gain: 0.4 },
+    { at: 0.055, dur: 0.04, hz: 2794, type: "square", gain: 0.4 },
+    { at: 0.11, dur: 0.05, hz: 3520, type: "square", gain: 0.45 },
     {
       at: 0.18,
       dur: 0.3,
-      type: 'noise',
+      type: "noise",
       gain: 0.5,
-      filter: { type: 'lowpass', hz: 3200, to: 260 },
+      filter: { type: "lowpass", hz: 3200, to: 260 },
     },
-    { at: 0.18, dur: 0.24, hz: 170, to: 48, type: 'sawtooth', gain: 0.4 },
+    { at: 0.18, dur: 0.24, hz: 170, to: 48, type: "sawtooth", gain: 0.4 },
   ],
   /** A ki blast leaving the hand. */
   kiblast: [
@@ -151,16 +159,16 @@ export const PRESETS = {
       dur: 0.2,
       hz: 1700,
       to: 210,
-      type: 'sawtooth',
+      type: "sawtooth",
       gain: 0.5,
-      filter: { type: 'lowpass', hz: 4200, to: 640 },
+      filter: { type: "lowpass", hz: 4200, to: 640 },
     },
     {
       at: 0,
       dur: 0.13,
-      type: 'noise',
+      type: "noise",
       gain: 0.22,
-      filter: { type: 'bandpass', hz: 2400, to: 560 },
+      filter: { type: "bandpass", hz: 2400, to: 560 },
     },
   ],
   /**
@@ -173,26 +181,26 @@ export const PRESETS = {
       dur: 0.26,
       hz: 190,
       to: 940,
-      type: 'sawtooth',
+      type: "sawtooth",
       gain: 0.28,
       wobble: { hz: 9, depth: 26 },
-      filter: { type: 'lowpass', hz: 600, to: 3200 },
+      filter: { type: "lowpass", hz: 600, to: 3200 },
     },
     {
       at: 0.24,
       dur: 0.26,
-      type: 'noise',
+      type: "noise",
       gain: 0.45,
-      filter: { type: 'bandpass', hz: 1100, to: 220 },
+      filter: { type: "bandpass", hz: 1100, to: 220 },
     },
     {
       at: 0.24,
       dur: 0.26,
       hz: 340,
       to: 80,
-      type: 'sawtooth',
+      type: "sawtooth",
       gain: 0.38,
-      filter: { type: 'lowpass', hz: 2600, to: 380 },
+      filter: { type: "lowpass", hz: 2600, to: 380 },
     },
   ],
   /**
@@ -201,22 +209,30 @@ export const PRESETS = {
    * swelling any one of them.
    */
   supersaiyan: [
-    { at: 0, dur: 0.5, hz: 68, to: 172, type: 'sawtooth', gain: 0.38, wobble: { hz: 13, depth: 15 } },
+    {
+      at: 0,
+      dur: 0.5,
+      hz: 68,
+      to: 172,
+      type: "sawtooth",
+      gain: 0.38,
+      wobble: { hz: 13, depth: 15 },
+    },
     {
       at: 0,
       dur: 0.34,
-      type: 'noise',
+      type: "noise",
       gain: 0.16,
-      filter: { type: 'bandpass', hz: 420, to: 1500 },
+      filter: { type: "bandpass", hz: 420, to: 1500 },
     },
     {
       at: 0.16,
       dur: 0.34,
-      type: 'noise',
+      type: "noise",
       gain: 0.3,
-      filter: { type: 'bandpass', hz: 950, to: 2800 },
+      filter: { type: "bandpass", hz: 950, to: 2800 },
     },
-    { at: 0.28, dur: 0.22, hz: 740, to: 1660, type: 'square', gain: 0.16 },
+    { at: 0.28, dur: 0.22, hz: 740, to: 1660, type: "square", gain: 0.16 },
   ],
   /** Instant Transmission: gone before the noise has finished. */
   instanttransmission: [
@@ -225,16 +241,16 @@ export const PRESETS = {
       dur: 0.14,
       hz: 2700,
       to: 320,
-      type: 'sine',
+      type: "sine",
       gain: 0.5,
       wobble: { hz: 32, depth: 260 },
     },
     {
       at: 0,
       dur: 0.1,
-      type: 'noise',
+      type: "noise",
       gain: 0.18,
-      filter: { type: 'highpass', hz: 2200, to: 7000 },
+      filter: { type: "highpass", hz: 2200, to: 7000 },
     },
   ],
 
@@ -247,33 +263,41 @@ export const PRESETS = {
     {
       at: 0,
       dur: 0.06,
-      type: 'noise',
+      type: "noise",
       gain: 0.3,
-      filter: { type: 'highpass', hz: 3000, to: 6500 },
+      filter: { type: "highpass", hz: 3000, to: 6500 },
     },
-    { at: 0, dur: 0.5, hz: 622, type: 'triangle', gain: 0.26 },
-    { at: 0, dur: 0.44, hz: 1043, type: 'square', gain: 0.2 },
-    { at: 0, dur: 0.36, hz: 1657, type: 'square', gain: 0.15 },
-    { at: 0, dur: 0.3, hz: 2310, type: 'square', gain: 0.1 },
-    { at: 0.21, dur: 0.29, hz: 1043, type: 'square', gain: 0.12 },
+    { at: 0, dur: 0.5, hz: 622, type: "triangle", gain: 0.26 },
+    { at: 0, dur: 0.44, hz: 1043, type: "square", gain: 0.2 },
+    { at: 0, dur: 0.36, hz: 1657, type: "square", gain: 0.15 },
+    { at: 0, dur: 0.3, hz: 2310, type: "square", gain: 0.1 },
+    { at: 0.21, dur: 0.29, hz: 1043, type: "square", gain: 0.12 },
   ],
   /** The record coming off mid-song. Up, then down, then the room is quiet. */
   recordscratch: [
     {
       at: 0,
       dur: 0.15,
-      type: 'noise',
+      type: "noise",
       gain: 0.9,
-      filter: { type: 'bandpass', hz: 1100, to: 3400 },
+      filter: { type: "bandpass", hz: 1100, to: 3400 },
     },
     {
       at: 0.14,
       dur: 0.16,
-      type: 'noise',
+      type: "noise",
       gain: 0.9,
-      filter: { type: 'bandpass', hz: 3400, to: 850 },
+      filter: { type: "bandpass", hz: 3400, to: 850 },
     },
-    { at: 0, dur: 0.3, hz: 320, to: 110, type: 'sawtooth', gain: 0.3, wobble: { hz: 17, depth: 55 } },
+    {
+      at: 0,
+      dur: 0.3,
+      hz: 320,
+      to: 110,
+      type: "sawtooth",
+      gain: 0.3,
+      wobble: { hz: 17, depth: 55 },
+    },
   ],
   /** One falling syllable of disappointment. */
   bruh: [
@@ -282,40 +306,47 @@ export const PRESETS = {
       dur: 0.3,
       hz: 300,
       to: 118,
-      type: 'sawtooth',
+      type: "sawtooth",
       gain: 0.5,
-      filter: { type: 'lowpass', hz: 1500, to: 360 },
+      filter: { type: "lowpass", hz: 1500, to: 360 },
     },
-    { at: 0, dur: 0.3, hz: 150, to: 59, type: 'triangle', gain: 0.3 },
+    { at: 0, dur: 0.3, hz: 150, to: 59, type: "triangle", gain: 0.3 },
   ],
   /** Blunt object, meet head. */
   bonk: [
-    { at: 0, dur: 0.18, hz: 330, to: 66, type: 'sine', gain: 0.9 },
+    { at: 0, dur: 0.18, hz: 330, to: 66, type: "sine", gain: 0.9 },
     {
       at: 0,
       dur: 0.05,
-      type: 'noise',
+      type: "noise",
       gain: 0.28,
-      filter: { type: 'lowpass', hz: 2400, to: 520 },
+      filter: { type: "lowpass", hz: 2400, to: 520 },
     },
   ],
   /** Wrong answer. */
   buzzer: [
-    { at: 0, dur: 0.42, hz: 147, type: 'sawtooth', gain: 0.38, filter: { type: 'lowpass', hz: 1300 } },
-    { at: 0, dur: 0.42, hz: 98, type: 'square', gain: 0.32 },
+    {
+      at: 0,
+      dur: 0.42,
+      hz: 147,
+      type: "sawtooth",
+      gain: 0.38,
+      filter: { type: "lowpass", hz: 1300 },
+    },
+    { at: 0, dur: 0.42, hz: 98, type: "square", gain: 0.32 },
   ],
   /** Money. */
   kaching: [
     {
       at: 0,
       dur: 0.04,
-      type: 'noise',
+      type: "noise",
       gain: 0.3,
-      filter: { type: 'highpass', hz: 3200, to: 6000 },
+      filter: { type: "highpass", hz: 3200, to: 6000 },
     },
-    { at: 0.03, dur: 0.3, hz: 1568, type: 'sine', gain: 0.45 },
-    { at: 0.03, dur: 0.3, hz: 2093, type: 'sine', gain: 0.3 },
-    { at: 0.1, dur: 0.3, hz: 2637, type: 'sine', gain: 0.24 },
+    { at: 0.03, dur: 0.3, hz: 1568, type: "sine", gain: 0.45 },
+    { at: 0.03, dur: 0.3, hz: 2093, type: "sine", gain: 0.3 },
+    { at: 0.1, dur: 0.3, hz: 2637, type: "sine", gain: 0.24 },
   ],
   /** A duck. No further justification is available. */
   quack: [
@@ -324,37 +355,37 @@ export const PRESETS = {
       dur: 0.19,
       hz: 500,
       to: 250,
-      type: 'sawtooth',
+      type: "sawtooth",
       gain: 0.55,
       wobble: { hz: 44, depth: 85 },
-      filter: { type: 'bandpass', hz: 1200, to: 680 },
+      filter: { type: "bandpass", hz: 1200, to: 680 },
     },
   ],
   /** Two rising woops. */
   siren: [
-    { at: 0, dur: 0.22, hz: 720, to: 1500, type: 'sine', gain: 0.42 },
-    { at: 0.24, dur: 0.24, hz: 720, to: 1500, type: 'sine', gain: 0.42 },
+    { at: 0, dur: 0.22, hz: 720, to: 1500, type: "sine", gain: 0.42 },
+    { at: 0.24, dur: 0.24, hz: 720, to: 1500, type: "sine", gain: 0.42 },
   ],
   /** Four notes down. You are out of lives. */
   gameover: [
-    { at: 0, dur: 0.1, hz: 784, type: 'square', gain: 0.45 },
-    { at: 0.1, dur: 0.1, hz: 622, type: 'square', gain: 0.45 },
-    { at: 0.2, dur: 0.1, hz: 523, type: 'square', gain: 0.45 },
-    { at: 0.3, dur: 0.2, hz: 392, type: 'square', gain: 0.5 },
+    { at: 0, dur: 0.1, hz: 784, type: "square", gain: 0.45 },
+    { at: 0.1, dur: 0.1, hz: 622, type: "square", gain: 0.45 },
+    { at: 0.2, dur: 0.1, hz: 523, type: "square", gain: 0.45 },
+    { at: 0.3, dur: 0.2, hz: 392, type: "square", gain: 0.5 },
   ],
   /** The orchestral stab, still going strong since 1987. */
   orchhit: [
     {
       at: 0,
       dur: 0.06,
-      type: 'noise',
+      type: "noise",
       gain: 0.22,
-      filter: { type: 'highpass', hz: 2000, to: 5000 },
+      filter: { type: "highpass", hz: 2000, to: 5000 },
     },
-    { at: 0, dur: 0.3, hz: 131, type: 'sawtooth', gain: 0.3 },
-    { at: 0, dur: 0.3, hz: 196, type: 'sawtooth', gain: 0.24 },
-    { at: 0, dur: 0.28, hz: 262, type: 'sawtooth', gain: 0.2 },
-    { at: 0, dur: 0.26, hz: 311, type: 'sawtooth', gain: 0.18 },
+    { at: 0, dur: 0.3, hz: 131, type: "sawtooth", gain: 0.3 },
+    { at: 0, dur: 0.3, hz: 196, type: "sawtooth", gain: 0.24 },
+    { at: 0, dur: 0.28, hz: 262, type: "sawtooth", gain: 0.2 },
+    { at: 0, dur: 0.26, hz: 311, type: "sawtooth", gain: 0.18 },
   ],
   /**
    * Something going past your ear.
@@ -368,9 +399,9 @@ export const PRESETS = {
     {
       at: 0,
       dur: 0.3,
-      type: 'noise',
+      type: "noise",
       gain: 0.5,
-      filter: { type: 'lowpass', hz: 7000, to: 500 },
+      filter: { type: "lowpass", hz: 7000, to: 500 },
     },
   ],
 };
@@ -384,17 +415,17 @@ export const PRESETS = {
  * is nothing to fetch and nothing that belongs to anyone else.
  */
 export const PACER = {
-  beep: [{ at: 0, dur: 0.19, hz: 1000, type: 'square', gain: 0.55 }],
+  beep: [{ at: 0, dur: 0.19, hz: 1000, type: "square", gain: 0.55 }],
   levelUp: [
-    { at: 0, dur: 0.12, hz: 1000, type: 'square', gain: 0.55 },
-    { at: 0.16, dur: 0.12, hz: 1000, type: 'square', gain: 0.55 },
-    { at: 0.32, dur: 0.2, hz: 1333, type: 'square', gain: 0.6 },
+    { at: 0, dur: 0.12, hz: 1000, type: "square", gain: 0.55 },
+    { at: 0.16, dur: 0.12, hz: 1000, type: "square", gain: 0.55 },
+    { at: 0.32, dur: 0.2, hz: 1333, type: "square", gain: 0.6 },
   ],
   /** Reps between level-ups. */
   levelEvery: 10,
   intro:
-    'The push-up test is a multi-stage exercise that gets more difficult as it continues. ' +
-    'A push-up on every beep. Ready? Begin.',
+    "The push-up test is a multi-stage exercise that gets more difficult as it continues. " +
+    "A push-up on every beep. Ready? Begin.",
   levelLine: (level) => `Level ${level}.`,
 };
 
@@ -412,120 +443,120 @@ export const PACER = {
  * then just sounds broken.
  */
 export const SAYINGS = [
-  'Sheesh!',
-  'Bruh.',
-  'No way.',
-  'Absolute cinema.',
-  'Skill issue.',
-  'Emotional damage.',
-  'He needs some milk.',
-  'Somebody get this man a towel.',
-  'Certified.',
-  'Nice.',
-  'Too easy.',
-  'Is that it?',
-  'Weak!',
-  'Get up.',
-  'One more.',
+  "Sheesh!",
+  "Bruh.",
+  "No way.",
+  "Absolute cinema.",
+  "Skill issue.",
+  "Emotional damage.",
+  "He needs some milk.",
+  "Somebody get this man a towel.",
+  "Certified.",
+  "Nice.",
+  "Too easy.",
+  "Is that it?",
+  "Weak!",
+  "Get up.",
+  "One more.",
   "That's one.",
-  'Again.',
-  'Push!',
+  "Again.",
+  "Push!",
   "Let's go!",
-  'Your arms are shaking.',
-  'The subscribers are watching.',
-  'Down. Up. Repeat.',
+  "Your arms are shaking.",
+  "The subscribers are watching.",
+  "Down. Up. Repeat.",
   "It's over nine thousand!",
-  'Kamehameha!',
-  'Power level rising.',
-  'Not even my final form.',
-  'Rep counted. Emotion not found.',
-  'You have gained one strength.',
-  'Congratulations. Nobody saw that.',
-  'Error four oh four. Chest missing.',
-  'That one was legal.',
-  'Your bones approve.',
-  'Push up dot exe is responding.',
-  'Wow. A whole one.',
-  'Gravity remains undefeated.',
-  'Adding one to the number.',
-  'This is my job now.',
-  'Your form is acceptable. Barely.',
-  'Achievement unlocked. Floor toucher.',
-  'I am counting. Not impressed.',
-  'Muscle detected. Loading.',
-  'Please do not stop. Ever.',
-  'Slightly stronger than before.',
-  'The ground says hello again.',
-  'That rep buffered fine.',
-  'Your ancestors are confused.',
-  'Repetition accepted by the system.',
-  'Sixty more and I sleep.',
-  'That was a push up. Probably.',
-  'Skill issue. But improving.',
-  'Repeat until further notice.',
-  'I have logged this event.',
-  'Your arms filed a complaint.',
-  'Big man moment. Small.',
-  'Number go up.',
-  'Okay that one was clean.',
-  'Do not perceive me.',
-  'Rep saved to the cloud.',
-  'Warning. Swole levels rising.',
-  'Cardio has entered the chat.',
-  'That counts. I decided.',
-  'Everyone clap. Nobody clapped.',
-  'Your chest is compiling.',
-  'One push up. Zero personality.',
-  'Please insert more effort.',
-  'I felt nothing. Do another.',
-  'Twitch chat demands more.',
-  'Statistically that happened.',
-  'One percent stronger. Allegedly.',
-  'Beep. Rep. Beep.',
-  'Your shoulders said ow.',
-  'Certified floor enjoyer.',
-  'This unit is proud. Falsely.',
-  'Task failed successfully.',
-  'A protein shake smiled somewhere.',
-  'I have nowhere else to be.',
-  'He is him.',
-  'Built different. Confirmed.',
-  'You are the main character.',
-  'Nature is healing.',
-  'Sigma grindset detected.',
-  'This man is not like the others.',
-  'Aura points plus one hundred.',
-  'Absolute unit.',
-  'Chat, is this real?',
-  'Big brain. Bigger arms.',
-  'The algorithm is watching.',
-  'You cooked. Let him cook.',
-  'This is peak performance.',
-  'Goated with the sauce.',
-  'Zero notes. Perfect rep.',
-  'Historians will study this.',
-  'That was a speedrun strategy.',
-  'New personal record. Probably.',
-  'Mogging the entire chat.',
-  'Someone frame this rep.',
-  'Chad has entered the building.',
-  'Gigachad protocol engaged.',
-  'This unit respects you now.',
-  'Top one percent of pushers.',
-  'You have unlocked the sauce.',
-  'Straight up wizardry.',
-  'Legend. Recorded in the logs.',
-  'Cracked at push ups.',
-  'The rizz is in the reps.',
-  'Applause dot exe executed.',
-  'You are simply built for this.',
-  'Ten out of ten. No notes.',
-  'The chat is going insane.',
-  'Certified banger of a rep.',
-  'Momma there goes that man.',
-  'This is a W. Massive W.',
-  'Certified hood classic.',
-  'Respect plus.',
+  "Kamehameha!",
+  "Power level rising.",
+  "Not even my final form.",
+  "Rep counted. Emotion not found.",
+  "You have gained one strength.",
+  "Congratulations. Nobody saw that.",
+  "Error four oh four. Chest missing.",
+  "That one was legal.",
+  "Your bones approve.",
+  "Push up dot exe is responding.",
+  "Wow. A whole one.",
+  "Gravity remains undefeated.",
+  "Adding one to the number.",
+  "This is my job now.",
+  "Your form is acceptable. Barely.",
+  "Achievement unlocked. Floor toucher.",
+  "I am counting. Not impressed.",
+  "Muscle detected. Loading.",
+  "Please do not stop. Ever.",
+  "Slightly stronger than before.",
+  "The ground says hello again.",
+  "That rep buffered fine.",
+  "Your ancestors are confused.",
+  "Repetition accepted by the system.",
+  "Sixty more and I sleep.",
+  "That was a push up. Probably.",
+  "Skill issue. But improving.",
+  "Repeat until further notice.",
+  "I have logged this event.",
+  "Your arms filed a complaint.",
+  "Big man moment. Small.",
+  "Number go up.",
+  "Okay that one was clean.",
+  "Do not perceive me.",
+  "Rep saved to the cloud.",
+  "Warning. Swole levels rising.",
+  "Cardio has entered the chat.",
+  "That counts. I decided.",
+  "Everyone clap. Nobody clapped.",
+  "Your chest is compiling.",
+  "One push up. Zero personality.",
+  "Please insert more effort.",
+  "I felt nothing. Do another.",
+  "Twitch chat demands more.",
+  "Statistically that happened.",
+  "One percent stronger. Allegedly.",
+  "Beep. Rep. Beep.",
+  "Your shoulders said ow.",
+  "Certified floor enjoyer.",
+  "This unit is proud. Falsely.",
+  "Task failed successfully.",
+  "A protein shake smiled somewhere.",
+  "I have nowhere else to be.",
+  "He is him.",
+  "Built different. Confirmed.",
+  "You are the main character.",
+  "Nature is healing.",
+  "Sigma grindset detected.",
+  "This man is not like the others.",
+  "Aura points plus one hundred.",
+  "Absolute unit.",
+  "Chat, is this real?",
+  "Big brain. Bigger arms.",
+  "The algorithm is watching.",
+  "You cooked. Let him cook.",
+  "This is peak performance.",
+  "Goated with the sauce.",
+  "Zero notes. Perfect rep.",
+  "Historians will study this.",
+  "That was a speedrun strategy.",
+  "New personal record. Probably.",
+  "Mogging the entire chat.",
+  "Someone frame this rep.",
+  "Chad has entered the building.",
+  "Gigachad protocol engaged.",
+  "This unit respects you now.",
+  "Top one percent of pushers.",
+  "You have unlocked the sauce.",
+  "Straight up wizardry.",
+  "Legend. Recorded in the logs.",
+  "Cracked at push ups.",
+  "The rizz is in the reps.",
+  "Applause dot exe executed.",
+  "You are simply built for this.",
+  "Ten out of ten. No notes.",
+  "The chat is going insane.",
+  "Certified banger of a rep.",
+  "Momma there goes that man.",
+  "This is a W. Massive W.",
+  "Certified hood classic.",
+  "Respect plus.",
 ];
 
 /**
@@ -542,33 +573,36 @@ export const SAYINGS = [
  * to whatever the browser has, and the pitch alone still tells them apart.
  */
 export const VOICES = [
-  { name: 'sam', wants: ['david'], pitch: 0.2, rate: 1.1 },
-  { name: 'mike', wants: ['mark'], pitch: 0.7, rate: 1.15 },
-  { name: 'mary', wants: ['zira'], pitch: 1.3, rate: 1.2 },
-  { name: 'radar', wants: ['zira', 'david'], pitch: 2, rate: 1.45 },
-  { name: 'bass', wants: ['mark', 'david'], pitch: 0, rate: 0.9 },
-  { name: 'anchor', wants: ['david', 'mark'], pitch: 1, rate: 1.2 },
+  { name: "sam", wants: ["david"], pitch: 0.2, rate: 1.1 },
+  { name: "mike", wants: ["mark"], pitch: 0.7, rate: 1.15 },
+  { name: "mary", wants: ["zira"], pitch: 1.3, rate: 1.2 },
+  { name: "radar", wants: ["zira", "david"], pitch: 2, rate: 1.45 },
+  { name: "bass", wants: ["mark", "david"], pitch: 0, rate: 0.9 },
+  { name: "anchor", wants: ["david", "mark"], pitch: 1, rate: 1.2 },
 ];
 
 /** Speak a different line each rep, and never play a noise. */
-export const SAYINGS_MODE = 'sayings';
+export const SAYINGS_MODE = "sayings";
 
 // Lines live in the bank under a name, so one can be drawn exactly like a file
 // or a preset and the no-repeats rule covers all three kinds at once.
-const SPOKEN_PREFIX = 'say:';
+const SPOKEN_PREFIX = "say:";
 
 /** The bank name for the line at `index`. */
 export const spokenName = (index) => `${SPOKEN_PREFIX}${index}`;
 
 /** Whether a bank name is a line rather than a file or a preset. */
-export const isSpoken = (name) => typeof name === 'string' && name.startsWith(SPOKEN_PREFIX);
+export const isSpoken = (name) =>
+  typeof name === "string" && name.startsWith(SPOKEN_PREFIX);
 
 /** The line behind a bank name, or null when that name is not a line. */
 export const spokenLine = (name) =>
-  isSpoken(name) ? (SAYINGS[Number(name.slice(SPOKEN_PREFIX.length))] ?? null) : null;
+  isSpoken(name)
+    ? (SAYINGS[Number(name.slice(SPOKEN_PREFIX.length))] ?? null)
+    : null;
 
 /** Draw a different sound each rep. */
-export const SHUFFLE = 'shuffle';
+export const SHUFFLE = "shuffle";
 
 /**
  * The synthesised sounds shuffle draws on, alongside whatever files exist.
@@ -583,31 +617,31 @@ export const SHUFFLE = 'shuffle';
  * whether the browser can speak at all is only known at run time.
  */
 export const SHUFFLE_PRESETS = [
-  'fart',
-  'airhorn',
-  'slidewhistle',
-  'rimshot',
-  'boing',
-  'sadtrombone',
-  'scouter',
-  'scouterbreak',
-  'kiblast',
-  'kamehameha',
-  'supersaiyan',
-  'instanttransmission',
-  'metalpipe',
-  'recordscratch',
-  'bruh',
-  'bonk',
-  'buzzer',
-  'kaching',
-  'quack',
-  'gameover',
-  'orchhit',
+  "fart",
+  "airhorn",
+  "slidewhistle",
+  "rimshot",
+  "boing",
+  "sadtrombone",
+  "scouter",
+  "scouterbreak",
+  "kiblast",
+  "kamehameha",
+  "supersaiyan",
+  "instanttransmission",
+  "metalpipe",
+  "recordscratch",
+  "bruh",
+  "bonk",
+  "buzzer",
+  "kaching",
+  "quack",
+  "gameover",
+  "orchhit",
 ];
 
 /** Beep per rep, level up every tenth, with an announcement to start. */
-export const PACER_MODE = 'pacer';
+export const PACER_MODE = "pacer";
 
 /**
  * Played when the sound is on but nothing specific was asked for.
@@ -619,10 +653,15 @@ export const PACER_MODE = 'pacer';
 export const DEFAULT_PRESET = SAYINGS_MODE;
 
 /** Played while a sample is still loading, and if it never loads at all. */
-export const FALLBACK_PRESET = 'coin';
+export const FALLBACK_PRESET = "coin";
 
 /** Names `?sound=` accepts without knowing which files exist. */
-export const SOUND_NAMES = [SHUFFLE, SAYINGS_MODE, PACER_MODE, ...Object.keys(PRESETS)];
+export const SOUND_NAMES = [
+  SHUFFLE,
+  SAYINGS_MODE,
+  PACER_MODE,
+  ...Object.keys(PRESETS),
+];
 
 // Short enough that the note starts at full weight rather than fading in. Any
 // softer and the sound reads as late even when it is not.
@@ -710,7 +749,11 @@ export function autoWindow(buffer, overrides = {}) {
  * @param {(channels: number, frames: number, rate: number) => AudioBuffer} makeBuffer
  * @returns {AudioBuffer}
  */
-export function trimBuffer(source, { startMs, durationMs, fadeMs }, makeBuffer) {
+export function trimBuffer(
+  source,
+  { startMs, durationMs, fadeMs },
+  makeBuffer,
+) {
   const rate = source.sampleRate;
   const start = Math.max(0, Math.floor((startMs / 1000) * rate));
   const wanted = Math.floor((durationMs / 1000) * rate);
@@ -755,7 +798,10 @@ export class RepSound {
     speech = globalThis.speechSynthesis,
     Utterance = globalThis.SpeechSynthesisUtterance,
   } = {}) {
-    this.preset = preset === null || preset === undefined ? null : String(preset).toLowerCase();
+    this.preset =
+      preset === null || preset === undefined
+        ? null
+        : String(preset).toLowerCase();
     this.volume = clamp(volume);
     this.contextFactory = contextFactory;
     this.fetchAudio = fetchAudio;
@@ -788,7 +834,9 @@ export class RepSound {
 
   /** Every sample that finished loading, in catalogue order. */
   get loaded() {
-    return this.catalog.map((s) => s.name).filter((name) => this.buffers.has(name));
+    return this.catalog
+      .map((s) => s.name)
+      .filter((name) => this.buffers.has(name));
   }
 
   /**
@@ -837,7 +885,7 @@ export class RepSound {
         return false;
       }
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume?.().catch?.(() => {});
+    if (this.ctx.state === "suspended") this.ctx.resume?.().catch?.(() => {});
     this.#keepAwake();
     this.#load();
     return true;
@@ -851,7 +899,8 @@ export class RepSound {
    * sound and reads as lag between the rep and the noise.
    */
   #keepAwake() {
-    if (this.keepAlive || !this.ctx.createGain || !this.ctx.createOscillator) return;
+    if (this.keepAlive || !this.ctx.createGain || !this.ctx.createOscillator)
+      return;
     try {
       const silence = this.ctx.createGain();
       silence.gain.setValueAtTime(0, this.ctx.currentTime ?? 0);
@@ -893,7 +942,9 @@ export class RepSound {
       // since it was typed. The whole bank is loaded in that case, so the
       // mistake costs you the sound you asked for and not the feedback.
       const named = this.catalog.filter((sound) => sound.name === this.preset);
-      const wanted = (this.preset === SHUFFLE || named.length === 0 ? this.catalog : named)
+      const wanted = (
+        this.preset === SHUFFLE || named.length === 0 ? this.catalog : named
+      )
         // Already decoded is already done. Switching sounds in the options
         // panel must not send the whole bank over the wire again.
         .filter((sound) => !this.buffers.has(sound.name));
@@ -991,7 +1042,8 @@ export class RepSound {
    */
   #castVoice() {
     const others = VOICES.filter((v) => v.name !== this.lastVoice);
-    const pick = others[Math.floor(this.random() * others.length) % others.length];
+    const pick =
+      others[Math.floor(this.random() * others.length) % others.length];
     this.lastVoice = pick.name;
     return pick;
   }
@@ -1009,9 +1061,13 @@ export class RepSound {
     } catch {
       return null;
     }
-    const local = available.filter((v) => v.localService !== false && /^en/i.test(v.lang ?? 'en'));
+    const local = available.filter(
+      (v) => v.localService !== false && /^en/i.test(v.lang ?? "en"),
+    );
     for (const wanted of character.wants) {
-      const found = local.find((v) => (v.name ?? '').toLowerCase().includes(wanted));
+      const found = local.find((v) =>
+        (v.name ?? "").toLowerCase().includes(wanted),
+      );
       if (found) return found;
     }
     return null;
@@ -1045,7 +1101,10 @@ export class RepSound {
     this.playing = null;
     try {
       previous.gain.gain.cancelScheduledValues?.(at);
-      previous.gain.gain.setValueAtTime?.(previous.gain.gain.value ?? FLOOR, at);
+      previous.gain.gain.setValueAtTime?.(
+        previous.gain.gain.value ?? FLOOR,
+        at,
+      );
       previous.gain.gain.exponentialRampToValueAtTime?.(FLOOR, at + 0.012);
       previous.source.stop?.(at + 0.013);
     } catch {
@@ -1077,19 +1136,22 @@ export class RepSound {
         const filter = ctx.createBiquadFilter();
         filter.type = note.filter.type;
         filter.frequency.setValueAtTime(note.filter.hz, at);
-        if (note.filter.to) filter.frequency.exponentialRampToValueAtTime(note.filter.to, end);
+        if (note.filter.to)
+          filter.frequency.exponentialRampToValueAtTime(note.filter.to, end);
         filter.connect(gain);
         tail = filter;
       }
       gain.connect(ctx.destination);
 
-      const source = note.type === 'noise' ? this.#noiseSource() : ctx.createOscillator();
+      const source =
+        note.type === "noise" ? this.#noiseSource() : ctx.createOscillator();
       if (!source) continue;
 
-      if (note.type !== 'noise') {
+      if (note.type !== "noise") {
         source.type = note.type;
         source.frequency.setValueAtTime(note.hz, at);
-        if (note.to) source.frequency.exponentialRampToValueAtTime(note.to, end);
+        if (note.to)
+          source.frequency.exponentialRampToValueAtTime(note.to, end);
 
         // Vibrato, and the thing that keeps a fart from sounding like a fault.
         if (note.wobble && ctx.createOscillator) {
@@ -1185,7 +1247,7 @@ export class RepSound {
       if (onBlocked) {
         utterance.onerror = (event) => {
           const why = event?.error;
-          if (why !== 'interrupted' && why !== 'canceled') onBlocked();
+          if (why !== "interrupted" && why !== "canceled") onBlocked();
         };
       }
       speech.speak(utterance);
@@ -1203,7 +1265,10 @@ export class RepSound {
    * @param {string|null} preset a name, `shuffle`, or null for silence
    */
   setPreset(preset) {
-    const next = preset === null || preset === undefined ? null : String(preset).toLowerCase();
+    const next =
+      preset === null || preset === undefined
+        ? null
+        : String(preset).toLowerCase();
     if (next === this.preset) return;
 
     this.preset = next;
@@ -1239,9 +1304,9 @@ export class RepSound {
    * @returns {'off'|'blocked'|'idle'|'loading'|string}
    */
   get status() {
-    if (!this.enabled) return 'off';
-    if (this.failed) return 'blocked';
-    if (!this.ctx) return 'idle';
+    if (!this.enabled) return "off";
+    if (this.failed) return "blocked";
+    if (!this.ctx) return "idle";
     // Shuffle can play the moment the device is open — the synthesised half of
     // the bank needs nothing fetched — so only a named file counts as loading.
     const waitingOnAFile =
@@ -1249,13 +1314,13 @@ export class RepSound {
       this.preset !== SAYINGS_MODE &&
       this.preset !== SHUFFLE &&
       !(this.preset in PRESETS);
-    if (waitingOnAFile && !this.buffers.has(this.preset)) return 'loading';
-    return this.ctx.state ?? 'idle';
+    if (waitingOnAFile && !this.buffers.has(this.preset)) return "loading";
+    return this.ctx.state ?? "idle";
   }
 
   /** True when the browser is holding the sound back until the page is clicked. */
   get needsGesture() {
-    return this.enabled && this.ctx?.state === 'suspended';
+    return this.enabled && this.ctx?.state === "suspended";
   }
 
   /** Release the audio device on the way out of the page. */
@@ -1280,7 +1345,7 @@ function defaultContext() {
   // `interactive` asks for the shortest output buffer the browser will give,
   // which is the difference between a sound that answers the rep and one that
   // trails it.
-  return Ctor ? new Ctor({ latencyHint: 'interactive' }) : null;
+  return Ctor ? new Ctor({ latencyHint: "interactive" }) : null;
 }
 
 function defaultFetch(src) {
@@ -1291,7 +1356,7 @@ function defaultFetch(src) {
 }
 
 function defaultCatalog() {
-  return fetch('/api/sounds')
+  return fetch("/api/sounds")
     .then((res) => (res.ok ? res.json() : { sounds: [] }))
     .then((body) => body.sounds ?? []);
 }

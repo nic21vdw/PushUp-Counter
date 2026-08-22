@@ -7,11 +7,11 @@
  * things are wrong at once, the one you should act on first has to win.
  */
 
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import test from "node:test";
+import assert from "node:assert/strict";
 
-import { checkFraming, FRAMING } from '../public/js/framing.js';
-import { LM } from '../public/js/pose-math.js';
+import { checkFraming, FRAMING } from "../public/js/framing.js";
+import { LM } from "../public/js/pose-math.js";
 
 /**
  * Build a 33-point landmark array from named joints.
@@ -44,31 +44,43 @@ function goodPose(overrides = {}) {
   });
 }
 
-test('a well-framed push-up is told nothing at all', () => {
+test("a well-framed push-up is told nothing at all", () => {
   const verdict = checkFraming(goodPose());
 
   assert.equal(verdict.code, FRAMING.OK);
   assert.equal(verdict.ok, true);
-  assert.equal(verdict.message, '', 'advice you do not need is noise on the screen');
+  assert.equal(
+    verdict.message,
+    "",
+    "advice you do not need is noise on the screen",
+  );
 });
 
-test('an empty frame asks you to step into it', () => {
+test("an empty frame asks you to step into it", () => {
   for (const nothing of [null, undefined, [], pose({})]) {
     assert.equal(checkFraming(nothing).code, FRAMING.NO_POSE);
   }
 });
 
-test('a body the detector can barely see is not treated as a body', () => {
+test("a body the detector can barely see is not treated as a body", () => {
   const barely = goodPose();
-  const verdict = checkFraming(pose(
-    Object.fromEntries(barely.map((p, i) => (p ? [i, [p.x, p.y]] : null)).filter(Boolean)),
-    0.2,
-  ));
+  const verdict = checkFraming(
+    pose(
+      Object.fromEntries(
+        barely.map((p, i) => (p ? [i, [p.x, p.y]] : null)).filter(Boolean),
+      ),
+      0.2,
+    ),
+  );
 
-  assert.equal(verdict.code, FRAMING.NO_POSE, 'invisible joints are missing joints');
+  assert.equal(
+    verdict.code,
+    FRAMING.NO_POSE,
+    "invisible joints are missing joints",
+  );
 });
 
-test('too small to measure asks you to come closer', () => {
+test("too small to measure asks you to come closer", () => {
   const far = pose({
     [LM.LEFT_SHOULDER]: [0.47, 0.48],
     [LM.RIGHT_SHOULDER]: [0.475, 0.485],
@@ -85,7 +97,7 @@ test('too small to measure asks you to come closer', () => {
   assert.match(verdict.message, /closer/i);
 });
 
-test('filling the frame asks you to move back', () => {
+test("filling the frame asks you to move back", () => {
   const close = pose({
     [LM.LEFT_SHOULDER]: [0.01, 0.4],
     [LM.RIGHT_SHOULDER]: [0.02, 0.42],
@@ -102,7 +114,7 @@ test('filling the frame asks you to move back', () => {
   assert.match(verdict.message, /back/i);
 });
 
-test('being cut off names the side, because that is the part you can act on', () => {
+test("being cut off names the side, because that is the part you can act on", () => {
   const offLeft = checkFraming(goodPose({ [LM.LEFT_WRIST]: [0.005, 0.72] }));
   assert.equal(offLeft.code, FRAMING.CROPPED);
   assert.match(offLeft.message, /left.*shift right/i);
@@ -116,7 +128,7 @@ test('being cut off names the side, because that is the part you can act on', ()
   assert.match(offBottom.message, /bottom|down/i);
 });
 
-test('cut off wins over every measurement taken on the part still showing', () => {
+test("cut off wins over every measurement taken on the part still showing", () => {
   // Small *and* running off the left edge. The span reading is meaningless on a
   // body that continues past the frame, so the crop is what gets said.
   const both = pose({
@@ -133,7 +145,7 @@ test('cut off wins over every measurement taken on the part still showing', () =
   assert.equal(checkFraming(both).code, FRAMING.CROPPED);
 });
 
-test('hidden arms are called out, because the elbow is the whole measurement', () => {
+test("hidden arms are called out, because the elbow is the whole measurement", () => {
   const noArms = pose({
     [LM.LEFT_SHOULDER]: [0.3, 0.42],
     [LM.RIGHT_SHOULDER]: [0.32, 0.43],
@@ -146,7 +158,7 @@ test('hidden arms are called out, because the elbow is the whole measurement', (
   assert.match(verdict.message, /arms/i);
 });
 
-test('standing up is told there is no push-up to find', () => {
+test("standing up is told there is no push-up to find", () => {
   const upright = pose({
     [LM.LEFT_SHOULDER]: [0.48, 0.2],
     [LM.RIGHT_SHOULDER]: [0.5, 0.21],
@@ -163,7 +175,7 @@ test('standing up is told there is no push-up to find', () => {
   assert.match(verdict.message, /plank/i);
 });
 
-test('facing the camera is asked to turn side-on', () => {
+test("facing the camera is asked to turn side-on", () => {
   // Shoulders a torso apart across the frame: head-on, so the elbow angle the
   // counter measures is largely guesswork.
   const faceOn = pose({
@@ -182,9 +194,9 @@ test('facing the camera is asked to turn side-on', () => {
   assert.match(verdict.message, /side-on/i);
 });
 
-test('a half-sure detector is told the room is the problem, not the pose', () => {
+test("a half-sure detector is told the room is the problem, not the pose", () => {
   const murky = checkFraming(goodPose(), { minVisibility: 0.3 });
-  assert.equal(murky.code, FRAMING.OK, 'the reference pose is fully visible');
+  assert.equal(murky.code, FRAMING.OK, "the reference pose is fully visible");
 
   const dim = pose(
     {
@@ -205,15 +217,26 @@ test('a half-sure detector is told the room is the problem, not the pose', () =>
   assert.match(verdict.message, /light|background/i);
 });
 
-test('the thresholds can be moved without editing the rules', () => {
+test("the thresholds can be moved without editing the rules", () => {
   const strict = checkFraming(goodPose(), { minSpan: 0.9 });
-  assert.equal(strict.code, FRAMING.TOO_FAR, 'a bigger minimum makes the same pose too small');
+  assert.equal(
+    strict.code,
+    FRAMING.TOO_FAR,
+    "a bigger minimum makes the same pose too small",
+  );
 
   const loose = checkFraming(goodPose(), { maxShoulderSpread: 0 });
-  assert.equal(loose.code, FRAMING.FACE_ON, 'and a zero spread makes every pose face-on');
+  assert.equal(
+    loose.code,
+    FRAMING.FACE_ON,
+    "and a zero spread makes every pose face-on",
+  );
 });
 
-test('the span is reported so the readout can show what it judged on', () => {
+test("the span is reported so the readout can show what it judged on", () => {
   const verdict = checkFraming(goodPose());
-  assert.ok(verdict.span > 0.4 && verdict.span < 0.55, `span was ${verdict.span}`);
+  assert.ok(
+    verdict.span > 0.4 && verdict.span < 0.55,
+    `span was ${verdict.span}`,
+  );
 });

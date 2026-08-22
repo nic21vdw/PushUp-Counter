@@ -29,7 +29,9 @@ export const LM = {
  */
 export function angleDeg(a, b, c) {
   if (!a || !b || !c) return null;
-  const use3d = [a, b, c].every((p) => typeof p.z === 'number' && Number.isFinite(p.z));
+  const use3d = [a, b, c].every(
+    (p) => typeof p.z === "number" && Number.isFinite(p.z),
+  );
   const ba = { x: a.x - b.x, y: a.y - b.y, z: use3d ? a.z - b.z : 0 };
   const bc = { x: c.x - b.x, y: c.y - b.y, z: use3d ? c.z - b.z : 0 };
   const dot = ba.x * bc.x + ba.y * bc.y + ba.z * bc.z;
@@ -46,13 +48,15 @@ export function allVisible(landmarks, indices, minVisibility) {
     const lm = landmarks?.[i];
     if (!lm) return false;
     // World landmarks carry no visibility field; treat that as "trust it".
-    const v = typeof lm.visibility === 'number' ? lm.visibility : 1;
+    const v = typeof lm.visibility === "number" ? lm.visibility : 1;
     return v >= minVisibility;
   });
 }
 
 function mean(values) {
-  const nums = values.filter((v) => typeof v === 'number' && Number.isFinite(v));
+  const nums = values.filter(
+    (v) => typeof v === "number" && Number.isFinite(v),
+  );
   if (nums.length === 0) return null;
   return nums.reduce((sum, v) => sum + v, 0) / nums.length;
 }
@@ -66,16 +70,23 @@ function mean(values) {
  * @param {number} [minVisibility]
  * @returns {{elbowAngle: number|null, plankAngle: number|null, sidesUsed: string[]}}
  */
-export function anglesFromLandmarks(screenLandmarks, worldLandmarks = null, minVisibility = 0.5) {
+export function anglesFromLandmarks(
+  screenLandmarks,
+  worldLandmarks = null,
+  minVisibility = 0.5,
+) {
   if (!screenLandmarks || screenLandmarks.length < 29) {
     return { elbowAngle: null, plankAngle: null, sidesUsed: [] };
   }
   // Visibility is judged on screen landmarks; geometry uses world when available.
-  const geo = worldLandmarks && worldLandmarks.length >= 29 ? worldLandmarks : screenLandmarks;
+  const geo =
+    worldLandmarks && worldLandmarks.length >= 29
+      ? worldLandmarks
+      : screenLandmarks;
 
   const sides = [
     {
-      name: 'left',
+      name: "left",
       shoulder: LM.LEFT_SHOULDER,
       elbow: LM.LEFT_ELBOW,
       wrist: LM.LEFT_WRIST,
@@ -83,7 +94,7 @@ export function anglesFromLandmarks(screenLandmarks, worldLandmarks = null, minV
       knee: LM.LEFT_KNEE,
     },
     {
-      name: 'right',
+      name: "right",
       shoulder: LM.RIGHT_SHOULDER,
       elbow: LM.RIGHT_ELBOW,
       wrist: LM.RIGHT_WRIST,
@@ -97,14 +108,26 @@ export function anglesFromLandmarks(screenLandmarks, worldLandmarks = null, minV
   const sidesUsed = [];
 
   for (const side of sides) {
-    if (allVisible(screenLandmarks, [side.shoulder, side.elbow, side.wrist], minVisibility)) {
+    if (
+      allVisible(
+        screenLandmarks,
+        [side.shoulder, side.elbow, side.wrist],
+        minVisibility,
+      )
+    ) {
       const a = angleDeg(geo[side.shoulder], geo[side.elbow], geo[side.wrist]);
       if (a !== null) {
         elbowAngles.push(a);
         sidesUsed.push(side.name);
       }
     }
-    if (allVisible(screenLandmarks, [side.shoulder, side.hip, side.knee], minVisibility)) {
+    if (
+      allVisible(
+        screenLandmarks,
+        [side.shoulder, side.hip, side.knee],
+        minVisibility,
+      )
+    ) {
       const a = angleDeg(geo[side.shoulder], geo[side.hip], geo[side.knee]);
       if (a !== null) plankAngles.push(a);
     }
