@@ -86,6 +86,22 @@ Two traps when checking this from a session:
   to the scene to see it. Browser and text sources do render off program, which
   is why the rest of the scene screenshots fine.
 
+## There is a second, stale checkout - do not start it
+
+`C:\Users\nic21\Documents\GitHub\PushUp-Counter` is an abandoned July 2026
+copy: ten commits, no `.env`, its own `state.json`, and an older two-page layout
+(`camera.html` / `tracker.html`) that no longer exists here. Starting it binds
+4747 and serves a number that is not the count - it showed "420 push-ups to do"
+while the real figure was 53 - and any reps it banks land in a `state.json`
+nothing else reads.
+
+Three launchers used to point at it and now forward here instead
+(`Documents\Push-Up Tracker.bat`, `Documents\Push-Up Tracker\Push-Up
+Tracker.bat`, and the stale checkout's own `Push-Up Counter.cmd`); their previous
+contents sit beside them as `*.stale-backup`. If the owner reports a wrong
+number, check which directory the process on 4747 is running from before
+anything else.
+
 ## Ports
 
 `4747` is the real counter. Anything else is a throwaway test server — never
