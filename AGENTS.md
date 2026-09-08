@@ -17,6 +17,18 @@ The reason it is safe here: this is a single-user project whose only deployment
 is the copy in `C:\Users\nic21\PushUp-Counter`, and the tests are quick. Run
 `npm test` before pushing — that is the whole gate.
 
+## One click from the Desktop
+
+`Push-Up Counter.lnk` on the Desktop runs `go-live.ps1` through `go-live.cmd`
+(same `conhost --headless` wrapper as the OBS Dashboard). It starts
+`start-counter.cmd` only if 4747 is down, focuses an existing Chrome window
+titled Push-Up Tracker instead of opening a second one, and cuts OBS to
+PUSHUPS over obs-websocket. That is the way to pull the counter up mid-stream.
+
+Do not reinvent a 20-second `netstat` / `timeout /t 1` wait. The Documents
+launchers (`Push-Up Tracker.bat`) forward here. Do not `git checkout` this
+clone while the server it starts is running.
+
 ## Deploying is restarting the server
 
 The live counter runs from this checkout. After committing:

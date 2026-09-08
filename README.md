@@ -148,7 +148,17 @@ Also **untick "Refresh browser when scene becomes active."** Reloading the page
 drops the camera and re-acquires it every time you cut to the scene, which
 stalls the tracker for a second or two each cut.
 
-## 5a. Keeping it always on
+## 5a. One click from the Desktop
+
+Double-click **Push-Up Counter** on the Desktop. That starts the server if it
+is not already running, opens (or focuses) the Chrome tracker, and cuts OBS to
+the PUSHUPS scene. If the counter is already up, it should be on screen in about
+a second.
+
+The shortcut runs `go-live.cmd` in this folder. `Documents\Push-Up Tracker.bat`
+does the same thing.
+
+## 5b. Keeping it always on
 
 The browser source only works while the server is running, so for a scene you
 leave up permanently, start the server with Windows:
