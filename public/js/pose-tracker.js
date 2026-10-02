@@ -1,8 +1,8 @@
 /**
  * Webcam + MediaPipe Pose plumbing.
  *
- * Owns the camera stream, the PoseLandmarker, and the requestAnimationFrame
- * loop. Hands each detected pose to a callback and draws the skeleton overlay.
+ * Owns the camera stream, the PoseLandmarker, and the frame loop. Hands each
+ * detected pose to a callback and draws the skeleton overlay.
  *
  * Assets (the WASM runtime and the pose model) load from public/vendor when it
  * has been populated by `npm run fetch-assets`, and from a CDN otherwise. This
@@ -110,6 +110,10 @@ export class PoseTracker {
     this.lastTimestamp = 0;
     this.frameHandle = null;
     this.usingFrameCallback = false;
+    this.frameReader = null;
+    this.frameSession = 0;
+    this.surface = null;
+    this.surfaceCtx = null;
     this.highlight = false;
     // Samples per second actually reaching the rep counter. A quick push-up is
     // over in a third of a second, so this is the number that decides whether it
@@ -218,7 +222,61 @@ export class PoseTracker {
     this.canvas.height = this.video.videoHeight;
     this.running = true;
     this.onStatus("Tracking");
-    this.#loop();
+    this.#startFrames();
+  }
+
+  /** Prefer camera frames, which do not depend on this window being painted. */
+  #startFrames() {
+    const session = ++this.frameSession;
+    const track = this.stream?.getVideoTracks?.()[0];
+    const Processor = globalThis.MediaStreamTrackProcessor;
+    if (track && typeof Processor === "function") {
+      this.#readTrack(track, session);
+    } else {
+      this.#loop();
+    }
+  }
+
+  async #readTrack(track, session) {
+    let reader;
+    const active = () => this.running && this.frameSession === session;
+    try {
+      this.surface ??= document.createElement("canvas");
+      this.surfaceCtx ??= this.surface.getContext("2d");
+      if (!this.surfaceCtx) throw new Error("Camera frame canvas is unavailable");
+      reader = new globalThis.MediaStreamTrackProcessor({ track }).readable.getReader();
+      this.frameReader = reader;
+      while (active()) {
+        const { value: frame, done } = await reader.read();
+        try {
+          if (done || !active()) break;
+          const width = frame.displayWidth;
+          const height = frame.displayHeight;
+          if (!(width > 0 && height > 0)) continue;
+          if (this.surface.width !== width || this.surface.height !== height) {
+            this.surface.width = width;
+            this.surface.height = height;
+          }
+          this.surfaceCtx.drawImage(frame, 0, 0, width, height);
+          this.#processFrame(this.surface);
+        } finally {
+          // VideoFrames retain decoder buffers, even after a stop or bad frame.
+          frame?.close?.();
+        }
+      }
+    } catch (err) {
+      if (active()) console.warn("camera frame reader failed, using video callbacks", err);
+    } finally {
+      if (this.frameReader === reader) this.frameReader = null;
+      if (reader) {
+        try { await reader.cancel(); }
+        catch (err) { if (active()) console.warn("camera frame reader cancellation failed", err); }
+        try { reader.releaseLock(); }
+        catch (err) { if (active()) console.warn("camera frame reader release failed", err); }
+      }
+      // A cancelled old camera must never create a second loop for its replacement.
+      if (active()) this.#loop();
+    }
   }
 
   /**
@@ -276,6 +334,12 @@ export class PoseTracker {
   stop() {
     this.running = false;
     this.stopRequested = true;
+    this.frameSession++;
+    if (this.frameReader) {
+      const reader = this.frameReader;
+      this.frameReader = null;
+      reader.cancel().catch((err) => console.warn("camera frame reader cancellation failed", err));
+    }
     if (this.frameHandle !== null) {
       if (this.usingFrameCallback)
         this.video.cancelVideoFrameCallback?.(this.frameHandle);
@@ -335,7 +399,14 @@ export class PoseTracker {
     this.frameHandle = requestAnimationFrame(step);
   }
 
-  #processFrame() {
+  #processFrame(source = this.video) {
+    if (!this.running) return;
+    const width = source === this.video ? source.videoWidth : source.width;
+    const height = source === this.video ? source.videoHeight : source.height;
+    if (width > 0 && height > 0 && (this.canvas.width !== width || this.canvas.height !== height)) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
     // MediaPipe rejects a timestamp that does not advance, and two frames can
     // land inside the same clock tick once the rate is high enough.
     const timestamp = Math.max(performance.now(), this.lastTimestamp + 1);
@@ -349,7 +420,7 @@ export class PoseTracker {
 
     let result;
     try {
-      result = this.landmarker.detectForVideo(this.video, timestamp);
+      result = this.landmarker.detectForVideo(source, timestamp);
     } catch (err) {
       // A single bad frame shouldn't kill the loop.
       console.warn("pose detection frame failed", err);
@@ -361,7 +432,7 @@ export class PoseTracker {
     const mask = result?.segmentationMasks?.[0] ?? null;
 
     try {
-      this.#draw(landmarks, mask);
+      this.#draw(landmarks, mask, source);
       this.onPose({ landmarks, worldLandmarks, timestamp });
     } finally {
       // Masks hold GPU/WASM memory that is not garbage collected. Skipping this
@@ -370,7 +441,7 @@ export class PoseTracker {
     }
   }
 
-  #draw(landmarks, mask) {
+  #draw(landmarks, mask, source = this.video) {
     const { ctx, canvas } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -378,7 +449,7 @@ export class PoseTracker {
       this.onFrame({
         ctx,
         canvas,
-        video: this.video,
+        video: source,
         landmarks,
         mask,
         highlight: this.highlight,
