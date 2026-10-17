@@ -64,7 +64,7 @@ const BOLT_POOL = 8;
 const BOLT_POINTS = 22;
 const GLASS_COLS = 12;
 const GLASS_ROWS = 7;
-const BUSY_FRAME_MS = 12;
+const BUSY_FRAME_MS = 22;
 const AMBIENT_FRAME_MS = 33;
 const SLEEP_FRAME_MS = 66;
 const SLEEP_AFTER_MS = 25000;
@@ -628,7 +628,7 @@ function buildStage(THREE, addons, host, doc, win) {
   function resize() {
     W = Math.max(1, win.innerWidth || host.clientWidth || 1);
     H = Math.max(1, win.innerHeight || host.clientHeight || 1);
-    pixelRatio = Math.min(win.devicePixelRatio || 1, 1.5);
+    pixelRatio = Math.min(win.devicePixelRatio || 1, 1.25);
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(W, H, false);
     D = H / 2 / Math.tan(THREE.MathUtils.degToRad(FOV / 2));

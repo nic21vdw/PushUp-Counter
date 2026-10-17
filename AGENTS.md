@@ -127,3 +127,19 @@ exact get a hand-measured window in `SAMPLE_WINDOWS` in `public/js/rep-sound.js`
 
 Do not download meme audio from the web on the owner's behalf: those are
 copyrighted recordings from untrusted sites. Point at this folder instead.
+
+## Hype mode
+
+The 3D layer (`hype-stage.js`), the announcer (`hype-director.js` decides what
+happened, `hype-announcer.js` says it, `hype-lines.js` is the script) and graded
+reps (`rep.grade` from `RepCounter.update`) all hang off `startHype()` in
+`overlay.js`. `hype` is the default rep sound; any other sound preset turns the
+announcer off so two voices never talk over each other.
+
+- `?demo=1` fires fake reps on a timer and never banks one. Use it to see or
+  hear a change without getting on the floor.
+- `?fx=0` drops the 3D layer, `?voice=0` the announcer.
+- three.js comes from jsdelivr, pinned to 0.170.0. If it cannot load, or the
+  machine only has software WebGL, the page runs exactly as it did before.
+- The stage is throttled so the pose detector keeps 25+ samples/s. Check the
+  rate in the Options panel after making the stage heavier.
