@@ -854,6 +854,57 @@ test("disabled means silent, and silences the line in progress", () => {
   assert.equal(announcer.handle([ev.finished()]), "FINISHED 30");
 });
 
+test("a disabled announcer leaves speech it did not start alone", () => {
+  const { announcer, speech } = rig();
+  announcer.setEnabled(false);
+  announcer.setEnabled(false);
+  announcer.cancel();
+  announcer.dispose();
+  assert.equal(speech.cancels, 0, "the sayings preset is speaking, not us");
+});
+
+test("switching off twice cancels the line once", () => {
+  const { announcer, speech } = rig();
+  announcer.handle([ev.finished()]);
+  announcer.setEnabled(false);
+  announcer.setEnabled(false);
+  announcer.setEnabled(false);
+  assert.equal(speech.cancels, 1);
+});
+
+test("a voice that errors out is swapped for a local one for a while", () => {
+  const voices = [
+    { name: "Google UK English Male", lang: "en-GB", localService: false },
+    { name: "Microsoft David", lang: "en-US", localService: true },
+  ];
+  const { announcer, speech, clock } = rig({ voices });
+  announcer.handle([ev.start()]);
+  assert.equal(speech.spoken[0].voice.name, "Google UK English Male");
+
+  speech.spoken[0].onerror({ error: "network" });
+  assert.equal(announcer.lastError, "network");
+  clock.t += 5000;
+  announcer.handle([ev.finished()]);
+  assert.equal(speech.spoken[1].voice.name, "Microsoft David");
+
+  clock.t += 70000;
+  announcer.handle([ev.finished()]);
+  assert.equal(speech.spoken[2].voice.name, "Google UK English Male");
+});
+
+test("a cancelled line does not count against the voice", () => {
+  const voices = [
+    { name: "Google UK English Male", lang: "en-GB", localService: false },
+    { name: "Microsoft David", lang: "en-US", localService: true },
+  ];
+  const { announcer, speech, clock } = rig({ voices });
+  announcer.handle([ev.start()]);
+  speech.spoken[0].onerror({ error: "interrupted" });
+  clock.t += 5000;
+  announcer.handle([ev.finished()]);
+  assert.equal(speech.spoken[1].voice.name, "Google UK English Male");
+});
+
 test("lastLine is the last thing actually said", () => {
   const { announcer } = rig();
   assert.equal(announcer.lastLine, null);

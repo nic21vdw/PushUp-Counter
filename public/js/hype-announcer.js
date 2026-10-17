@@ -75,6 +75,14 @@ export const MAX_QUIET_REPS = 8;
 const KEEPALIVE_MS = 8000;
 const START_GRACE_MS = 1500;
 const JITTER = 0.06;
+const LOCAL_FALLBACK_MS = 60000;
+const VOICE_FAULTS = new Set([
+  "network",
+  "synthesis-failed",
+  "synthesis-unavailable",
+  "voice-unavailable",
+  "language-unavailable",
+]);
 
 const NATURAL = /natural|neural/;
 const MALE_NAMES =
@@ -190,6 +198,7 @@ export class HypeAnnouncer {
     this.context = { left: null, done: null, combo: null };
     this.spoken = null;
     this.lastError = null;
+    this.localUntil = 0;
 
     this.onVoices = () => this.#refreshVoices();
     this.#refreshVoices();
@@ -227,13 +236,15 @@ export class HypeAnnouncer {
 
   /** Off silences the line in progress and stops new ones. */
   setEnabled(enabled) {
+    const was = this.enabled;
     this.enabled = Boolean(enabled);
-    if (!this.enabled) this.cancel();
+    if (was && !this.enabled) this.cancel();
   }
 
   /** Cut off whatever is being said. */
   cancel() {
-    this.#settle(this.current?.token);
+    if (!this.current) return;
+    this.#settle(this.current.token);
     try {
       this.speech?.cancel?.();
     } catch {
@@ -426,9 +437,10 @@ export class HypeAnnouncer {
       speech.resume?.();
 
       const utterance = new this.Utterance(text);
-      if (this.voice) {
-        utterance.voice = this.voice;
-        if (this.voice.lang) utterance.lang = this.voice.lang;
+      const voice = this.#voiceNow();
+      if (voice) {
+        utterance.voice = voice;
+        if (voice.lang) utterance.lang = voice.lang;
       }
       const wobble = () => (this.random() - 0.5) * JITTER;
       utterance.rate = clamp(profile.rate + wobble(), 0.5, 2);
@@ -454,6 +466,9 @@ export class HypeAnnouncer {
         const why = event?.error;
         if (why && why !== "interrupted" && why !== "canceled") {
           this.lastError = why;
+          if (VOICE_FAULTS.has(why)) {
+            this.localUntil = this.now() + LOCAL_FALLBACK_MS;
+          }
         }
         this.#settle(token);
       };
@@ -466,6 +481,12 @@ export class HypeAnnouncer {
       this.current = null;
       return false;
     }
+  }
+
+  #voiceNow() {
+    if (this.now() >= this.localUntil) return this.voice;
+    const local = this.voices.filter((voice) => voice.localService !== false);
+    return pickVoice(local) ?? this.voice;
   }
 
   #estimate(text, rate) {
