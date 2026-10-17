@@ -93,7 +93,7 @@ test("muting a source survives the round trip, silence included", () => {
     "boing",
   );
   assert.equal(
-    buildOverlayUrl(ORIGIN, { sound: "sayings" }),
+    buildOverlayUrl(ORIGIN, { sound: "hype" }),
     `${ORIGIN}/overlay.html`,
     "the default sound is not worth a query param",
   );

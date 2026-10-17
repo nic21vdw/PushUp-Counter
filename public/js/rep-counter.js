@@ -19,6 +19,13 @@
  *   - A pose lost for a frame or two, or a moment of ragged form, holds the rep
  *     in progress rather than throwing it away. At speed those are blur, not you
  *     stopping.
+ *
+ * The first two frames after the pose is (re)acquired only fill the median
+ * window. They are the noisiest frames there are, and a single bad one among
+ * them used to start a rep from nothing.
+ *
+ * Each counted rep also comes back as `rep`: depth, top, duration and a 0..100
+ * score, so the page can say how good it was and not only that it happened.
  */
 
 export const DEFAULT_OPTIONS = {
@@ -58,6 +65,73 @@ export const STATE = {
   DOWN: "down",
 };
 
+const TOP_BAND_DEG = 8;
+const FULL_DEPTH_DEG = 70;
+const FULL_LOCKOUT_DEG = 165;
+const FULL_PLANK_DEG = 165;
+const FULL_TEMPO_MS = 1000;
+const FLOOR_TEMPO_MS = 350;
+const WEAK = 0.2;
+const WEIGHTS = { depth: 0.4, lockout: 0.25, plank: 0.2, tempo: 0.15 };
+const GRADES = [
+  [90, "perfect"],
+  [75, "great"],
+  [55, "good"],
+];
+
+const clamp01 = (value) => Math.min(1, Math.max(0, value));
+const ramp = (value, from, to, low, high) =>
+  low + (high - low) * clamp01((value - from) / (to - from));
+
+/** Grade for a 0..100 rep score. */
+export function gradeFor(score) {
+  for (const [floor, grade] of GRADES) if (score >= floor) return grade;
+  return "sloppy";
+}
+
+/**
+ * Score one finished rep.
+ *
+ * Depth (40%): 70 degrees or less at the bottom is full marks, `downAngle` is
+ * weak. Lockout (25%): 165 degrees or more at the top; a rep that only just
+ * made the counting threshold scores low. Plank (20%): mean shoulder-hip-knee
+ * angle while down, 165 or more is straight; `null` means it could not be
+ * measured and costs nothing. Tempo (15%): under about a third of a second is a
+ * bounce, a second or longer is controlled.
+ *
+ * @param {{depth: number, top: number, durationMs: number, plank?: number|null}} rep
+ * @param {typeof DEFAULT_OPTIONS} [options]
+ * @returns {{score: number, grade: string,
+ *            parts: {depth: number, lockout: number, plank: number, tempo: number}}}
+ */
+export function scoreRep(
+  { depth, top, durationMs, plank = null },
+  options = DEFAULT_OPTIONS,
+) {
+  const fullDepth = Math.min(FULL_DEPTH_DEG, options.downAngle - 10);
+  const fullLockout = Math.max(FULL_LOCKOUT_DEG, options.upAngle);
+  const lockoutFloor = Math.min(
+    options.upAngle - options.upTolerance,
+    fullLockout - 10,
+  );
+  const parts = {
+    depth: ramp(depth, fullDepth, options.downAngle, 1, WEAK),
+    lockout: ramp(top, fullLockout, lockoutFloor, 1, WEAK),
+    plank: Number.isFinite(plank)
+      ? ramp(plank, FULL_PLANK_DEG, options.minPlankAngle, 1, WEAK)
+      : 1,
+    tempo: ramp(durationMs, FLOOR_TEMPO_MS, FULL_TEMPO_MS, 0.15, 1),
+  };
+  const score = Math.round(
+    100 *
+      (WEIGHTS.depth * parts.depth +
+        WEIGHTS.lockout * parts.lockout +
+        WEIGHTS.plank * parts.plank +
+        WEIGHTS.tempo * parts.tempo),
+  );
+  return { score, grade: gradeFor(score), parts };
+}
+
 export class RepCounter {
   constructor(options = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -84,8 +158,10 @@ export class RepCounter {
     this.window = [];
     this.minAngleThisPhase = 180;
     this.peakSinceBottom = null;
+    this.#clearRepStats();
     this.lastRepDepth = null;
     this.lastRepTop = null;
+    this.lastRep = null;
     this.feedback = "Waiting for a body in frame…";
   }
 
@@ -95,6 +171,7 @@ export class RepCounter {
     this.phaseStartedAt = null;
     this.minAngleThisPhase = 180;
     this.peakSinceBottom = null;
+    this.#clearRepStats();
   }
 
   /**
@@ -104,6 +181,8 @@ export class RepCounter {
    * @returns {{reps: number, repCompleted: boolean, state: string, angle: number|null,
    *            rawAngle: number|null, plankAngle: number|null, inPlank: boolean,
    *            depth: number|null, lastRepDepth: number|null, lastRepTop: number|null,
+   *            rep: {depth: number, top: number, durationMs: number, score: number,
+   *                  grade: string}|null,
    *            feedback: string}}
    */
   update({ elbowAngle, plankAngle = null, timestamp }) {
@@ -130,6 +209,7 @@ export class RepCounter {
       this.window = [];
       this.minAngleThisPhase = 180;
       this.peakSinceBottom = null;
+      this.#clearRepStats();
       this.inPlank = true;
       this.feedback = "No body detected — step into frame.";
       return this.#snapshot(false, null);
@@ -137,7 +217,12 @@ export class RepCounter {
 
     this.lastSampleAt = timestamp;
 
+    const settled = this.window.length >= 2;
     const despiked = this.#median3(this.rawAngle);
+    if (!settled) {
+      this.feedback = "Locking on…";
+      return this.#snapshot(false, null);
+    }
     this.smoothedAngle =
       this.smoothedAngle === null
         ? despiked
@@ -161,20 +246,35 @@ export class RepCounter {
         this.phaseStartedAt = null;
         this.minAngleThisPhase = 180;
         this.peakSinceBottom = null;
+        this.#clearRepStats();
         this.feedback = "Straighten up — hips are sagging or piked.";
         return this.#snapshot(false, angle);
       }
     }
 
     let repCompleted = false;
+    let rep = null;
+
+    if (this.state !== STATE.DOWN) this.#trackTop(angle, timestamp);
 
     if (this.state !== STATE.DOWN && angle <= o.downAngle) {
       this.state = STATE.DOWN;
       this.phaseStartedAt = timestamp;
       this.minAngleThisPhase = angle;
       this.peakSinceBottom = angle;
+      this.repStartTop = this.topAngle;
+      this.repStartedAt = this.topAt;
+      this.topAngle = null;
+      this.topAt = null;
+      this.plankSum = 0;
+      this.plankCount = 0;
       this.feedback = "Down — now push.";
     } else if (this.state === STATE.DOWN) {
+      if (plankKnown) {
+        this.plankSum += plankAngle;
+        this.plankCount += 1;
+      }
+
       if (angle < this.minAngleThisPhase) {
         // Still sinking, so whatever we had climbed to was part of the descent.
         this.minAngleThisPhase = angle;
@@ -197,8 +297,10 @@ export class RepCounter {
         if (heldLongEnough && notTooSoon) {
           this.reps += 1;
           this.lastRepAt = timestamp;
-          this.lastRepDepth = this.minAngleThisPhase;
-          this.lastRepTop = this.peakSinceBottom;
+          rep = this.#finishedRep(timestamp);
+          this.lastRep = rep;
+          this.lastRepDepth = rep.depth;
+          this.lastRepTop = rep.top;
           repCompleted = true;
           this.feedback = this.#depthFeedback(this.minAngleThisPhase);
         } else {
@@ -208,6 +310,7 @@ export class RepCounter {
         this.phaseStartedAt = timestamp;
         this.minAngleThisPhase = 180;
         this.peakSinceBottom = null;
+        this.#clearRepStats();
       } else {
         this.feedback = "Pushing up…";
       }
@@ -221,7 +324,40 @@ export class RepCounter {
       this.feedback = "Lower your chest.";
     }
 
-    return this.#snapshot(repCompleted, angle);
+    return this.#snapshot(repCompleted, angle, rep);
+  }
+
+  #trackTop(angle, timestamp) {
+    if (this.topAngle === null || angle >= this.topAngle) this.topAngle = angle;
+    if (angle >= this.topAngle - TOP_BAND_DEG) this.topAt = timestamp;
+  }
+
+  #clearRepStats() {
+    this.topAngle = null;
+    this.topAt = null;
+    this.repStartTop = null;
+    this.repStartedAt = null;
+    this.plankSum = 0;
+    this.plankCount = 0;
+  }
+
+  #finishedRep(timestamp) {
+    const depth = this.minAngleThisPhase;
+    const top = Math.max(this.peakSinceBottom, this.repStartTop ?? -Infinity);
+    const startedAt = this.repStartedAt ?? this.phaseStartedAt ?? timestamp;
+    const durationMs = Math.max(0, timestamp - startedAt);
+    const plank = this.plankCount > 0 ? this.plankSum / this.plankCount : null;
+    const { score, grade } = scoreRep(
+      { depth, top, durationMs, plank },
+      this.options,
+    );
+    return {
+      depth: Math.round(depth * 10) / 10,
+      top: Math.round(top * 10) / 10,
+      durationMs: Math.round(durationMs),
+      score,
+      grade,
+    };
   }
 
   /**
@@ -243,10 +379,11 @@ export class RepCounter {
     return "Rep counted — try going a little lower.";
   }
 
-  #snapshot(repCompleted, angle) {
+  #snapshot(repCompleted, angle, rep = null) {
     return {
       reps: this.reps,
       repCompleted,
+      rep,
       state: this.state,
       angle,
       rawAngle: this.rawAngle,

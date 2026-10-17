@@ -14,8 +14,10 @@ import {
   RepSound,
   trimBuffer,
   autoWindow,
+  DEFAULT_PRESET,
   DEFAULT_VOLUME,
   FALLBACK_PRESET,
+  HYPE_MODE,
   PRESETS,
   PACER,
   PACER_MODE,
@@ -24,6 +26,8 @@ import {
   SAYINGS_MODE,
   SHUFFLE,
   SHUFFLE_PRESETS,
+  SOUND_LABELS,
+  SOUND_NAMES,
   VOICES,
   isSpoken,
   spokenLine,
@@ -1090,4 +1094,114 @@ test("a browser that cannot speak still runs the test", () => {
 test("the pacer script is a parody written here, not a recording of anything", () => {
   assert.match(PACER.intro, /push-up/i);
   assert.ok(PACER.intro.length < 200, "short enough to sit through once");
+});
+
+/* --------------------------------------------------------------------- hype */
+
+test("hype is the default sound, and is listed first in the menu", () => {
+  assert.equal(DEFAULT_PRESET, HYPE_MODE);
+  assert.equal(HYPE_MODE, "hype");
+  assert.equal(bare().preset, "hype");
+  assert.equal(SOUND_NAMES[0], "hype");
+  assert.equal(
+    SOUND_NAMES.filter((name) => name === "hype").length,
+    1,
+    "listed once",
+  );
+  assert.equal(new Set(SOUND_NAMES).size, SOUND_NAMES.length);
+  assert.ok(SOUND_LABELS.hype.startsWith("hype"));
+  for (const name of Object.keys(SOUND_LABELS)) {
+    assert.ok(
+      SOUND_NAMES.includes(name),
+      `${name} is labelled but not offered`,
+    );
+  }
+});
+
+test("the hype impact is a thump, a zap and a sparkle in under 250ms", () => {
+  const notes = PRESETS.hype;
+  const end = Math.max(...notes.map((n) => n.at + n.dur));
+  assert.ok(end < 0.25, `runs ${Math.round(end * 1000)}ms`);
+  assert.ok(end > 0.15, "long enough to land");
+
+  const thump = notes.find((n) => n.type === "sine" && n.to < n.hz);
+  assert.ok(thump && thump.hz < 250 && thump.to < 60, "a falling sub thump");
+
+  const zap = notes.find((n) => n.to > n.hz * 4);
+  assert.ok(zap, "a pitch that rises by more than two octaves");
+  assert.ok(zap.at > 0, "starting just after the thump");
+
+  assert.ok(
+    notes.some((n) => n.type === "noise"),
+    "with a click on the front",
+  );
+  assert.ok(notes.length >= 4, "layered");
+});
+
+test("hype does not sound like any other preset", () => {
+  const signature = (notes) =>
+    JSON.stringify(notes.map((n) => [n.type, n.hz, n.to, n.at, n.dur]));
+  for (const [name, notes] of Object.entries(PRESETS)) {
+    if (name === "hype") continue;
+    assert.notEqual(signature(notes), signature(PRESETS.hype), name);
+  }
+  assert.ok(!SHUFFLE_PRESETS.includes("hype"), "it is not a joke to shuffle");
+});
+
+test("a hype rep plays the impact and says nothing", () => {
+  const { said, speech, Utterance } = fakeVoice();
+  let cancelled = 0;
+  speech.cancel = () => {
+    cancelled += 1;
+  };
+  const ctx = fakeContext();
+  const sound = bare({ contextFactory: () => ctx, speech, Utterance });
+
+  sound.play();
+  sound.play();
+
+  assert.equal(sound.lastPlayed, "hype");
+  assert.equal(said.length, 0, "speech is the announcer's job");
+  assert.equal(cancelled, 0, "and it must not cut the announcer off");
+  assert.equal(notesPlayed(ctx), oscillators("hype") * 2);
+  assert.ok(
+    ctx.samples.some((source) => source.loop),
+    "the click is noise",
+  );
+});
+
+test("every hype layer fits inside the volume", () => {
+  const ctx = fakeContext();
+  const sound = bare({ contextFactory: () => ctx, volume: 0.5 });
+  sound.play();
+  for (const gain of ctx.gains) {
+    for (const ramp of gain.gain.ramps) assert.ok(ramp <= 0.5 + 1e-9);
+  }
+});
+
+test("hype is ready the moment the device is open", () => {
+  const ctx = fakeContext();
+  const sound = bare({ contextFactory: () => ctx });
+  assert.equal(sound.status, "idle");
+  sound.arm();
+  assert.equal(sound.status, "running", "it needs no file");
+});
+
+test("switching to hype and back keeps both working", () => {
+  const { said, speech, Utterance } = fakeVoice();
+  const ctx = fakeContext();
+  const sound = bare({
+    preset: SAYINGS_MODE,
+    contextFactory: () => ctx,
+    speech,
+    Utterance,
+  });
+  sound.play();
+  assert.equal(said.length, 1);
+  sound.setPreset("hype");
+  sound.play();
+  assert.equal(said.length, 1, "hype stays quiet");
+  sound.setPreset(SAYINGS_MODE);
+  sound.play();
+  assert.equal(said.length, 2);
 });

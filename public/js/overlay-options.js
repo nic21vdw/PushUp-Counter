@@ -83,6 +83,12 @@ export const DEFAULT_OVERLAY_OPTIONS = {
    * wrong, and the moment it is right it goes away again.
    */
   coach: true,
+  /** The 3D layer: particles, shockwaves, combo fire. Off keeps the plain panel. */
+  fx: true,
+  /** The hype announcer that calls combos, milestones and the countdown. */
+  voice: true,
+  /** Fake reps on a timer, for trying the show without getting on the floor. Never banks a rep. */
+  demo: false,
   /** Show the detector's live readout while you tune. Never use on stream. */
   setup: false,
 };
@@ -211,6 +217,9 @@ export function parseOverlayOptions(params) {
     coach: bool(params.get("coach"), d.coach),
     sound: soundPreset(params.get("sound"), d.sound),
     volume: fraction(params.get("volume"), d.volume),
+    fx: bool(params.get("fx"), d.fx),
+    voice: bool(params.get("voice"), d.voice),
+    demo: bool(params.get("demo"), d.demo),
     setup: bool(params.get("setup"), d.setup),
   };
 }

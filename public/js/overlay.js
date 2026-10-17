@@ -14,7 +14,7 @@ import { RepCounter, DEFAULT_OPTIONS } from "./rep-counter.js";
 import { anglesFromLandmarks } from "./pose-math.js";
 import { CounterClient } from "./counter-client.js";
 import { StatusSlots } from "./status-slots.js";
-import { RepSound, SOUND_NAMES } from "./rep-sound.js";
+import { RepSound, SOUND_NAMES, SOUND_LABELS } from "./rep-sound.js";
 import {
   parseOverlayOptions,
   parseDetectionOptions,
@@ -140,8 +140,10 @@ let activeCamera = options.camera;
 const client = new CounterClient({
   clientId,
   onState: (state) => {
+    const before = serverState;
     serverState = state;
     render();
+    followServerHype(before, state);
     // Said on the tracker, not just the status page: this is the window that is
     // open while you decide whether the number in front of you is right.
     setStatus("count", state.warning ?? "");
@@ -312,9 +314,11 @@ const volumeFromUrl = params.has("volume");
 function followServerSound(state) {
   if (!soundFromUrl && state.sound !== undefined && state.sound !== null) {
     repSound.setPreset(options.count ? state.sound : null);
+    announcer?.setEnabled(repSound.preset === "hype");
   }
   if (!volumeFromUrl && typeof state.volume === "number") {
     repSound.setVolume(state.volume);
+    announcer?.setVolume(Math.min(1, state.volume * 2));
     if (optVolume) syncVolumeInput(state.volume);
   }
 }
@@ -354,7 +358,7 @@ async function buildOptions() {
   optSound.append(new Option("shuffle — a different one each rep", "shuffle"));
   for (const file of files) optSound.append(new Option(file.name, file.name));
   for (const name of SOUND_NAMES.filter((n) => n !== "shuffle")) {
-    optSound.append(new Option(name, name));
+    optSound.append(new Option(SOUND_LABELS[name] ?? name, name));
   }
   optSound.append(new Option("none", "off"));
   optSound.value = options.sound ?? "off";
@@ -364,6 +368,7 @@ async function buildOptions() {
   optSound.addEventListener("change", () => {
     const chosen = optSound.value === "off" ? null : optSound.value;
     repSound.setPreset(options.count ? chosen : null);
+    announcer?.setEnabled(repSound.preset === "hype");
     // A sound you cannot hear is indistinguishable from one that failed, and
     // this is the moment you are listening for it.
     repSound.play();
@@ -374,6 +379,7 @@ async function buildOptions() {
     const volume = Number(optVolume.value) / 100;
     syncVolumeInput(volume);
     repSound.setVolume(volume);
+    announcer?.setVolume(Math.min(1, volume * 2));
   });
   optVolume.addEventListener("change", () => {
     repSound.play();
@@ -482,6 +488,9 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     landmarks,
     worldLandmarks,
     counter.options.minVisibility,
+    video.videoWidth && video.videoHeight
+      ? video.videoWidth / video.videoHeight
+      : undefined,
   );
   const result = counter.update({ elbowAngle, plankAngle, timestamp });
   const framing = checkFraming(landmarks, {
@@ -523,8 +532,168 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     repSound.play();
     tracker?.flash();
     flashRep();
-    if (options.count) client.reportReps(1);
+    if (options.count && !options.demo) client.reportReps(1);
+    if (options.count) hypeRep(result.rep ?? null);
   }
+}
+
+/* ------------------------------------------------------------------ hype */
+
+const comboEl = document.getElementById("combo");
+const gradeEl = document.getElementById("grade");
+const GRADE_TEXT = {
+  perfect: "PERFECT",
+  great: "GREAT",
+  good: "GOOD",
+  sloppy: "SLOPPY",
+};
+const reducedMotion =
+  globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+let director = null;
+let announcer = null;
+let stage = null;
+let gradeTimer = null;
+
+function hypeState() {
+  const rawLeft =
+    (serverState?.rawLeft ?? serverState?.left ?? 0) - pendingReps;
+  return {
+    left: rawLeft,
+    done: (serverState?.done ?? 0) + pendingReps,
+    owed: serverState?.owed ?? 0,
+  };
+}
+
+function emit(events) {
+  if (!events?.length) return;
+  stage?.handle(events);
+  announcer?.handle(events);
+  if (tracker) tracker.heat = director.heat;
+  showCombo();
+  const graded = events.find((e) => e.type === "rep" && e.grade);
+  if (graded) showGrade(graded.grade);
+}
+
+function showCombo() {
+  if (!comboEl) return;
+  const combo = director.combo;
+  comboEl.hidden = combo < 3;
+  const number = comboEl.querySelector("b");
+  if (number) number.textContent = `${combo}×`;
+  comboEl.dataset.tier = String(
+    [0, 5, 10, 20, 35, 50].filter((at) => combo >= at).length - 1,
+  );
+}
+
+function showGrade(grade) {
+  if (!gradeEl || !GRADE_TEXT[grade]) return;
+  gradeEl.textContent = GRADE_TEXT[grade];
+  gradeEl.dataset.grade = grade;
+  gradeEl.hidden = false;
+  gradeEl.classList.remove("pop");
+  void gradeEl.offsetWidth;
+  gradeEl.classList.add("pop");
+  clearTimeout(gradeTimer);
+  gradeTimer = setTimeout(() => {
+    gradeEl.hidden = true;
+  }, 1100);
+}
+
+function hypeRep(rep) {
+  if (!director) return;
+  const state = hypeState();
+  stage?.setCount(state);
+  emit(director.rep({ at: performance.now(), rep, ...state }));
+}
+
+/**
+ * The counting page hears its own reps the moment they land. A display-only
+ * source sees them only as the server's done figure rising, so it replays that
+ * rise as ungraded reps, a handful at most so a reconnect is not a fireworks
+ * show for push-ups done minutes ago.
+ */
+function followServerHype(before, state) {
+  if (!director) return;
+  const now = hypeState();
+  stage?.setCount(now);
+  if (!options.count && before) {
+    const gained = (state.done ?? 0) - (before.done ?? 0);
+    for (let i = 0; i < Math.min(gained, 5); i += 1) {
+      emit(director.rep({ at: performance.now(), rep: null, ...now }));
+    }
+  }
+  emit(director.count(now));
+}
+
+async function startHype() {
+  try {
+    const { HypeDirector } = await import("./hype-director.js");
+    director = new HypeDirector();
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+
+  if (options.count && options.voice) {
+    try {
+      const { HypeAnnouncer } = await import("./hype-announcer.js");
+      announcer = new HypeAnnouncer({
+        volume: Math.min(1, repSound.volume * 2),
+      });
+      announcer.setEnabled(repSound.preset === "hype");
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  if (options.fx && !reducedMotion) {
+    try {
+      const { createHypeStage } = await import("./hype-stage.js");
+      stage = await createHypeStage(document.body, { reducedMotion });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  const state = hypeState();
+  stage?.setCount(state);
+  emit(director.start(state));
+  setInterval(() => emit(director.tick(performance.now())), 1000);
+  if (options.demo) runDemo();
+}
+
+/** Fake reps for `?demo=1`. Nothing reaches the server. */
+function runDemo() {
+  const grades = ["perfect", "great", "great", "good", "good", "sloppy"];
+  let fakeDone = 0;
+  const step = () => {
+    fakeDone += 1;
+    const grade = grades[Math.floor(Math.random() * grades.length)];
+    const score = { perfect: 95, great: 82, good: 64, sloppy: 40 }[grade];
+    const owed = serverState?.owed || 60;
+    const left = owed - fakeDone;
+    if (serverState) {
+      serverState = { ...serverState, rawLeft: left, left: Math.max(0, left), done: fakeDone, owed };
+      render();
+    }
+    repSound.play();
+    tracker?.flash();
+    flashRep();
+    emit(
+      director.rep({
+        at: performance.now(),
+        rep: { depth: 80, top: 165, durationMs: 900, score, grade },
+        left,
+        done: fakeDone,
+        owed,
+      }),
+    );
+    const pause =
+      Math.random() < 0.08 ? 4000 + Math.random() * 3000 : 450 + Math.random() * 900;
+    setTimeout(step, pause);
+  };
+  setTimeout(step, 1500);
 }
 
 /* -------------------------------------------------------------- coaching */
@@ -694,6 +863,7 @@ window.addEventListener("pagehide", () => {
   tracker?.stop();
   client.stop();
   repSound.stop();
+  stage?.dispose();
 });
 
 async function boot() {
@@ -727,7 +897,8 @@ async function boot() {
 
   await buildOptions().catch((err) => console.error(err));
 
-  client.connect();
+  await startHype();
+  if (!options.demo) client.connect();
 }
 
 boot();

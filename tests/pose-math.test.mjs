@@ -6,7 +6,9 @@ import {
   angleDeg,
   allVisible,
   anglesFromLandmarks,
+  armReading,
 } from "../public/js/pose-math.js";
+import { RepCounter } from "../public/js/rep-counter.js";
 
 test("angleDeg measures the interior angle at the middle point", () => {
   const right = angleDeg({ x: 0, y: 1 }, { x: 0, y: 0 }, { x: 1, y: 0 });
@@ -107,4 +109,158 @@ test("world landmarks drive the geometry while screen landmarks gate visibility"
   const world = posedBody({ elbowBend: 150, visibility: undefined });
   const { elbowAngle } = anglesFromLandmarks(screen, world);
   assert.ok(Math.abs(elbowAngle - 150) < 1);
+});
+
+/**
+ * Two arms bent independently, each with its own visibility, and a body held
+ * straight. `plank` bends each side's hip so the plank angle can differ too.
+ */
+function posedArms({
+  left,
+  right,
+  leftVis = 0.9,
+  rightVis = 0.9,
+  leftPlank = 180,
+  rightPlank = 180,
+}) {
+  const pose = blankPose();
+  const arms = [
+    ["LEFT", -1, left, leftVis, leftPlank],
+    ["RIGHT", 1, right, rightVis, rightPlank],
+  ];
+  for (const [side, sign, bend, visibility, plank] of arms) {
+    const rad = (bend * Math.PI) / 180;
+    pose[LM[`${side}_SHOULDER`]] = { x: sign * 0.2, y: 0, z: 0, visibility };
+    pose[LM[`${side}_ELBOW`]] = { x: sign * 0.2, y: 0.3, z: 0, visibility };
+    pose[LM[`${side}_WRIST`]] = {
+      x: sign * 0.2 + 0.3 * Math.sin(rad),
+      y: 0.3 - 0.3 * Math.cos(rad),
+      z: 0,
+      visibility,
+    };
+    const sag = ((180 - plank) * Math.PI) / 180;
+    pose[LM[`${side}_HIP`]] = { x: sign * 0.2, y: -0.5, z: 0, visibility };
+    pose[LM[`${side}_KNEE`]] = {
+      x: sign * 0.2 + 0.5 * Math.sin(sag),
+      y: -0.5 - 0.5 * Math.cos(sag),
+      z: 0,
+      visibility,
+    };
+  }
+  return pose;
+}
+
+test("equal visibility still averages the two arms", () => {
+  const { elbowAngle } = anglesFromLandmarks(
+    posedArms({ left: 80, right: 100 }),
+  );
+  assert.ok(Math.abs(elbowAngle - 90) < 0.5, `got ${elbowAngle}`);
+});
+
+test("a well-seen near arm outvotes a half-hidden far arm", () => {
+  const pose = posedArms({
+    left: 90,
+    right: 125,
+    leftVis: 0.98,
+    rightVis: 0.55,
+  });
+  const { elbowAngle, sidesUsed } = anglesFromLandmarks(pose);
+  assert.deepEqual(sidesUsed, ["left", "right"]);
+  assert.ok(
+    Math.abs(elbowAngle - 90) < 5,
+    `fused ${elbowAngle} should hug the near arm, not the 107.5 a plain mean gives`,
+  );
+  assert.ok(elbowAngle > 90, "the far arm still counts for something");
+});
+
+test("arms that disagree wildly resolve to the better-seen one", () => {
+  const pose = posedArms({
+    left: 80,
+    right: 160,
+    leftVis: 0.95,
+    rightVis: 0.75,
+  });
+  const { elbowAngle } = anglesFromLandmarks(pose);
+  assert.ok(Math.abs(elbowAngle - 80) < 0.5, `got ${elbowAngle}`);
+});
+
+test("arms that disagree wildly but are equally well seen are still averaged", () => {
+  const pose = posedArms({ left: 80, right: 160 });
+  const { elbowAngle } = anglesFromLandmarks(pose);
+  assert.ok(Math.abs(elbowAngle - 120) < 0.5, `got ${elbowAngle}`);
+});
+
+test("the plank angle is fused by visibility as well", () => {
+  const pose = posedArms({
+    left: 90,
+    right: 90,
+    leftVis: 0.97,
+    rightVis: 0.55,
+    leftPlank: 150,
+    rightPlank: 180,
+  });
+  const { plankAngle } = anglesFromLandmarks(pose);
+  assert.ok(Math.abs(plankAngle - 150) < 6, `got ${plankAngle}`);
+});
+
+test("armReading reports one arm's angle and a weight that grows with visibility", () => {
+  const pose = posedArms({ left: 70, right: 70, leftVis: 0.95, rightVis: 0.6 });
+  const left = armReading(pose, null, "left");
+  const right = armReading(pose, null, "right");
+  assert.ok(Math.abs(left.angle - 70) < 0.5);
+  assert.ok(left.weight > right.weight * 4);
+  assert.equal(armReading(pose, null, "left", 0.99), null);
+  assert.equal(armReading(pose, null, "middle"), null);
+  assert.equal(armReading([], null, "left"), null);
+});
+
+test("screen landmarks are corrected for the video aspect when there is no world data", () => {
+  const W = 1600;
+  const H = 900;
+  const pose = blankPose();
+  const at = (x, y) => ({ x: x / W, y: y / H, visibility: 0.9 });
+  pose[LM.LEFT_SHOULDER] = at(700, 350);
+  pose[LM.LEFT_ELBOW] = at(800, 450);
+  pose[LM.LEFT_WRIST] = at(900, 350);
+  const stretched = anglesFromLandmarks(pose, null, 0.5, W / H);
+  const naive = anglesFromLandmarks(pose, null, 0.5);
+  assert.ok(Math.abs(stretched.elbowAngle - 90) < 0.5);
+  assert.ok(Math.abs(naive.elbowAngle - 90) > 5);
+});
+
+test("a far arm that reads too straight no longer stops the reps being counted", () => {
+  const counter = new RepCounter({ smoothing: 1 });
+  let reps = 0;
+  let lowestPlainMean = Infinity;
+  let frame = 0;
+  for (let n = 0; n < 5; n++) {
+    for (let i = 0; i < 25; i++) {
+      const phase = (i / 24) * 2 * Math.PI;
+      const near = 170 - (92 * (1 - Math.cos(phase))) / 2;
+      const far = Math.min(178, near + 50);
+      const pose = posedArms({
+        left: near,
+        right: far,
+        leftVis: 0.98,
+        rightVis: 0.55,
+      });
+      const { elbowAngle, plankAngle } = anglesFromLandmarks(pose);
+      const plainMean =
+        (armReading(pose, null, "left").angle +
+          armReading(pose, null, "right").angle) /
+        2;
+      lowestPlainMean = Math.min(lowestPlainMean, plainMean);
+      const result = counter.update({
+        elbowAngle,
+        plankAngle,
+        timestamp: 1000 + frame++ * 33,
+      });
+      if (result.repCompleted) reps += 1;
+    }
+  }
+  assert.ok(
+    lowestPlainMean > counter.options.downAngle,
+    `a plain mean bottoms out at ${lowestPlainMean}, never reaching depth`,
+  );
+  assert.equal(reps, 5);
 });

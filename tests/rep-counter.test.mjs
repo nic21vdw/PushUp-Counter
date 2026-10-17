@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { RepCounter, STATE } from "../public/js/rep-counter.js";
+import {
+  RepCounter,
+  STATE,
+  DEFAULT_OPTIONS,
+  gradeFor,
+  scoreRep,
+} from "../public/js/rep-counter.js";
 
 /**
  * Feed a sequence of elbow angles, one every `stepMs`, starting at t=1000.
@@ -245,4 +251,288 @@ test("thresholds can be retuned mid-session without losing reps", () => {
   // 78 degrees no longer counts as depth under the tighter threshold.
   const result = feed(counter, REP, { startAt: 10000 });
   assert.equal(result.reps, 1);
+});
+
+/** Run an angle sequence through a counter and collect every `rep` it hands back. */
+function repsFrom(
+  angles,
+  { stepMs = 33, plankAngle = 175, options = {} } = {},
+) {
+  const counter = new RepCounter({ smoothing: 1, ...options });
+  const reps = [];
+  const quiet = [];
+  angles.forEach((elbowAngle, i) => {
+    const result = counter.update({
+      elbowAngle,
+      plankAngle,
+      timestamp: 1000 + i * stepMs,
+    });
+    if (result.rep) reps.push(result.rep);
+    else quiet.push(result.rep);
+  });
+  return { reps, quiet };
+}
+
+function seeded(seed) {
+  let a = seed >>> 0;
+  const uniform = () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const gauss = () =>
+    Math.sqrt(-2 * Math.log(1 - uniform())) * Math.cos(2 * Math.PI * uniform());
+  return { uniform, gauss };
+}
+
+/**
+ * A set of quick reps as a sine wave, with Gaussian noise on every sample and
+ * the occasional single-frame glitch that a mis-detected limb produces.
+ */
+function noisySet({ reps, periodMs, sigma, spikeRate, seed, fps = 30 }) {
+  const { uniform, gauss } = seeded(seed);
+  const stepMs = 1000 / fps;
+  const lead = 8;
+  const total = Math.round((reps * periodMs) / stepMs) + lead * 2;
+  const samples = [];
+  for (let i = 0; i < total; i++) {
+    const t = (i - lead) * stepMs;
+    const inSet = t > 0 && t < reps * periodMs;
+    const clean = inSet
+      ? 168 - (88 * (1 - Math.cos((2 * Math.PI * t) / periodMs))) / 2
+      : 168;
+    let elbowAngle = clean + sigma * gauss();
+    if (uniform() < spikeRate) elbowAngle = uniform() < 0.5 ? 20 : 175;
+    samples.push({ elbowAngle, timestamp: 1000 + i * stepMs });
+  }
+  return samples;
+}
+
+function countSet(samples, options = {}) {
+  const counter = new RepCounter(options);
+  let completions = 0;
+  for (const { elbowAngle, timestamp } of samples) {
+    const result = counter.update({ elbowAngle, plankAngle: 175, timestamp });
+    if (result.repCompleted) completions += 1;
+  }
+  return completions;
+}
+
+test("a completed rep carries depth, top, duration, score and grade; every other frame carries null", () => {
+  const { reps, quiet } = repsFrom([
+    ...Array(5).fill(170),
+    ...repAngles({ bottom: 78 }),
+  ]);
+  assert.equal(reps.length, 1);
+  assert.deepEqual(Object.keys(reps[0]).sort(), [
+    "depth",
+    "durationMs",
+    "grade",
+    "score",
+    "top",
+  ]);
+  assert.ok(Math.abs(reps[0].depth - 78) < 2);
+  assert.ok(Math.abs(reps[0].top - 170) < 1);
+  assert.ok(reps[0].durationMs > 400 && reps[0].durationMs < 800);
+  assert.ok(reps[0].score >= 0 && reps[0].score <= 100);
+  assert.ok(["perfect", "great", "good", "sloppy"].includes(reps[0].grade));
+  assert.ok(quiet.length > 0 && quiet.every((rep) => rep === null));
+});
+
+test("lastRepDepth and lastRepTop agree with the rep object", () => {
+  const counter = new RepCounter({ smoothing: 1 });
+  let rep = null;
+  repAngles().forEach((elbowAngle, i) => {
+    const result = counter.update({
+      elbowAngle,
+      plankAngle: 175,
+      timestamp: 1000 + i * 33,
+    });
+    if (result.rep) rep = result.rep;
+  });
+  assert.equal(counter.lastRepDepth, rep.depth);
+  assert.equal(counter.lastRepTop, rep.top);
+});
+
+test("a deep, locked-out, straight, controlled rep is perfect", () => {
+  const { reps } = repsFrom(repAngles({ bottom: 64, frames: 60 }));
+  assert.equal(reps[0].grade, "perfect");
+  assert.ok(reps[0].score >= 90);
+});
+
+test("a shallow rep that only just counts scores below a deep one", () => {
+  const deep = repsFrom(repAngles({ bottom: 66, frames: 60 })).reps[0];
+  const shallow = repsFrom(repAngles({ bottom: 97, frames: 60 })).reps[0];
+  assert.ok(shallow.score < deep.score - 15);
+  assert.notEqual(shallow.grade, "perfect");
+});
+
+test("sagging hips cost score without stopping the rep", () => {
+  const angles = repAngles({ bottom: 66, frames: 60 });
+  const straight = repsFrom(angles, { plankAngle: 175 }).reps[0];
+  const sagging = repsFrom(angles, { plankAngle: 146 }).reps[0];
+  assert.ok(sagging.score < straight.score - 8);
+});
+
+test("an unmeasurable plank costs nothing", () => {
+  const angles = repAngles({ bottom: 66, frames: 60 });
+  const unknown = repsFrom(angles, { plankAngle: null }).reps[0];
+  const straight = repsFrom(angles, { plankAngle: 175 }).reps[0];
+  assert.equal(unknown.score, straight.score);
+});
+
+test("a bounce scores below the same rep done under control", () => {
+  const slow = repsFrom(repAngles({ bottom: 66, frames: 60 })).reps[0];
+  const bounce = repsFrom(repAngles({ bottom: 66, frames: 14 })).reps[0];
+  assert.ok(bounce.durationMs < slow.durationMs);
+  assert.ok(bounce.score < slow.score - 6);
+});
+
+test("a rep that never locks out loses lockout points", () => {
+  const set = [
+    ...times(4, repAngles({ top: 140, bottom: 70, frames: 40 })),
+    ...repAngles({ top: 170, bottom: 70, frames: 40 }),
+  ];
+  const { reps } = repsFrom(set);
+  assert.equal(reps.length, 5);
+  assert.ok(reps[1].top < 150);
+  assert.ok(reps[1].score < reps[4].score);
+});
+
+test("each rep in a set carries its own rep object", () => {
+  const { reps } = repsFrom(times(3, repAngles({ bottom: 70, frames: 40 })));
+  assert.equal(reps.length, 3);
+  assert.ok(reps.every((rep) => rep.durationMs > 700 && rep.durationMs < 1400));
+});
+
+test("durationMs measures the rep and not the pause at the top before it", () => {
+  const pause = Array(90).fill(170);
+  const { reps } = repsFrom([
+    ...pause,
+    ...repAngles({ bottom: 70, frames: 40 }),
+  ]);
+  assert.equal(reps.length, 1);
+  assert.ok(reps[0].durationMs < 1300, `got ${reps[0].durationMs}`);
+});
+
+test("scoreRep gives full marks to a textbook rep", () => {
+  const result = scoreRep({
+    depth: 68,
+    top: 172,
+    durationMs: 1800,
+    plank: 175,
+  });
+  assert.equal(result.score, 100);
+  assert.equal(result.grade, "perfect");
+});
+
+test("scoreRep: 70 degrees is full depth, downAngle is weak, in between is linear", () => {
+  const at = (depth) =>
+    scoreRep({ depth, top: 172, durationMs: 1800, plank: 175 }).parts.depth;
+  assert.equal(at(70), 1);
+  assert.equal(at(50), 1);
+  assert.ok(Math.abs(at(DEFAULT_OPTIONS.downAngle) - 0.2) < 1e-9);
+  assert.ok(Math.abs(at(85) - 0.6) < 1e-9);
+  assert.ok(at(80) > at(90));
+});
+
+test("scoreRep: lockout, plank and tempo each move the score the right way", () => {
+  const base = { depth: 68, top: 172, durationMs: 1800, plank: 175 };
+  const score = (patch) => scoreRep({ ...base, ...patch }).score;
+  assert.ok(score({ top: 150 }) < score({ top: 165 }));
+  assert.equal(score({ top: 165 }), score({ top: 180 }));
+  assert.ok(score({ plank: 145 }) < score({ plank: 160 }));
+  assert.equal(score({ plank: 165 }), score({ plank: 180 }));
+  assert.ok(score({ durationMs: 300 }) < score({ durationMs: 700 }));
+  assert.equal(score({ durationMs: 1000 }), score({ durationMs: 4000 }));
+});
+
+test("scoreRep follows a retuned downAngle", () => {
+  const rep = { depth: 100, top: 172, durationMs: 1800, plank: 175 };
+  const strict = scoreRep(rep, { ...DEFAULT_OPTIONS, downAngle: 100 });
+  const loose = scoreRep(rep, { ...DEFAULT_OPTIONS, downAngle: 120 });
+  assert.ok(loose.score > strict.score);
+});
+
+test("grades switch at 90, 75 and 55", () => {
+  assert.equal(gradeFor(100), "perfect");
+  assert.equal(gradeFor(90), "perfect");
+  assert.equal(gradeFor(89), "great");
+  assert.equal(gradeFor(75), "great");
+  assert.equal(gradeFor(74), "good");
+  assert.equal(gradeFor(55), "good");
+  assert.equal(gradeFor(54), "sloppy");
+  assert.equal(gradeFor(0), "sloppy");
+});
+
+test("a glitched first frame after acquiring the pose cannot start a rep", () => {
+  for (const lead of [[20], [175, 20], [20, 170]]) {
+    const counter = new RepCounter();
+    const result = feed(counter, [...lead, ...Array(30).fill(170)]);
+    assert.equal(result.reps, 0, `lead ${lead} started a rep from nothing`);
+  }
+});
+
+test("pose reacquired after a long loss does not start a rep from a glitch either", () => {
+  const counter = new RepCounter({ smoothing: 1 });
+  feed(counter, REP);
+  counter.update({ elbowAngle: null, plankAngle: null, timestamp: 9000 });
+  const result = feed(counter, [20, 170, 170, 170, 170, 170], {
+    startAt: 10000,
+  });
+  assert.equal(result.reps, 1);
+});
+
+test("a noisy set of fast reps is counted exactly, seed after seed", () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const samples = noisySet({
+      reps: 12,
+      periodMs: 450,
+      sigma: 4,
+      spikeRate: 0.01,
+      seed,
+    });
+    assert.equal(countSet(samples), 12, `seed ${seed}`);
+  }
+});
+
+test("a slower noisy set is counted exactly too", () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const samples = noisySet({
+      reps: 8,
+      periodMs: 900,
+      sigma: 5,
+      spikeRate: 0.01,
+      seed,
+    });
+    assert.equal(countSet(samples), 8, `seed ${seed}`);
+  }
+});
+
+test("a noisy fast set stays exact on a 60 fps camera as well", () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const samples = noisySet({
+      reps: 12,
+      periodMs: 400,
+      sigma: 4,
+      spikeRate: 0.01,
+      seed,
+      fps: 60,
+    });
+    assert.equal(countSet(samples), 12, `seed ${seed}`);
+  }
+});
+
+test("noise at the top of the range with no movement never makes a rep", () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const samples = noisySet({
+      reps: 0,
+      periodMs: 450,
+      sigma: 5,
+      spikeRate: 0.01,
+      seed,
+    });
+    assert.equal(countSet(samples), 0, `seed ${seed}`);
+  }
 });

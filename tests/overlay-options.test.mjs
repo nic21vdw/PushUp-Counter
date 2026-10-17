@@ -150,8 +150,8 @@ test("a camera can be named, because the default is often the one OBS has", () =
 test("a rep makes a noise unless you ask it not to", () => {
   assert.equal(
     parse("").sound,
-    "sayings",
-    "a different line each rep, so it stays funny",
+    "hype",
+    "the hype impact, with the announcer doing the talking",
   );
   assert.equal(parse("").volume, 0.45);
   assert.equal(parse("sound=0").sound, null);
@@ -162,7 +162,7 @@ test("a rep makes a noise unless you ask it not to", () => {
   assert.equal(parse("sound=maybe").sound, "maybe");
   assert.equal(
     parse("sound=not a name!").sound,
-    "sayings",
+    "hype",
     "but that is not a file name",
   );
 });
@@ -182,12 +182,12 @@ test("the sound can be chosen by name", () => {
   );
   assert.equal(
     parse("sound=1").sound,
-    "sayings",
+    "hype",
     "the old on-switch still means the default",
   );
   assert.equal(
     parse("sound=").sound,
-    "sayings",
+    "hype",
     "a bare ?sound is not a request for silence",
   );
   assert.equal(

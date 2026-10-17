@@ -49,6 +49,32 @@ export const SAMPLE_WINDOWS = {
  * share of the volume.
  */
 export const PRESETS = {
+  /**
+   * The default. A kick-drum thump with a laser zap rising out of it and a
+   * sparkle on top: all of it over in 220ms, so it lands with the rep and is
+   * gone before the next. It is the only sound here that is not a joke, because
+   * the announcer is the one talking.
+   */
+  hype: [
+    { at: 0, dur: 0.17, hz: 190, to: 42, type: "sine", gain: 1 },
+    {
+      at: 0,
+      dur: 0.045,
+      type: "noise",
+      gain: 0.34,
+      filter: { type: "bandpass", hz: 2600, to: 700 },
+    },
+    {
+      at: 0.025,
+      dur: 0.19,
+      hz: 240,
+      to: 2300,
+      type: "sawtooth",
+      gain: 0.3,
+      filter: { type: "lowpass", hz: 2400, to: 7000 },
+    },
+    { at: 0.07, dur: 0.15, hz: 1318, to: 2637, type: "square", gain: 0.13 },
+  ],
   /** Two-note arcade pickup. */
   coin: [
     { at: 0, dur: 0.05, hz: 1046, type: "square", gain: 0.7 },
@@ -644,24 +670,39 @@ export const SHUFFLE_PRESETS = [
 export const PACER_MODE = "pacer";
 
 /**
+ * The punchy impact that answers a rep while the hype announcer does the
+ * talking. Synthesised, and it never says a word itself.
+ */
+export const HYPE_MODE = "hype";
+
+/**
  * Played when the sound is on but nothing specific was asked for.
  *
- * The lines, not the shuffle. A noise says the rep counted; a line says
- * something, and something said on every single rep is the point of the
- * overlay. Shuffle is still one pick away in the options panel.
+ * The hype impact, because the announcer speaks the lines: a random saying on
+ * top of it would be two voices at once. Sayings and shuffle are still one
+ * pick away in the options panel.
  */
-export const DEFAULT_PRESET = SAYINGS_MODE;
+export const DEFAULT_PRESET = HYPE_MODE;
 
 /** Played while a sample is still loading, and if it never loads at all. */
 export const FALLBACK_PRESET = "coin";
 
 /** Names `?sound=` accepts without knowing which files exist. */
 export const SOUND_NAMES = [
+  HYPE_MODE,
   SHUFFLE,
   SAYINGS_MODE,
   PACER_MODE,
-  ...Object.keys(PRESETS),
+  ...Object.keys(PRESETS).filter((name) => name !== HYPE_MODE),
 ];
+
+/** Menu text for names that deserve better than the bare word. */
+export const SOUND_LABELS = {
+  [HYPE_MODE]: "hype — punchy impact, the announcer talks",
+  [SHUFFLE]: "shuffle — a different one each rep",
+  [SAYINGS_MODE]: "sayings — a funny line each rep",
+  [PACER_MODE]: "pacer — the shuttle run beep",
+};
 
 // Short enough that the note starts at full weight rather than fading in. Any
 // softer and the sound reads as late even when it is not.

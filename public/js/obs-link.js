@@ -24,6 +24,8 @@ const KEYS = [
   ["radius", "radius"],
   ["count", "count"],
   ["coach", "coach"],
+  ["fx", "fx"],
+  ["voice", "voice"],
   ["volume", "volume"],
   ["camera", "camera"],
 ];
