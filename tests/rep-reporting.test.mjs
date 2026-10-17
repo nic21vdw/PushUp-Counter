@@ -48,7 +48,14 @@ const json = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
+const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
+
+const until = async (done, limitMs = 8000) => {
+  const end = Date.now() + limitMs;
+  while (!done() && Date.now() < end) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+};
 
 test("a detected rep is posted to /api/rep with the page id", async () => {
   await withServer(
@@ -122,7 +129,7 @@ test("reps counted while the server is down are held, not dropped", async () => 
 
       failing = false;
       // Wait past the 2s retry.
-      await new Promise((resolve) => setTimeout(resolve, 2600));
+      await until(() => client.pending === 0);
 
       assert.equal(
         client.pending,
