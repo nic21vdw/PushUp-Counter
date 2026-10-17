@@ -122,14 +122,32 @@ export function tierAfterRep(tier, combo) {
   return Number.isFinite(combo) && combo < COMBO_FLOOR ? 0 : tier;
 }
 
-/** True when a throwaway canvas hands out a WebGL context. */
+const SOFTWARE_RENDERER =
+  /swiftshader|llvmpipe|softpipe|software|basic render/i;
+
+function rendererName(gl) {
+  try {
+    const info = gl.getExtension?.("WEBGL_debug_renderer_info");
+    return info
+      ? String(gl.getParameter?.(info.UNMASKED_RENDERER_WEBGL) ?? "")
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * True when a throwaway canvas hands out a hardware WebGL context. A software
+ * rasteriser would draw the layer on the CPU, which the pose detector needs.
+ */
 export function hasWebGL(doc = globalThis.document) {
   try {
     const canvas = doc.createElement("canvas");
     const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
     if (!gl) return false;
+    const software = SOFTWARE_RENDERER.test(rendererName(gl));
     gl.getExtension?.("WEBGL_lose_context")?.loseContext?.();
-    return true;
+    return !software;
   } catch {
     return false;
   }
@@ -2350,11 +2368,13 @@ function buildStage(THREE, addons, host, doc, win) {
   function onLost(event) {
     event.preventDefault();
     contextLost = true;
+    stop();
   }
 
   function onRestored() {
     contextLost = false;
     resize();
+    start();
   }
 
   function circlePulse(a, color, radius, delays = [0]) {

@@ -89,6 +89,39 @@ test("hasWebGL asks the throwaway canvas and releases its context", () => {
   assert.equal(hasWebGL(undefined), false);
 });
 
+test("hasWebGL refuses a software rasteriser and still releases its context", () => {
+  const rig = (renderer) => {
+    const state = { lost: false };
+    const gl = {
+      getExtension: (name) =>
+        name === "WEBGL_debug_renderer_info"
+          ? { UNMASKED_RENDERER_WEBGL: 37446 }
+          : {
+              loseContext: () => {
+                state.lost = true;
+              },
+            },
+      getParameter: () => renderer,
+    };
+    return { state, doc: fakeDocument({ gl }) };
+  };
+
+  const software = rig(
+    "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)",
+  );
+  assert.equal(hasWebGL(software.doc), false);
+  assert.equal(software.state.lost, true);
+
+  const hardware = rig(
+    "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  );
+  assert.equal(hasWebGL(hardware.doc), true);
+  assert.equal(hardware.state.lost, true);
+
+  const unreadable = rig(undefined);
+  assert.equal(hasWebGL(unreadable.doc), true);
+});
+
 test("every grade, tier and countdown number has a colour", () => {
   for (const grade of ["perfect", "great", "good", "sloppy"]) {
     assert.ok(Number.isInteger(GRADE_COLORS[grade]), grade);
