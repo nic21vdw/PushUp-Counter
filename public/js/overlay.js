@@ -21,6 +21,7 @@ import {
 } from "./overlay-options.js";
 import { checkFraming, FRAMING } from "./framing.js";
 import { buildOverlayUrl } from "./obs-link.js";
+import { hypeState, repsToReplay, observeServer, within } from "./hype-sync.js";
 
 const params = new URLSearchParams(location.search);
 const options = parseOverlayOptions(params);
@@ -315,11 +316,19 @@ function followServerSound(state) {
   if (!soundFromUrl && state.sound !== undefined && state.sound !== null) {
     repSound.setPreset(options.count ? state.sound : null);
     announcer?.setEnabled(repSound.preset === "hype");
+    if (options.count) syncSoundInput(repSound.preset);
   }
   if (!volumeFromUrl && typeof state.volume === "number") {
     repSound.setVolume(state.volume);
     announcer?.setVolume(Math.min(1, state.volume * 2));
     if (optVolume) syncVolumeInput(state.volume);
+  }
+}
+
+function syncSoundInput(preset) {
+  const value = preset ?? "off";
+  if ([...optSound.options].some((option) => option.value === value)) {
+    optSound.value = value;
   }
 }
 
@@ -362,6 +371,7 @@ async function buildOptions() {
   }
   optSound.append(new Option("none", "off"));
   optSound.value = options.sound ?? "off";
+  if (options.count) syncSoundInput(repSound.preset);
 
   syncVolumeInput(options.volume);
 
@@ -550,34 +560,41 @@ const GRADE_TEXT = {
 const reducedMotion =
   globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
+const STAGE_WAIT_MS = 4000;
+
 let director = null;
 let announcer = null;
 let stage = null;
 let gradeTimer = null;
+let hypeTimer = null;
+let shownCombo = -1;
 
-function hypeState() {
-  const rawLeft =
-    (serverState?.rawLeft ?? serverState?.left ?? 0) - pendingReps;
-  return {
-    left: rawLeft,
-    done: (serverState?.done ?? 0) + pendingReps,
-    owed: serverState?.owed ?? 0,
-  };
-}
+const currentHype = () => hypeState(serverState, pendingReps);
 
 function emit(events) {
-  if (!events?.length) return;
-  stage?.handle(events);
-  announcer?.handle(events);
+  if (events?.length) {
+    try {
+      stage?.handle(events);
+    } catch (err) {
+      console.error(err);
+    }
+    try {
+      announcer?.handle(events);
+    } catch (err) {
+      console.error(err);
+    }
+    const graded = events.find((e) => e.type === "rep" && e.grade);
+    if (graded) showGrade(graded.grade);
+  }
   if (tracker) tracker.heat = director.heat;
   showCombo();
-  const graded = events.find((e) => e.type === "rep" && e.grade);
-  if (graded) showGrade(graded.grade);
 }
 
 function showCombo() {
   if (!comboEl) return;
   const combo = director.combo;
+  if (combo === shownCombo) return;
+  shownCombo = combo;
   comboEl.hidden = combo < 3;
   const number = comboEl.querySelector("b");
   if (number) number.textContent = `${combo}×`;
@@ -602,9 +619,13 @@ function showGrade(grade) {
 
 function hypeRep(rep) {
   if (!director) return;
-  const state = hypeState();
-  stage?.setCount(state);
-  emit(director.rep({ at: performance.now(), rep, ...state }));
+  try {
+    const state = currentHype();
+    stage?.setCount(state);
+    emit(director.rep({ at: performance.now(), rep, ...state }));
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 /**
@@ -615,15 +636,30 @@ function hypeRep(rep) {
  */
 function followServerHype(before, state) {
   if (!director) return;
-  const now = hypeState();
-  stage?.setCount(now);
-  if (!options.count && before) {
-    const gained = (state.done ?? 0) - (before.done ?? 0);
-    for (let i = 0; i < Math.min(gained, 5); i += 1) {
-      emit(director.rep({ at: performance.now(), rep: null, ...now }));
+  try {
+    const now = currentHype();
+    stage?.setCount(now);
+    if (!options.count) {
+      for (let i = repsToReplay(before, state); i > 0; i -= 1) {
+        emit(director.rep({ at: performance.now(), rep: null, ...now }));
+      }
     }
+    emit(observeServer(director, state, pendingReps));
+  } catch (err) {
+    console.error(err);
   }
-  emit(director.count(now));
+}
+
+async function loadStage() {
+  try {
+    const { createHypeStage } = await import("./hype-stage.js");
+    stage = await createHypeStage(document.body, { reducedMotion });
+    stage?.setCount(currentHype());
+    return stage;
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
 }
 
 async function startHype() {
@@ -647,20 +683,15 @@ async function startHype() {
     }
   }
 
-  if (options.fx && !reducedMotion) {
-    try {
-      const { createHypeStage } = await import("./hype-stage.js");
-      stage = await createHypeStage(document.body, { reducedMotion });
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  const state = hypeState();
-  stage?.setCount(state);
-  emit(director.start(state));
-  setInterval(() => emit(director.tick(performance.now())), 1000);
+  const opening = director.start(currentHype());
+  emit(opening);
+  hypeTimer = setInterval(() => emit(director.tick(performance.now())), 1000);
   if (options.demo) runDemo();
+
+  if (options.fx && !reducedMotion) {
+    const ready = await within(loadStage(), STAGE_WAIT_MS);
+    ready?.handle(opening);
+  }
 }
 
 /** Fake reps for `?demo=1`. Nothing reaches the server. */
@@ -674,7 +705,13 @@ function runDemo() {
     const owed = serverState?.owed || 60;
     const left = owed - fakeDone;
     if (serverState) {
-      serverState = { ...serverState, rawLeft: left, left: Math.max(0, left), done: fakeDone, owed };
+      serverState = {
+        ...serverState,
+        rawLeft: left,
+        left: Math.max(0, left),
+        done: fakeDone,
+        owed,
+      };
       render();
     }
     repSound.play();
@@ -690,7 +727,9 @@ function runDemo() {
       }),
     );
     const pause =
-      Math.random() < 0.08 ? 4000 + Math.random() * 3000 : 450 + Math.random() * 900;
+      Math.random() < 0.08
+        ? 4000 + Math.random() * 3000
+        : 450 + Math.random() * 900;
     setTimeout(step, pause);
   };
   setTimeout(step, 1500);
@@ -863,6 +902,8 @@ window.addEventListener("pagehide", () => {
   tracker?.stop();
   client.stop();
   repSound.stop();
+  clearInterval(hypeTimer);
+  announcer?.dispose();
   stage?.dispose();
 });
 
@@ -876,6 +917,7 @@ async function boot() {
     render();
     if (state.cameraChosen) activeCamera = state.camera ?? null;
     else if (!options.camera && state.camera) activeCamera = state.camera;
+    followServerSound(state);
   } catch {
     /* the SSE connection below will fill this in */
   }
