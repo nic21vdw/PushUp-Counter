@@ -422,6 +422,8 @@ function view() {
 function redactSecrets(text) {
   let safe = String(text);
   if (CONFIG.apiKey) safe = safe.split(CONFIG.apiKey).join("***");
+  if (SALES.secretKey) safe = safe.split(SALES.secretKey).join("***");
+  safe = safe.replace(/\b[sr]k_(?:live|test)_[A-Za-z0-9]+/g, "***");
   // Belt and braces: any `key=` in a quoted URL, whatever its value.
   return safe.replace(/([?&]key=)[^&\s'")]+/gi, "$1***");
 }

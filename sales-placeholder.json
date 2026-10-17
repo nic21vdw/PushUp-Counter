@@ -1,0 +1,36 @@
+{
+  "_comment": "PLACEHOLDER DATA - NOT REAL SALES. Used only while STRIPE_SECRET_KEY is unset. Each entry is a Stripe-shaped charge; amount is in minor units (cents). Use minutesAgo instead of created to keep an entry inside 'today'.",
+  "placeholder": true,
+  "charges": [
+    {
+      "id": "ch_placeholder_0001",
+      "amount": 14900,
+      "currency": "cad",
+      "minutesAgo": 42
+    },
+    {
+      "id": "ch_placeholder_0002",
+      "amount": 14900,
+      "currency": "cad",
+      "minutesAgo": 190
+    },
+    {
+      "id": "ch_placeholder_0003",
+      "amount": 149000,
+      "currency": "cad",
+      "minutesAgo": 2600
+    },
+    {
+      "id": "ch_placeholder_0004",
+      "amount": 4900,
+      "currency": "cad",
+      "minutesAgo": 8800
+    },
+    {
+      "id": "ch_placeholder_0005",
+      "amount": 14900,
+      "currency": "cad",
+      "minutesAgo": 20000
+    }
+  ]
+}
