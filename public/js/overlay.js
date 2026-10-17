@@ -880,6 +880,8 @@ async function boot() {
     /* the SSE connection below will fill this in */
   }
 
+  startHype().catch((err) => console.error(err));
+
   // The tile is the point of this layout, so open the camera whenever it is
   // shown — even with counting off, a display-only duplicate still wants the
   // picture. Only `video=0` with counting off skips it entirely.
@@ -897,7 +899,6 @@ async function boot() {
 
   await buildOptions().catch((err) => console.error(err));
 
-  await startHype();
   if (!options.demo) client.connect();
 }
 
