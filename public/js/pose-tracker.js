@@ -253,6 +253,7 @@ export class PoseTracker {
     this.trailCount = 0;
     this.armAngle = new Float32Array(2).fill(NaN);
     this.readings = [null, null];
+    this.drawFailures = 0;
     // Samples per second actually reaching the rep counter. A quick push-up is
     // over in a third of a second, so this is the number that decides whether it
     // can be seen at all — the setup view puts it on screen for that reason.
@@ -518,7 +519,12 @@ export class PoseTracker {
 
     this.worldLandmarks = worldLandmarks;
     try {
-      this.#draw(landmarks, mask);
+      try {
+        this.#draw(landmarks, mask);
+      } catch (err) {
+        this.drawFailures += 1;
+        if (this.drawFailures <= 3) console.warn("pose drawing failed", err);
+      }
       this.onPose({ landmarks, worldLandmarks, timestamp });
     } finally {
       // Masks hold GPU/WASM memory that is not garbage collected. Skipping this
@@ -580,14 +586,17 @@ export class PoseTracker {
     this.#pushTrail(width);
 
     ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.globalCompositeOperation = "lighter";
-    this.#paintTrails(palette, base, heat);
-    this.#paintBones(palette, base, shimmer, height);
-    this.#paintJoints(palette, base, shimmer, heat, now);
-    this.#paintGauges(landmarks, base, width, height, now);
-    ctx.restore();
+    try {
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.globalCompositeOperation = "lighter";
+      this.#paintTrails(palette, base, heat);
+      this.#paintBones(palette, base, shimmer, height);
+      this.#paintJoints(palette, base, shimmer, heat, now);
+      this.#paintGauges(landmarks, base, width, height, now);
+    } finally {
+      ctx.restore();
+    }
   }
 
   /** The full-tile pulse that `flash()` starts. Does nothing once it has faded. */
@@ -601,36 +610,39 @@ export class PoseTracker {
     const color = pulseColor(this.heat);
 
     ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.3 * level;
-    ctx.fillRect(0, 0, width, height);
+    try {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.3 * level;
+      ctx.fillRect(0, 0, width, height);
 
-    ctx.strokeStyle = color;
-    for (const [span, alpha] of PULSE_BORDERS) {
-      const line = base * span * (0.4 + 0.6 * level);
-      ctx.globalAlpha = Math.min(1, alpha * level + 0.1 * level);
-      ctx.lineWidth = line;
-      ctx.strokeRect(line / 2, line / 2, width - line, height - line);
+      ctx.strokeStyle = color;
+      for (const [span, alpha] of PULSE_BORDERS) {
+        const line = base * span * (0.4 + 0.6 * level);
+        ctx.globalAlpha = Math.min(1, alpha * level + 0.1 * level);
+        ctx.lineWidth = line;
+        ctx.strokeRect(line / 2, line / 2, width - line, height - line);
+      }
+      ctx.strokeStyle = "#ffffff";
+      ctx.globalAlpha = 0.9 * level;
+      ctx.lineWidth = base * 2;
+      ctx.strokeRect(base, base, width - base * 2, height - base * 2);
+
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.6 * level;
+      ctx.lineWidth = base * 6 * level;
+      ctx.beginPath();
+      ctx.arc(
+        width / 2,
+        height / 2,
+        (1 - level) * 0.55 * Math.hypot(width, height),
+        0,
+        Math.PI * 2,
+      );
+      ctx.stroke();
+    } finally {
+      ctx.restore();
     }
-    ctx.strokeStyle = "#ffffff";
-    ctx.globalAlpha = 0.9 * level;
-    ctx.lineWidth = base * 2;
-    ctx.strokeRect(base, base, width - base * 2, height - base * 2);
-
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = 0.6 * level;
-    ctx.lineWidth = base * 6 * level;
-    ctx.beginPath();
-    ctx.arc(
-      width / 2,
-      height / 2,
-      (1 - level) * 0.55 * Math.hypot(width, height),
-      0,
-      Math.PI * 2,
-    );
-    ctx.stroke();
-    ctx.restore();
   }
 
   #pulseLevel(now) {

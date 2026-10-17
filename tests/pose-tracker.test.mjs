@@ -386,3 +386,56 @@ test("stopping the tracker clears the trail", () => {
   tracker.stop();
   assert.equal(tracker.trailCount, 0);
 });
+
+test("a frame whose drawing throws still reaches the rep counter", async () => {
+  const ctx = new FakeContext();
+  ctx.createLinearGradient = () => {
+    throw new TypeError("non-finite");
+  };
+  const canvas = { width: W, height: H, getContext: () => ctx };
+  let nextFrame = null;
+  const video = {
+    videoWidth: W,
+    videoHeight: H,
+    play: async () => {},
+    requestVideoFrameCallback(callback) {
+      nextFrame = callback;
+      return 1;
+    },
+    cancelVideoFrameCallback() {},
+  };
+  const seen = [];
+  const tracker = new PoseTracker({
+    video,
+    canvas,
+    onPose: (sample) => seen.push(sample),
+  });
+  tracker.landmarker = {
+    detectForVideo: () => ({ landmarks: [pose()], worldLandmarks: [] }),
+  };
+
+  const realNavigator = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "navigator",
+  );
+  Object.defineProperty(globalThis, "navigator", {
+    value: {
+      mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) },
+    },
+    configurable: true,
+  });
+  const realWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await tracker.start();
+    for (let i = 0; i < 5; i++) nextFrame();
+    assert.equal(seen.length, 5, "every frame is counted, drawn or not");
+    assert.equal(tracker.drawFailures, 5);
+    assert.equal(ctx.depth, 0, "a failed frame leaves the canvas state alone");
+    tracker.stop();
+  } finally {
+    console.warn = realWarn;
+    if (realNavigator)
+      Object.defineProperty(globalThis, "navigator", realNavigator);
+  }
+});
