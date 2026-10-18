@@ -143,3 +143,13 @@ announcer off so two voices never talk over each other.
   machine only has software WebGL, the page runs exactly as it did before.
 - The stage is throttled so the pose detector keeps 25+ samples/s. Check the
   rate in the Options panel after making the stage heavier.
+
+## Subscribers come from the exact Studio feed first
+
+YouTube's public API rounds the sub count to three significant figures, so on its own
+it only moves in steps of ten. The server reads `http://127.0.0.1:4757/subs` (the exact
+YouTube Studio count from `orca\projects\OBS\subs-server.mjs`) every 2 s and uses it while
+it reports `exact: true`; otherwise it falls back to the API every `POLL_SECONDS`.
+`EXACT_SUBS_URL=off` turns the feed off, and the no-YouTube tests set it so a live feed on
+the dev machine cannot leak in. Switching between the exact and rounded source moves the
+baseline by the same jump, so a source change never adds or removes push-ups by itself.

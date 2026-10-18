@@ -57,6 +57,7 @@ async function startServer({ dir = null, env = {} } = {}) {
       YOUTUBE_API_KEY: "",
       YOUTUBE_CHANNEL_ID: "",
       YOUTUBE_HANDLE: "",
+      EXACT_SUBS_URL: "off",
       ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],

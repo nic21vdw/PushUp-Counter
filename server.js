@@ -59,6 +59,11 @@ const CONFIG = {
   port: Number(env("PORT", "4747")),
   host: env("HOST", "127.0.0.1"),
   pollSeconds: Math.max(15, Number(env("POLL_SECONDS", "30"))),
+  exactSubsUrl: (() => {
+    const url = env("EXACT_SUBS_URL", "http://127.0.0.1:4757/subs");
+    return /^(off|none|)$/i.test(url.trim()) ? "" : url.trim();
+  })(),
+  exactPollSeconds: Math.max(1, Number(env("EXACT_POLL_SECONDS", "2")) || 2),
   // One subscriber, one push-up. Configurable because the arithmetic stops
   // being survivable somewhere north of a few hundred subs a stream, but it is
   // a number you set once in .env — not something a page can move.
@@ -99,6 +104,7 @@ const DEFAULT_STATE = {
   done: 0,
   // Last successful reading from the YouTube API.
   subs: null,
+  subsExact: null,
   subsUpdatedAt: null,
   hiddenSubscriberCount: false,
   channelTitle: "",
@@ -382,6 +388,7 @@ function view() {
     carriedOver: state.carriedOver,
     perSub: CONFIG.perSub,
     subs,
+    subsExact: state.subsExact,
     baselineSubs: baseline,
     subsGained,
     fromSubs,
@@ -465,6 +472,37 @@ async function fetchSubscriberCount() {
   };
 }
 
+let lastApiAt = 0;
+let lastDiskSaveAt = 0;
+
+async function fetchExactSubs() {
+  if (!CONFIG.exactSubsUrl) return null;
+  try {
+    const res = await fetch(CONFIG.exactSubsUrl, {
+      signal: AbortSignal.timeout(1500),
+    });
+    const body = await res.json();
+    return body?.exact && Number.isFinite(body.count) ? body.count : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readSubs() {
+  const exact = await fetchExactSubs();
+  if (exact !== null) {
+    return {
+      subs: exact,
+      hidden: false,
+      title: state.channelTitle,
+      exact: true,
+    };
+  }
+  if (Date.now() - lastApiAt < CONFIG.pollSeconds * 1000) return null;
+  lastApiAt = Date.now();
+  return { ...(await fetchSubscriberCount()), exact: false };
+}
+
 /**
  * True when this process start should begin a new stream rather than pick up
  * where the last one left off. Decided once, on the first successful poll, so
@@ -499,10 +537,14 @@ async function poll({ quiet = false } = {}) {
   }
 
   try {
-    const { subs, hidden, title } = await fetchSubscriberCount();
+    const reading = await readSubs();
+    if (!reading) return;
+    const { subs, hidden, title, exact } = reading;
     const previous = state.subs;
+    const switched = previous !== null && (state.subsExact ?? false) !== exact;
 
     state.subs = subs;
+    state.subsExact = exact;
     state.hiddenSubscriberCount = hidden;
     state.channelTitle = title;
     state.subsUpdatedAt = new Date().toISOString();
@@ -531,7 +573,13 @@ async function poll({ quiet = false } = {}) {
       }
     }
 
-    if (!quiet && previous !== null && previous !== subs) {
+    if (switched && state.baselineSubs !== null && previous !== subs) {
+      state.baselineSubs += subs - previous;
+      reason ??=
+        `switched to the ${exact ? "exact Studio" : "rounded API"} count ` +
+        `(${previous} -> ${subs}); baseline moved with it`;
+      console.log(`[youtube] ${reason}`);
+    } else if (!quiet && previous !== null && previous !== subs) {
       const delta = subs - previous;
       console.log(
         `[youtube] ${previous} -> ${subs} subs (${delta > 0 ? "+" : ""}${delta}) ` +
@@ -559,7 +607,10 @@ async function poll({ quiet = false } = {}) {
     // restart whether the stream is still going, so it must not go stale while
     // the sub count happens to sit still.
     state.lastSeenAt = new Date().toISOString();
-    await saveState(reason);
+    if (reason || previous !== subs || Date.now() - lastDiskSaveAt >= 30_000) {
+      lastDiskSaveAt = Date.now();
+      await saveState(reason);
+    }
     broadcast();
   } catch (err) {
     const raw =
@@ -928,7 +979,19 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
 
   await poll();
   // Nothing to poll for when subscribers are off, so don't wake up to do it.
-  if (CONFIG.subsEnabled) setInterval(poll, CONFIG.pollSeconds * 1000);
+  if (CONFIG.subsEnabled) {
+    const every = CONFIG.exactSubsUrl
+      ? CONFIG.exactPollSeconds
+      : CONFIG.pollSeconds;
+    let busy = false;
+    setInterval(() => {
+      if (busy) return;
+      busy = true;
+      poll().finally(() => {
+        busy = false;
+      });
+    }, every * 1000);
+  }
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
