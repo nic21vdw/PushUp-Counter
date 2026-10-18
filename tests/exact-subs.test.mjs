@@ -94,6 +94,24 @@ test("the exact Studio count adds one push-up per subscriber, live", async (t) =
   exact = { count: 2710, exact: true };
   const two = await until(read, (s) => s?.subs === 2710, 5_000);
   assert.equal(two.owed, 13);
+
+  exact = { count: 2700, exact: false };
+  await wait(2_500);
+  const held = await read();
+  assert.equal(
+    held.subs,
+    2710,
+    "a dropped exact feed holds the last exact count",
+  );
+  assert.equal(held.owed, 13);
+
+  exact = { count: 2712, exact: true };
+  const back = await until(read, (s) => s?.subs === 2712, 5_000);
+  assert.equal(
+    back.owed,
+    15,
+    "subscribers gained while the feed was down still add push-ups",
+  );
   assert.ok(
     !/googleapis/.test(output.join("")),
     "the API is not called while exact",

@@ -64,6 +64,10 @@ const CONFIG = {
     return /^(off|none|)$/i.test(url.trim()) ? "" : url.trim();
   })(),
   exactPollSeconds: Math.max(1, Number(env("EXACT_POLL_SECONDS", "2")) || 2),
+  exactGraceSeconds: Math.max(
+    0,
+    Number(env("EXACT_GRACE_SECONDS", "600")) || 0,
+  ),
   // One subscriber, one push-up. Configurable because the arithmetic stops
   // being survivable somewhere north of a few hundred subs a stream, but it is
   // a number you set once in .env — not something a page can move.
@@ -473,6 +477,7 @@ async function fetchSubscriberCount() {
 }
 
 let lastApiAt = 0;
+let lastExactAt = 0;
 let lastDiskSaveAt = 0;
 
 async function fetchExactSubs() {
@@ -491,6 +496,7 @@ async function fetchExactSubs() {
 async function readSubs() {
   const exact = await fetchExactSubs();
   if (exact !== null) {
+    lastExactAt = Date.now();
     return {
       subs: exact,
       hidden: false,
@@ -498,6 +504,7 @@ async function readSubs() {
       exact: true,
     };
   }
+  if (Date.now() - lastExactAt < CONFIG.exactGraceSeconds * 1000) return null;
   if (Date.now() - lastApiAt < CONFIG.pollSeconds * 1000) return null;
   lastApiAt = Date.now();
   return { ...(await fetchSubscriberCount()), exact: false };

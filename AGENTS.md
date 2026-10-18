@@ -149,7 +149,9 @@ announcer off so two voices never talk over each other.
 YouTube's public API rounds the sub count to three significant figures, so on its own
 it only moves in steps of ten. The server reads `http://127.0.0.1:4757/subs` (the exact
 YouTube Studio count from `orca\projects\OBS\subs-server.mjs`) every 2 s and uses it while
-it reports `exact: true`; otherwise it falls back to the API every `POLL_SECONDS`.
+it reports `exact: true`; when that feed drops it holds the last exact count for `EXACT_GRACE_SECONDS` (600) and only
+then falls back to the API every `POLL_SECONDS`. Falling back on every blip used to rebase the
+baseline across the gap, and on 2026-10-17 that swallowed two real subscribers.
 `EXACT_SUBS_URL=off` turns the feed off, and the no-YouTube tests set it so a live feed on
 the dev machine cannot leak in. Switching between the exact and rounded source moves the
 baseline by the same jump, so a source change never adds or removes push-ups by itself.
