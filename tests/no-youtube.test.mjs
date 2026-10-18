@@ -151,7 +151,14 @@ test("the stream session opens without a successful poll", async (t) => {
 });
 
 test("push-ups still count, and still come off the total", async (t) => {
-  const server = await startServer();
+  const first = await startServer();
+  const now = new Date().toISOString();
+  await fs.writeFile(
+    path.join(first.dir, "state.json"),
+    JSON.stringify({ carriedOver: 10, streamStartedAt: now, lastSeenAt: now }),
+  );
+  await first.stop({ keepDir: true });
+  const server = await startServer({ dir: first.dir });
   t.after(() => server.stop());
 
   const before = await server.state();

@@ -117,3 +117,76 @@ test("the exact Studio count adds one push-up per subscriber, live", async (t) =
     "the API is not called while exact",
   );
 });
+
+test("being ahead never swallows new subscribers", async (t) => {
+  let exact = { count: 2712, exact: true };
+  const feed = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(exact));
+  });
+  await new Promise((resolve) => feed.listen(0, "127.0.0.1", resolve));
+  t.after(() => feed.close());
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "pushup-ahead-"));
+  await fs.copyFile(path.join(ROOT, "server.js"), path.join(dir, "server.js"));
+  await fs.symlink(
+    path.join(ROOT, "public"),
+    path.join(dir, "public"),
+    LINK_TYPE,
+  );
+  const now = new Date().toISOString();
+  await fs.writeFile(
+    path.join(dir, "state.json"),
+    JSON.stringify({
+      carriedOver: 0,
+      baselineSubs: 2690,
+      done: 45,
+      subs: 2712,
+      subsExact: true,
+      streamStartedAt: now,
+      lastSeenAt: now,
+    }),
+  );
+
+  const port = PORT + 1;
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: dir,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: "127.0.0.1",
+      YOUTUBE_API_KEY: "unused-while-exact",
+      YOUTUBE_CHANNEL_ID: "UCFAKE",
+      EXACT_SUBS_URL: `http://127.0.0.1:${feed.address().port}/subs`,
+      EXACT_POLL_SECONDS: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => child.kill());
+
+  const read = () =>
+    fetch(`http://127.0.0.1:${port}/api/state`)
+      .then((r) => r.json())
+      .catch(() => null);
+
+  const start = await until(read, (s) => s?.subs === 2712);
+  assert.equal(start.left, 0);
+  assert.equal(start.done, 45, "push-ups already done stay on the record");
+  assert.equal(
+    start.surplus,
+    23,
+    "the 23 done past what was owed are set aside",
+  );
+
+  exact = { count: 2713, exact: true };
+  const one = await until(read, (s) => s?.subs === 2713, 5_000);
+  assert.equal(one.left, 1, "+1 subscriber adds one push-up even when ahead");
+
+  exact = { count: 2715, exact: true };
+  const two = await until(read, (s) => s?.subs === 2715, 5_000);
+  assert.equal(two.left, 3, "+2 in one poll adds two");
+
+  exact = { count: 2714, exact: true };
+  const drop = await until(read, (s) => s?.subs === 2714, 5_000);
+  assert.ok(drop.left <= two.left, "a drop adds nothing");
+});

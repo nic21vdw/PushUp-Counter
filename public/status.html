@@ -350,11 +350,13 @@
 
         // Once you are ahead, `left` sticks at zero and the sum stops making
         // sense on its own — say how far past the line you are.
-        const ahead = Math.max(0, -state.rawLeft);
+        const extra = (state.surplus ?? 0) + Math.max(0, -state.rawLeft);
         $("sum").innerHTML =
           `${fmt(state.carriedOver)} carried over + ${fmt(state.subsGained)} subs × ${state.perSub}` +
-          ` − ${fmt(state.done)} done = <b>${fmt(state.left)}</b>` +
-          (ahead ? ` &nbsp;·&nbsp; ${fmt(ahead)} ahead` : "");
+          ` − ${fmt(state.credited ?? state.done)} done = <b>${fmt(state.left)}</b>` +
+          (extra
+            ? ` &nbsp;·&nbsp; ${fmt(extra)} extra (not credited against new subs)`
+            : "");
 
         $("stream-since").textContent = state.streamStartedAt
           ? `Stream started ${new Date(state.streamStartedAt).toLocaleString()} at ${fmt(

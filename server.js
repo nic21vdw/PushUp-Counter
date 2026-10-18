@@ -106,6 +106,7 @@ const DEFAULT_STATE = {
   baselineSubs: null,
   // Push-ups the camera has counted this stream.
   done: 0,
+  surplus: 0,
   // Last successful reading from the YouTube API.
   subs: null,
   subsExact: null,
@@ -316,8 +317,20 @@ function activeCameraView() {
 }
 
 /** Bank push-ups the camera actually saw. The only way `done` ever moves. */
+function credited() {
+  return state.done - state.surplus;
+}
+
+function settle() {
+  const over = credited() - view().owed;
+  if (over <= 0) return 0;
+  state.surplus += over;
+  return over;
+}
+
 function recordReps(reps, clientId = null) {
   state.done += reps;
+  settle();
   state.lastRepAt = new Date().toISOString();
   if (clientId) activeCamera = { id: clientId, at: Date.now() };
 }
@@ -341,11 +354,12 @@ function startNewStream(subs, closingSubs = subs) {
       : 0;
   const stillOwed = Math.max(
     0,
-    state.carriedOver + gained * CONFIG.perSub - state.done,
+    state.carriedOver + gained * CONFIG.perSub - credited(),
   );
 
   state.carriedOver = stillOwed;
   state.done = 0;
+  state.surplus = 0;
   state.baselineSubs = subs ?? state.subs;
   state.streamStartedAt = new Date().toISOString();
   return stillOwed;
@@ -364,7 +378,7 @@ function setLeft(left) {
     state.subs !== null && state.baselineSubs !== null
       ? state.subs - state.baselineSubs
       : 0;
-  state.carriedOver = left + state.done - subsGained * CONFIG.perSub;
+  state.carriedOver = left + credited() - subsGained * CONFIG.perSub;
   return view().left;
 }
 
@@ -381,7 +395,7 @@ function view() {
   // drag the total owed below zero and put "3 / -11" on screen. You cannot owe
   // a negative number of push-ups; the floor is nothing owed.
   const owed = Math.max(0, state.carriedOver + fromSubs);
-  const rawLeft = owed - state.done;
+  const rawLeft = owed - credited();
 
   return {
     // What the overlay shows. Never negative: getting ahead banks nothing.
@@ -389,6 +403,8 @@ function view() {
     rawLeft,
     owed,
     done: state.done,
+    credited: credited(),
+    surplus: state.surplus,
     carriedOver: state.carriedOver,
     perSub: CONFIG.perSub,
     subs,
@@ -613,6 +629,8 @@ async function poll({ quiet = false } = {}) {
     // Written every poll, not just on a change: this timestamp is what tells a
     // restart whether the stream is still going, so it must not go stale while
     // the sub count happens to sit still.
+    const over = settle();
+    if (over > 0) reason ??= `sub count fell; ${over} done push-ups set aside`;
     state.lastSeenAt = new Date().toISOString();
     if (reason || previous !== subs || Date.now() - lastDiskSaveAt >= 30_000) {
       lastDiskSaveAt = Date.now();
@@ -953,6 +971,15 @@ const server = http.createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 
 loadState();
+{
+  const over = settle();
+  if (over > 0) {
+    console.log(
+      `[state] ${over} push-ups done past what was owed are kept as done, not as credit against new subs`,
+    );
+    saveState(`${over} push-ups beyond what was owed set aside as surplus`);
+  }
+}
 
 server.listen(CONFIG.port, CONFIG.host, async () => {
   const base = `http://${CONFIG.host === "0.0.0.0" ? "localhost" : CONFIG.host}:${CONFIG.port}`;

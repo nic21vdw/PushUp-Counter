@@ -63,6 +63,20 @@ async function startServer(env = {}) {
   const base = `http://127.0.0.1:${port}`;
   return {
     base,
+    async owe(left) {
+      const token = (
+        await fs.readFile(path.join(dir, ".admin-token"), "utf8")
+      ).trim();
+      const res = await fetch(`${base}/api/count`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-pushup-admin": token,
+        },
+        body: JSON.stringify({ left }),
+      });
+      assert.equal(res.status, 200);
+    },
     async post(endpoint, body) {
       const res = await fetch(`${base}${endpoint}`, {
         method: "POST",
@@ -97,6 +111,7 @@ test("a detected rep brings the number down by one", async (t) => {
   const server = await startServer();
   t.after(() => server.stop());
 
+  await server.owe(5);
   const before = await server.state();
   const { status, body } = await server.post("/api/rep", {
     clientId: "overlay-a",
@@ -283,7 +298,13 @@ test("left never goes negative, so getting ahead banks nothing", async (t) => {
   await server.post("/api/rep", { reps: 20 });
   const state = await server.state();
 
-  assert.equal(state.rawLeft, -20, "the raw figure keeps the overshoot");
+  assert.equal(state.done, 20, "every rep is still counted as done");
+  assert.equal(state.surplus, 20, "reps past what was owed are set aside");
+  assert.equal(
+    state.rawLeft,
+    0,
+    "the overshoot is not credit against new subs",
+  );
   assert.equal(state.left, 0, "what the overlay shows bottoms out at zero");
 });
 

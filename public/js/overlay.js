@@ -189,17 +189,19 @@ function render() {
   if (options.bar) {
     // Nothing owed yet is an empty bar, not a full one — you have not finished,
     // there is simply nothing to finish.
-    const fraction = owed > 0 ? Math.min(1, Math.max(0, done / owed)) : 0;
+    const credited =
+      (serverState.credited ?? serverState.done ?? 0) + pendingReps;
+    const fraction = owed > 0 ? Math.min(1, Math.max(0, credited / owed)) : 0;
     barFill.style.width = `${(fraction * 100).toFixed(1)}%`;
 
     // Push-ups left bottoms out at zero, so once you are ahead the big number
     // stops moving and every rep after that looks like nothing happened. The
     // done figure always moves, and the credit says how far past the line you
     // are — which is the part the zero was hiding.
-    const ahead = Math.max(0, -rawLeft);
+    const extra = (serverState.surplus ?? 0) + Math.max(0, -rawLeft);
     progressText.textContent =
       `${format(done)} done · ${format(owed)} owed` +
-      (ahead ? ` · ${format(ahead)} ahead` : "");
+      (extra ? ` · ${format(extra)} extra` : "");
     progressEl.hidden = false;
   }
 

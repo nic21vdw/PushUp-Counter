@@ -155,3 +155,12 @@ baseline across the gap, and on 2026-10-17 that swallowed two real subscribers.
 `EXACT_SUBS_URL=off` turns the feed off, and the no-YouTube tests set it so a live feed on
 the dev machine cannot leak in. Switching between the exact and rounded source moves the
 baseline by the same jump, so a source change never adds or removes push-ups by itself.
+
+## Getting ahead does not bank credit against new subs
+
+`left` is `owed - credited`, where `credited = done - surplus`. A rep done while nothing is
+owed still adds to `done` (the record of what happened) but also to `surplus`, so it is not
+credit. Before this, `done` was subtracted whole: 45 done against 22 owed meant the next 23
+subscribers added nothing on screen, which is how "two new subs added zero" happened on
+2026-10-17. `settle()` runs after every rep, every poll and at boot, and moves any `credited`
+past `owed` into `surplus`. A new stream resets `surplus` with `done`.
