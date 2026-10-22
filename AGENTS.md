@@ -62,10 +62,13 @@ keep it that way, and do not add an HTTP route that sets the count without it.
 
 ## Two things that make a working tracker look broken
 
-- **The window must be visible.** Chrome throttles a fully-occluded window until
-  the detector stops sampling and the camera will not even open. Check
-  `document.visibilityState`. The Options panel reports the sample rate for this
-  reason; under 25/s is a problem, 0 means the window is behind something.
+- **The window must be open, not necessarily visible.** Frames come off the
+  camera track (`MediaStreamTrackProcessor` in `pose-tracker.js`), so a tracker
+  covered by OBS, minimised or in a background tab keeps counting. Before
+  2026-10-21 the loop ran on `requestVideoFrameCallback`, which Chrome stops for
+  a page it is not painting, and a covered window counted nothing. Do not move
+  inference back onto a paint-driven callback. The Options panel's sample rate is
+  the check: under 10/s reps start to go missing.
 - **The page must be clicked once.** Browsers refuse audio until a page has been
   interacted with, silently. OBS browser sources are exempt. The framing line
   says "Click the window once to turn the sound on" when this is what is wrong.

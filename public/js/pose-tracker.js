@@ -238,6 +238,9 @@ export class PoseTracker {
     this.lastTimestamp = 0;
     this.frameHandle = null;
     this.usingFrameCallback = false;
+    this.frameProcessor = null;
+    this.frameReader = null;
+    this.frameTrack = null;
     this.flashAt = -Infinity;
     this.#heat = 0;
     // The elbow gauge fills from empty at `gaugeTop` degrees to full at
@@ -425,6 +428,7 @@ export class PoseTracker {
       else cancelAnimationFrame(this.frameHandle);
       this.frameHandle = null;
     }
+    this.#releaseTrack();
     if (this.stream) {
       for (const track of this.stream.getTracks()) track.stop();
       this.stream = null;
@@ -460,15 +464,22 @@ export class PoseTracker {
   }
 
   /**
-   * Drive inference off the decoder rather than off the display.
+   * Drive inference off the camera rather than off the display.
    *
-   * `requestVideoFrameCallback` fires once per decoded camera frame, so a 60 fps
-   * webcam gives 60 samples a second. `requestAnimationFrame` fires once per
-   * repaint, which in an OBS browser source is the scene's frame rate — often
-   * 30, sometimes less while the encoder is busy — and every sample lost that
-   * way comes straight off the resolution of a fast rep.
+   * Frames are pulled off the track with `MediaStreamTrackProcessor` where the
+   * browser has it. Both `requestVideoFrameCallback` and `requestAnimationFrame`
+   * stop dead once Chrome decides the page is not being painted — a background
+   * tab, a minimised window, or on Windows a window merely covered by OBS — and
+   * a stopped loop counts nothing while the camera keeps streaming.
+   *
+   * `requestVideoFrameCallback` is the fallback: once per decoded frame, rather
+   * than once per repaint as `requestAnimationFrame` is.
    */
   #loop() {
+    if (!this.#readTrack()) this.#loopVideo();
+  }
+
+  #loopVideo() {
     if (typeof this.video.requestVideoFrameCallback === "function") {
       this.usingFrameCallback = true;
       const step = () => {
@@ -492,7 +503,64 @@ export class PoseTracker {
     this.frameHandle = requestAnimationFrame(step);
   }
 
-  #processFrame() {
+  #readTrack() {
+    const Processor = globalThis.MediaStreamTrackProcessor;
+    const track = this.stream?.getVideoTracks?.()[0];
+    if (typeof Processor !== "function" || !track) return false;
+
+    try {
+      this.frameTrack = track.clone();
+      this.frameProcessor = new Processor({
+        track: this.frameTrack,
+        maxBufferSize: 1,
+      });
+      this.frameReader = this.frameProcessor.readable.getReader();
+    } catch (err) {
+      console.warn("reading frames off the track failed", err);
+      this.#releaseTrack();
+      return false;
+    }
+    this.#pump(this.frameReader);
+    return true;
+  }
+
+  #releaseTrack() {
+    this.frameReader?.cancel().catch(() => {});
+    this.frameReader = null;
+    this.frameProcessor = null;
+    this.frameTrack?.stop();
+    this.frameTrack = null;
+  }
+
+  async #pump(reader) {
+    const current = () => this.running && this.frameReader === reader;
+    while (current()) {
+      let frame;
+      try {
+        const { value, done } = await reader.read();
+        if (done) break;
+        frame = value;
+      } catch {
+        break;
+      }
+
+      try {
+        if (current()) this.#processFrame(frame);
+      } catch (err) {
+        console.error("camera frame failed", err);
+      } finally {
+        frame.close();
+      }
+    }
+
+    if (this.running && this.frameReader === reader) {
+      this.#releaseTrack();
+      console.warn("camera frame reader ended; falling back to the video loop");
+      this.#loopVideo();
+    }
+  }
+
+  #processFrame(source = this.video) {
     // MediaPipe rejects a timestamp that does not advance, and two frames can
     // land inside the same clock tick once the rate is high enough.
     const timestamp = Math.max(performance.now(), this.lastTimestamp + 1);
@@ -506,7 +574,7 @@ export class PoseTracker {
 
     let result;
     try {
-      result = this.landmarker.detectForVideo(this.video, timestamp);
+      result = this.landmarker.detectForVideo(source, timestamp);
     } catch (err) {
       // A single bad frame shouldn't kill the loop.
       console.warn("pose detection frame failed", err);
@@ -520,7 +588,7 @@ export class PoseTracker {
     this.worldLandmarks = worldLandmarks;
     try {
       try {
-        this.#draw(landmarks, mask);
+        this.#draw(landmarks, mask, source);
       } catch (err) {
         this.drawFailures += 1;
         if (this.drawFailures <= 3) console.warn("pose drawing failed", err);
@@ -533,7 +601,7 @@ export class PoseTracker {
     }
   }
 
-  #draw(landmarks, mask) {
+  #draw(landmarks, mask, source = this.video) {
     const { ctx, canvas } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -541,7 +609,7 @@ export class PoseTracker {
       this.onFrame({
         ctx,
         canvas,
-        video: this.video,
+        video: source,
         landmarks,
         mask,
         highlight: this.highlight,

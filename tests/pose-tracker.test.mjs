@@ -439,3 +439,205 @@ test("a frame whose drawing throws still reaches the rep counter", async () => {
       Object.defineProperty(globalThis, "navigator", realNavigator);
   }
 });
+
+function trackCamera({ frames, endWhenDry = false }) {
+  const log = { reads: 0, cancelled: false, clones: [], stopped: [] };
+  let release = null;
+  const makeTrack = (name) => ({
+    name,
+    clone() {
+      const copy = makeTrack(`${name}-clone`);
+      log.clones.push(copy);
+      return copy;
+    },
+    stop() {
+      log.stopped.push(name);
+    },
+  });
+  const track = makeTrack("camera");
+  const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+
+  class Processor {
+    constructor({ track: source, maxBufferSize }) {
+      log.source = source;
+      log.maxBufferSize = maxBufferSize;
+      let next = 0;
+      this.readable = {
+        getReader: () => ({
+          read: () => {
+            log.reads += 1;
+            if (next < frames.length)
+              return Promise.resolve({ value: frames[next++], done: false });
+            if (endWhenDry) return Promise.resolve({ done: true });
+            return new Promise((resolve) => {
+              release = () => resolve({ done: true });
+            });
+          },
+          cancel: async () => {
+            log.cancelled = true;
+            release?.();
+          },
+        }),
+      };
+    }
+  }
+  return { stream, Processor, log };
+}
+
+function frame(id) {
+  return {
+    id,
+    displayWidth: W,
+    displayHeight: H,
+    closed: 0,
+    close() {
+      this.closed += 1;
+    },
+  };
+}
+
+async function withCamera({ stream, Processor }, run) {
+  const realNavigator = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "navigator",
+  );
+  const realProcessor = globalThis.MediaStreamTrackProcessor;
+  Object.defineProperty(globalThis, "navigator", {
+    value: { mediaDevices: { getUserMedia: async () => stream } },
+    configurable: true,
+  });
+  globalThis.MediaStreamTrackProcessor = Processor;
+  const realWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await run();
+  } finally {
+    console.warn = realWarn;
+    if (realProcessor === undefined)
+      delete globalThis.MediaStreamTrackProcessor;
+    else globalThis.MediaStreamTrackProcessor = realProcessor;
+    if (realNavigator)
+      Object.defineProperty(globalThis, "navigator", realNavigator);
+  }
+}
+
+function hiddenTracker() {
+  const ctx = new FakeContext();
+  const canvas = { width: W, height: H, getContext: () => ctx };
+  const video = {
+    videoWidth: W,
+    videoHeight: H,
+    play: async () => {},
+    frameCallbacks: 0,
+    requestVideoFrameCallback() {
+      this.frameCallbacks += 1;
+      return 1;
+    },
+    cancelVideoFrameCallback() {},
+  };
+  const seen = [];
+  const detected = [];
+  const tracker = new PoseTracker({
+    video,
+    canvas,
+    onPose: (sample) => seen.push(sample),
+  });
+  tracker.landmarker = {
+    detectForVideo: (source) => {
+      detected.push(source);
+      return { landmarks: [pose()], worldLandmarks: [] };
+    },
+  };
+  return { tracker, video, seen, detected };
+}
+
+const drain = () => new Promise((resolve) => setImmediate(resolve));
+
+test("frames come off the camera track, so a covered window keeps counting", async () => {
+  const frames = [frame(1), frame(2), frame(3), frame(4)];
+  const camera = trackCamera({ frames });
+  const { tracker, video, seen, detected } = hiddenTracker();
+
+  await withCamera(camera, async () => {
+    await tracker.start();
+    await drain();
+
+    assert.equal(seen.length, 4, "every camera frame reaches the counter");
+    assert.deepEqual(
+      detected.map((f) => f.id),
+      [1, 2, 3, 4],
+    );
+    assert.ok(
+      frames.every((f) => f.closed === 1),
+      "each frame is released",
+    );
+    assert.equal(video.frameCallbacks, 0, "the paint-driven loop is not used");
+    assert.equal(camera.log.source.name, "camera-clone");
+    assert.equal(camera.log.maxBufferSize, 1);
+
+    tracker.stop();
+    await drain();
+    assert.ok(camera.log.cancelled, "stopping cancels the frame reader");
+    assert.ok(camera.log.stopped.includes("camera-clone"));
+    assert.ok(camera.log.stopped.includes("camera"));
+    assert.equal(tracker.frameReader, null);
+  });
+});
+
+test("a frame reader that ends hands over to the video loop", async () => {
+  const camera = trackCamera({ frames: [frame(1)], endWhenDry: true });
+  const { tracker, video, seen } = hiddenTracker();
+
+  await withCamera(camera, async () => {
+    await tracker.start();
+    await drain();
+
+    assert.equal(seen.length, 1);
+    assert.equal(video.frameCallbacks, 1, "falls back rather than going dark");
+    assert.ok(camera.log.stopped.includes("camera-clone"));
+    tracker.stop();
+  });
+});
+
+test("a camera switch retires the old frame reader", async () => {
+  const first = trackCamera({ frames: [] });
+  const { tracker } = hiddenTracker();
+
+  await withCamera(first, async () => {
+    await tracker.start();
+    await drain();
+  });
+  const second = trackCamera({ frames: [frame(9)] });
+  await withCamera(second, async () => {
+    await tracker.setCamera(null);
+    await drain();
+    assert.ok(first.log.cancelled);
+    assert.ok(first.log.stopped.includes("camera-clone"));
+    assert.equal(second.log.source.name, "camera-clone");
+    tracker.stop();
+  });
+});
+
+test("a frame that throws downstream does not stop the frames after it", async () => {
+  const frames = [frame(1), frame(2), frame(3)];
+  const camera = trackCamera({ frames });
+  const { tracker, seen } = hiddenTracker();
+  const onPose = tracker.onPose;
+  tracker.onPose = (sample) => {
+    onPose(sample);
+    if (seen.length === 1) throw new Error("handler blew up");
+  };
+  const realError = console.error;
+  console.error = () => {};
+  try {
+    await withCamera(camera, async () => {
+      await tracker.start();
+      await drain();
+      assert.equal(seen.length, 3);
+      assert.ok(frames.every((f) => f.closed === 1));
+      tracker.stop();
+    });
+  } finally {
+    console.error = realError;
+  }
+});

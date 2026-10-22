@@ -536,3 +536,79 @@ test("noise at the top of the range with no movement never makes a rep", () => {
     assert.equal(countSet(samples), 0, `seed ${seed}`);
   }
 });
+
+test("a steady set is still exact at 10 samples a second, a throttled window's rate", () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const samples = noisySet({
+      reps: 10,
+      periodMs: 1000,
+      sigma: 4,
+      spikeRate: 0.01,
+      seed,
+      fps: 10,
+    });
+    assert.equal(countSet(samples), 10, `seed ${seed}`);
+  }
+});
+
+const hold = (angle, frames) => Array(frames).fill(angle);
+
+test("arms that read a little short of lockout count once they settle at the top, not on the next rep", () => {
+  const counter = new RepCounter();
+  const shortTop = repAngles({ top: 152, bottom: 50, frames: 40 });
+  const run = feed(counter, [...hold(152, 10), ...shortTop, ...hold(152, 12)]);
+  assert.equal(run.completions, 1);
+  assert.equal(counter.reps, 1);
+  assert.ok(
+    counter.lastRepAt - (1000 + (10 + shortTop.length) * 33) < 400,
+    "banked within a moment of reaching the top",
+  );
+});
+
+test("the last rep of a set is banked even when you stand up straight after it", () => {
+  const counter = new RepCounter();
+  const shortTop = repAngles({ top: 151, bottom: 48, frames: 40 });
+  const set = [...hold(151, 10), ...times(3, [...shortTop, ...hold(151, 10)])];
+  const standing = set.length;
+  let completions = feed(counter, set).completions;
+  completions += feed(counter, hold(160, 30), {
+    plankAngle: 110,
+    startAt: 1000 + standing * 33,
+  }).completions;
+  assert.equal(completions, 3);
+});
+
+test("a pause near the top counts the rep once, and finishing the lockout adds nothing", () => {
+  const counter = new RepCounter();
+  const down = repAngles({ top: 170, bottom: 60, frames: 40 }).slice(0, 20);
+  const up = [80, 100, 120, 140, 145, ...hold(146, 12), 155, 165, 170];
+  const run = feed(counter, [
+    ...hold(170, 8),
+    ...down,
+    ...up,
+    ...hold(170, 10),
+  ]);
+  assert.equal(run.completions, 1);
+});
+
+test("sitting at the bottom never counts as holding the top", () => {
+  const counter = new RepCounter();
+  const down = repAngles({ top: 170, bottom: 60, frames: 40 }).slice(0, 20);
+  const run = feed(counter, [...hold(170, 8), ...down, ...hold(62, 60)]);
+  assert.equal(run.completions, 0);
+});
+
+test("a half rep that stalls below the top band does not count", () => {
+  const counter = new RepCounter();
+  const down = repAngles({ top: 170, bottom: 60, frames: 40 }).slice(0, 20);
+  const run = feed(counter, [
+    ...hold(170, 8),
+    ...down,
+    90,
+    105,
+    115,
+    120,
+    ...hold(122, 40),
+  ]);
+  assert.equal(run.completions, 0);
+});

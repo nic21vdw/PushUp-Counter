@@ -40,6 +40,13 @@ export const DEFAULT_OPTIONS = {
   upTolerance: 25,
   /** Downward turn (deg) away from the top of a rep that marks it as finished. */
   reversalDeg: 10,
+  /**
+   * How long (ms) a rep may sit within `upTolerance` of `upAngle` without
+   * climbing before it counts. Arms that read a few degrees short of lockout
+   * otherwise bank the rep only when the next one starts, and the last rep of a
+   * set never.
+   */
+  topHoldMs: 150,
   /** Minimum shoulder-hip-knee angle (deg) to be considered "in a plank". */
   minPlankAngle: 140,
   /** Landmark visibility below this is treated as unusable. */
@@ -66,6 +73,7 @@ export const STATE = {
 };
 
 const TOP_BAND_DEG = 8;
+const CLIMB_DEG = 3;
 const FULL_DEPTH_DEG = 70;
 const FULL_LOCKOUT_DEG = 165;
 const FULL_PLANK_DEG = 165;
@@ -262,6 +270,7 @@ export class RepCounter {
       this.phaseStartedAt = timestamp;
       this.minAngleThisPhase = angle;
       this.peakSinceBottom = angle;
+      this.#markClimb(angle, timestamp);
       this.repStartTop = this.topAngle;
       this.repStartedAt = this.topAt;
       this.topAngle = null;
@@ -279,18 +288,22 @@ export class RepCounter {
         // Still sinking, so whatever we had climbed to was part of the descent.
         this.minAngleThisPhase = angle;
         this.peakSinceBottom = angle;
+        this.#markClimb(angle, timestamp);
       } else if (angle > this.peakSinceBottom) {
         this.peakSinceBottom = angle;
       }
+      if (angle >= this.climbFrom + CLIMB_DEG)
+        this.#markClimb(angle, timestamp);
 
+      const nearTop = this.peakSinceBottom >= o.upAngle - o.upTolerance;
       const lockedOut = angle >= o.upAngle;
       const turnedAround =
-        this.peakSinceBottom >= o.upAngle - o.upTolerance &&
-        this.peakSinceBottom - angle >= o.reversalDeg;
+        nearTop && this.peakSinceBottom - angle >= o.reversalDeg;
+      const heldAtTop = nearTop && timestamp - this.climbAt >= o.topHoldMs;
 
       if (!inPlank) {
         this.feedback = "Straighten up — hips are sagging or piked.";
-      } else if (lockedOut || turnedAround) {
+      } else if (lockedOut || turnedAround || heldAtTop) {
         const heldLongEnough =
           timestamp - (this.phaseStartedAt ?? timestamp) >= o.minPhaseMs;
         const notTooSoon = timestamp - this.lastRepAt >= o.minRepMs;
@@ -325,6 +338,11 @@ export class RepCounter {
     }
 
     return this.#snapshot(repCompleted, angle, rep);
+  }
+
+  #markClimb(angle, timestamp) {
+    this.climbFrom = angle;
+    this.climbAt = timestamp;
   }
 
   #trackTop(angle, timestamp) {
