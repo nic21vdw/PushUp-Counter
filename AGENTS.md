@@ -119,6 +119,13 @@ anything else.
 
 ## Ports
 
+Rep continuity expires after `maxGapMs` without a usable angle, even if the
+camera delivers no missing-pose callbacks during that gap. Camera changes must
+call `counter.resetPhase()` to clear the old camera's median and smoothing
+history while preserving completed reps. The landmark-to-HTTP integration test
+in `tests/api-rep.test.mjs` checks side-on movement at 10, 30 and 60 samples per
+second against a disposable server, without adding test reps to the live count.
+
 `4747` is the real counter. Anything else is a throwaway test server — never
 give the owner a link to one, and stop it when finished.
 

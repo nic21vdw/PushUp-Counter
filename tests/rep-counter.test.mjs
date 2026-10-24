@@ -612,3 +612,55 @@ test("a half rep that stalls below the top band does not count", () => {
   ]);
   assert.equal(run.completions, 0);
 });
+
+test("a camera stall abandons the old descent even without missing-pose samples", () => {
+  const counter = new RepCounter();
+  feed(counter, [170, 170, 170, 140, 100, 80, 80, 80]);
+  assert.equal(counter.state, STATE.DOWN);
+
+  const resumed = feed(counter, hold(170, 10), { startAt: 6000 });
+  assert.equal(resumed.completions, 0);
+  assert.equal(resumed.reps, 0);
+
+  const next = feed(counter, REP, { startAt: 6330 });
+  assert.equal(next.completions, 1);
+  assert.equal(next.reps, 1);
+});
+
+test("reacquiring a pose after a short missing sample still expires an old rep", () => {
+  const counter = new RepCounter();
+  feed(counter, [170, 170, 170, 140, 100, 80, 80, 80]);
+  counter.update({ elbowAngle: null, timestamp: 1264 });
+
+  const resumed = feed(counter, hold(170, 10), { startAt: 6000 });
+  assert.equal(resumed.completions, 0);
+});
+
+test("a short camera interruption preserves a real down-and-up rep", () => {
+  const counter = new RepCounter();
+  feed(counter, [170, 170, 170, 140, 100, 80, 80, 80]);
+
+  const resumed = feed(counter, [90, 110, 135, 160, 170, 170], {
+    startAt: 1400,
+  });
+  assert.equal(resumed.completions, 1);
+});
+
+test("resetting a phase discards the previous camera's angle filter", () => {
+  const counter = new RepCounter();
+  feed(counter, REP);
+  feed(counter, hold(80, 8), { startAt: 2000 });
+  counter.resetPhase();
+
+  const first = counter.update({
+    elbowAngle: 170,
+    plankAngle: 175,
+    timestamp: 2264,
+  });
+  assert.equal(first.angle, null);
+  assert.equal(first.state, STATE.UNKNOWN);
+  const resumed = feed(counter, hold(170, 10), { startAt: 2297 });
+  assert.equal(resumed.completions, 0);
+  assert.equal(resumed.reps, 1);
+  assert.equal(resumed.state, STATE.UP);
+});

@@ -510,6 +510,15 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
   });
   showCoaching(framing, result);
 
+  if (result.repCompleted) {
+    detectedThisSession += 1;
+    repSound.play();
+    tracker?.flash();
+    flashRep();
+    if (options.count && !options.demo) client.reportReps(1);
+    if (options.count) hypeRep(result.rep ?? null);
+  }
+
   if (isSetupView()) {
     // The numbers you need to set the thresholds, where you can see them while
     // doing the movement. Off on stream.
@@ -534,18 +543,6 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
       `<b>${result.state}</b> · ` +
       `sound <b>${repSound.preset ?? "off"}/${repSound.status}` +
       `${repSound.latencyMs === null ? "" : ` ${repSound.latencyMs}ms`}</b> · ${result.feedback}`;
-  }
-
-  if (result.repCompleted) {
-    detectedThisSession += 1;
-    // Sound first. The two flashes below touch the DOM and force a style
-    // recalculation, and every millisecond of that would sit between the rep
-    // and the noise — which is the one piece of feedback being timed by ear.
-    repSound.play();
-    tracker?.flash();
-    flashRep();
-    if (options.count && !options.demo) client.reportReps(1);
-    if (options.count) hypeRep(result.rep ?? null);
   }
 }
 
@@ -829,6 +826,7 @@ function switchCamera(name) {
 /** @returns {Promise<boolean>} whether the camera actually opened. */
 async function openCamera(name) {
   activeCamera = name;
+  counter.resetPhase();
   try {
     if (tracker) await tracker.setCamera(name);
     else await startCamera();

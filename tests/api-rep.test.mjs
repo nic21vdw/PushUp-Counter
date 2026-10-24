@@ -15,6 +15,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { RepCounter } from "../public/js/rep-counter.js";
+import { anglesFromLandmarks } from "../public/js/pose-math.js";
+import { CounterClient } from "../public/js/counter-client.js";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -120,6 +123,94 @@ test("a detected rep brings the number down by one", async (t) => {
   assert.equal(status, 200);
   assert.equal(body.done, before.done + 1);
   assert.equal(body.rawLeft, before.rawLeft - 1);
+});
+
+test("side-on landmark motion reaches the saved count once per completed push-up", async (t) => {
+  const server = await startServer({ EXACT_SUBS_URL: "off" });
+  t.after(() => server.stop());
+  await server.owe(20);
+  const realFetch = globalThis.fetch;
+  const states = [];
+  globalThis.fetch = (url, init) => realFetch(new URL(url, server.base), init);
+  const client = new CounterClient({
+    clientId: "landmark-test",
+    onState: (state) => states.push(state),
+  });
+  t.after(() => {
+    client.stop();
+    globalThis.fetch = realFetch;
+  });
+
+  const landmarks = (angle, world) => {
+    const points = Array.from({ length: 33 }, () => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      visibility: 0.05,
+    }));
+    const set = (index, x, y) => {
+      points[index] = {
+        x: x / (world ? 1000 : 1280),
+        y: y / (world ? 1000 : 720),
+        z: 0,
+        visibility: 0.98,
+      };
+    };
+    const rad = (angle * Math.PI) / 180;
+    set(11, 400, 300);
+    set(13, 400, 450);
+    set(15, 400 + 150 * Math.sin(rad), 450 - 150 * Math.cos(rad));
+    set(23, 650, 350);
+    set(25, 900, 400);
+    return points;
+  };
+
+  let expected = 0;
+  for (const { world, stepMs, frames, top } of [
+    { world: false, stepMs: 33, frames: 25, top: 170 },
+    { world: true, stepMs: 16, frames: 25, top: 145 },
+    { world: true, stepMs: 100, frames: 11, top: 170 },
+  ]) {
+    const counter = new RepCounter();
+    let timestamp = 1000;
+    const feed = (angle) => {
+      const screen = landmarks(angle, false);
+      const sample = anglesFromLandmarks(
+        screen,
+        world ? landmarks(angle, true) : null,
+        counter.options.minVisibility,
+        1280 / 720,
+      );
+      assert.deepEqual(sample.sidesUsed, ["left"]);
+      const result = counter.update({ ...sample, timestamp });
+      timestamp += stepMs;
+      if (result.repCompleted) client.reportReps(1);
+    };
+
+    for (let i = 0; i < 15; i++) feed(top);
+    for (let rep = 0; rep < 5; rep++) {
+      for (let i = 0; i < frames; i++) {
+        const phase = (i / (frames - 1)) * 2 * Math.PI;
+        feed(top - ((top - 78) * (1 - Math.cos(phase))) / 2);
+      }
+    }
+    for (let i = 0; i < 20; i++) feed(top);
+    assert.equal(counter.reps, 5);
+
+    for (const angle of [150, 140, 125, 125, 140, 150, 170, 170]) feed(angle);
+    for (let i = 0; i < 10; i++) feed(170);
+    assert.equal(counter.reps, 5);
+
+    const deadline = Date.now() + 5000;
+    while (client.pending && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(client.pending, 0);
+    expected += 5;
+    const saved = await server.state();
+    assert.equal(saved.done, expected);
+    assert.equal(saved.left, 20 - expected);
+    assert.equal(states.at(-1).done, expected);
+  }
 });
 
 test("reps default to one, so the overlay need not say so", async (t) => {

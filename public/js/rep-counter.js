@@ -176,6 +176,13 @@ export class RepCounter {
   /** Forget the current phase but keep the rep count (used after a manual undo). */
   resetPhase() {
     this.state = STATE.UNKNOWN;
+    this.smoothedAngle = null;
+    this.rawAngle = null;
+    this.plankAngle = null;
+    this.inPlank = true;
+    this.lastSampleAt = null;
+    this.outOfPlankSince = null;
+    this.window = [];
     this.phaseStartedAt = null;
     this.minAngleThisPhase = 180;
     this.peakSinceBottom = null;
@@ -195,6 +202,12 @@ export class RepCounter {
    */
   update({ elbowAngle, plankAngle = null, timestamp }) {
     const o = this.options;
+    if (
+      this.lastSampleAt !== null &&
+      timestamp - this.lastSampleAt > o.maxGapMs
+    ) {
+      this.resetPhase();
+    }
     this.plankAngle = plankAngle;
     this.rawAngle = Number.isFinite(elbowAngle) ? elbowAngle : null;
 
