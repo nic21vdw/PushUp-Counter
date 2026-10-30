@@ -4,6 +4,14 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  normalizeSession,
+  recordCameraReps,
+  applyControl,
+  celebrate,
+  sessionView,
+  effectiveTarget,
+} from "./public/js/session-model.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -78,6 +86,10 @@ const CONFIG = {
   // Restarting after this long counts as a new stream. Short gaps (a crash, a
   // reboot, closing the laptop between scenes) resume the session in progress.
   // "off" never starts one automatically; "0" always does.
+  // Off lets the camera bank reps without a set being started first, the way
+  // the counter worked before sets existed. The tests use it; on stream, sets
+  // are what stop the scene counting just because it was cut to.
+  requireArm: !/^(0|off|false|no)$/i.test(env("REQUIRE_ARM", "on").trim()),
   newStreamAfterHours: (() => {
     const raw = env("NEW_STREAM_AFTER_HOURS", "6").toLowerCase();
     if (raw === "off" || raw === "never") return Infinity;
@@ -135,9 +147,13 @@ const DEFAULT_STATE = {
   // Null means "whatever the page defaults to" rather than a choice.
   sound: null,
   volume: null,
+  // Sets, streaks, goal, milestones, boss and the event log. See
+  // public/js/session-model.js.
+  session: null,
 };
 
 let state = { ...DEFAULT_STATE };
+state.session = normalizeSession(null);
 let lastError = null;
 /**
  * Something about the count itself is not to be trusted — it came from a
@@ -159,6 +175,7 @@ function loadState() {
       // afterwards would turn a repair into a second outage.
       const text = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
       state = { ...DEFAULT_STATE, ...JSON.parse(text) };
+      state.session = normalizeSession(state.session);
       if (file === BACKUP_FILE) {
         console.error(
           "[state] state.json was unreadable — the count came from the backup.",
@@ -336,6 +353,55 @@ function recordReps(reps, clientId = null) {
 }
 
 /**
+ * Take reps back off `done`: an undo, a -1, a set reset. The newest reps go
+ * first, and the newest reps are the surplus when there is any, so surplus
+ * shrinks before credit does.
+ */
+function removeReps(reps) {
+  const n = Math.min(reps, state.done);
+  state.surplus = Math.max(0, state.surplus - n);
+  state.done -= n;
+  state.surplus = Math.min(state.surplus, state.done);
+}
+
+function applyDelta(delta) {
+  if (delta > 0) recordReps(delta);
+  else if (delta < 0) removeReps(-delta);
+}
+
+/** Celebrations newly earned by the count as it now stands. */
+function celebrateNow() {
+  const v = view();
+  return celebrate(state.session, {
+    done: state.done,
+    target: effectiveTarget(state.session, {
+      owed: v.owed,
+      subsEnabled: CONFIG.subsEnabled,
+    }),
+    now: Date.now(),
+  });
+}
+
+/**
+ * Control routes change the count by hand, so a web page on some other site
+ * must not be able to reach them. A browser will not send a custom header to
+ * another origin without a CORS preflight this server never answers, and the
+ * Host check stops a DNS-rebound name from posing as localhost.
+ */
+function controlAllowed(req) {
+  if (req.headers["x-pushup-control"] !== "1") return false;
+  const host = String(req.headers.host ?? "").replace(/:\d+$/, "");
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(host)) return false;
+  const origin = req.headers.origin;
+  if (
+    origin &&
+    !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin)
+  )
+    return false;
+  return true;
+}
+
+/**
  * Begin a fresh stream session.
  *
  * Only subscribers gained from this moment on add push-ups. Whatever you still
@@ -396,6 +462,13 @@ function view() {
   // a negative number of push-ups; the floor is nothing owed.
   const owed = Math.max(0, state.carriedOver + fromSubs);
   const rawLeft = owed - credited();
+  const session = sessionView(state.session, {
+    done: state.done,
+    owed,
+    subsEnabled: CONFIG.subsEnabled,
+    now: Date.now(),
+  });
+  if (!CONFIG.requireArm) session.requireArm = false;
 
   return {
     // What the overlay shows. Never negative: getting ahead banks nothing.
@@ -428,8 +501,18 @@ function view() {
     subsEnabled: CONFIG.subsEnabled,
     error: lastError,
     warning,
+    session,
+    // The counting page's own report on what it can see. Diagnostics for the
+    // control panel; the audience-facing pages never draw it.
+    tracker:
+      telemetry && Date.now() - telemetry.receivedAt < TELEMETRY_STALE_MS
+        ? telemetry
+        : null,
   };
 }
+
+let telemetry = null;
+const TELEMETRY_STALE_MS = 5000;
 
 // ---------------------------------------------------------------------------
 // YouTube Data API v3
@@ -790,11 +873,132 @@ const server = http.createServer(async (req, res) => {
 
     const clientId =
       typeof body.clientId === "string" ? body.clientId.slice(0, 64) : null;
-    recordReps(reps, clientId);
 
-    await saveState(`${reps} push-up${reps === 1 ? "" : "s"} counted`);
+    // Each rep carries an id so a report that is retried, because the answer
+    // was lost or the page reloaded with it queued, is banked once. A page that
+    // predates ids gets fresh ones and behaves as it always did.
+    let ids;
+    if (body.ids === undefined) {
+      ids = Array.from({ length: reps }, () => crypto.randomUUID());
+    } else if (
+      Array.isArray(body.ids) &&
+      body.ids.length === reps &&
+      body.ids.every(
+        (v) => typeof v === "string" && v.length > 0 && v.length <= 64,
+      )
+    ) {
+      ids = body.ids;
+    } else {
+      return sendJson(res, 400, {
+        error: "ids must be one short string per rep",
+      });
+    }
+
+    const result = recordCameraReps(state.session, {
+      ids,
+      now: Date.now(),
+      bridged: Number(body.bridged) || 0,
+      requireArm: CONFIG.requireArm && state.session.requireArm,
+    });
+    if (result.refused) {
+      // 400 rather than 409 on purpose: a page from before sets existed drops
+      // a 400 and retries anything else, and a retried rep would land the
+      // moment a set started.
+      return sendJson(res, 400, {
+        error: "No set is running. Start a set to count push-ups.",
+        notArmed: true,
+      });
+    }
+    if (result.delta > 0) {
+      recordReps(result.delta, clientId);
+      celebrateNow();
+      await saveState(
+        `${result.delta} push-up${result.delta === 1 ? "" : "s"} counted`,
+      );
+      broadcast();
+    } else if (clientId) {
+      activeCamera = { id: clientId, at: Date.now() };
+    }
+    return sendJson(res, 200, { ...view(), duplicates: result.duplicates });
+  }
+
+  // Nic's control panel: sets, rest, corrections, goal, milestones, boss.
+  if (url.pathname === "/api/control" && req.method === "POST") {
+    if (!controlAllowed(req)) {
+      return sendJson(res, 403, {
+        error: "control requests come from the control panel on this machine",
+      });
+    }
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+    let result;
+    try {
+      result = applyControl(state.session, body, {
+        now: Date.now(),
+        done: state.done,
+        resetStream: () => {
+          const snapshot = {
+            carriedOver: state.carriedOver,
+            baselineSubs: state.baselineSubs,
+            done: state.done,
+            surplus: state.surplus,
+            streamStartedAt: state.streamStartedAt,
+          };
+          startNewStream(state.subs, state.subs);
+          return snapshot;
+        },
+        restoreStream: (snapshot) => Object.assign(state, snapshot),
+      });
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+    applyDelta(result.delta);
+    if (
+      result.delta !== 0 ||
+      body.action === "goal" ||
+      body.action === "milestones"
+    )
+      celebrateNow();
+    await saveState(result.reason);
     broadcast();
     return sendJson(res, 200, view());
+  }
+
+  // The counting page says what it can see about once a second, for the
+  // control panel's tracking readout. Never touches the count.
+  if (url.pathname === "/api/telemetry" && req.method === "POST") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(res, 400, { error: err.message });
+    }
+    const pick = (v) =>
+      typeof v === "number" && Number.isFinite(v) ? v : null;
+    const text = (v, n = 80) => (typeof v === "string" ? v.slice(0, n) : null);
+    telemetry = {
+      receivedAt: Date.now(),
+      quality: text(body.quality, 16),
+      qualityText: text(body.qualityText, 120),
+      tracking: text(body.tracking, 16),
+      sampleRate: pick(body.sampleRate),
+      angle: pick(body.angle),
+      torsoTilt: pick(body.torsoTilt),
+      plankAngle: pick(body.plankAngle),
+      nearMisses: pick(body.nearMisses),
+      lastNearMiss: pick(body.lastNearMiss),
+      lastDepth: pick(body.lastDepth),
+      lastTop: pick(body.lastTop),
+      camera:
+        body.camera === "error" ? "error" : body.camera === "ok" ? "ok" : null,
+      inferMs: pick(body.inferMs),
+    };
+    broadcast();
+    return sendJson(res, 200, { ok: true });
   }
 
   // Putting the number back after it has gone wrong.
@@ -951,8 +1155,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, view());
   }
 
-  // `/api/rep` is the only endpoint that writes the count. Anything else under /api/ is
-  // gone on purpose — say so plainly rather than letting it fall through to the
+  // Anything else under /api/ is gone on purpose — say so plainly rather than letting it fall through to the
   // static handler and come back as a confusing 405.
   if (url.pathname.startsWith("/api/")) {
     return sendJson(res, 404, { error: "Unknown endpoint" });
@@ -995,6 +1198,9 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
     `  Set it up     ${base}/overlay.html?setup=1   <- pick a camera, check framing`,
   );
   console.log(`  Status        ${base}/status.html`);
+  console.log(
+    `  Control panel ${base}/control.html   <- start sets, rest, fix the count`,
+  );
   if (CONFIG.subsEnabled) {
     const plural = CONFIG.perSub === 1 ? "" : "s";
     console.log(

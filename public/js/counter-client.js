@@ -6,8 +6,25 @@
  * are queued and retried rather than fired and forgotten: dropping a rep because
  * the server blipped would quietly let you off a push-up you actually did.
  *
- * It can only ever add. There is no path here for handing a rep back.
+ * Every rep carries an id, and the ids still waiting are kept in localStorage,
+ * so a report retried after a lost answer, or replayed after a reload, is
+ * banked once. Corrections by hand go through `control()`, which only the
+ * control panel calls.
  */
+
+const PENDING_KEY = "pushup.pendingReps";
+
+const newId = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+
+function storage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export class CounterClient {
   /**
@@ -22,6 +39,7 @@ export class CounterClient {
     onError = () => {},
     onPending = () => {},
     onConnection = () => {},
+    onRefused = () => {},
   } = {}) {
     // Lets the server tell counting pages apart, so two of them counting the
     // same push-ups is visible instead of silently doubling the total.
@@ -33,8 +51,11 @@ export class CounterClient {
     // a page can dim rather than sit there showing a number that stopped being
     // true several minutes ago.
     this.onConnection = onConnection;
-    /** Reps counted but not yet accepted by the server. */
-    this.pending = 0;
+    /** Why the server turned reps away, e.g. no set running. */
+    this.onRefused = onRefused;
+    /** Ids of reps counted but not yet accepted by the server. */
+    this.queue = this.#restore();
+    this.pending = this.queue.length;
     this.flushing = false;
     this.retryTimer = null;
     this.source = null;
@@ -67,33 +88,95 @@ export class CounterClient {
    * rather than sent — the server would reject it, and there is no legitimate
    * caller for it.
    */
-  reportReps(reps = 1) {
+  reportReps(reps = 1, { bridged = false } = {}) {
     if (!Number.isInteger(reps) || reps < 1) return;
-    this.pending += reps;
-    this.onPending(this.pending);
+    for (let i = 0; i < reps; i += 1) this.queue.push(newId());
+    if (bridged) this.bridged = (this.bridged ?? 0) + reps;
+    this.#changed();
     this.#flush();
   }
 
+  /** Send whatever a previous load of this page left queued. */
+  resume() {
+    if (this.queue.length) this.#flush();
+  }
+
+  #changed() {
+    this.pending = this.queue.length;
+    try {
+      storage()?.setItem(PENDING_KEY, JSON.stringify(this.queue.slice(-50)));
+    } catch {
+      /* private mode or full: the in-memory queue still works */
+    }
+    this.onPending(this.pending);
+  }
+
+  #restore() {
+    try {
+      const ids = JSON.parse(storage()?.getItem(PENDING_KEY) ?? "[]");
+      return Array.isArray(ids)
+        ? ids.filter((v) => typeof v === "string").slice(-50)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * A control-panel action. Resolves to the new state, or throws with the
+   * server's sentence.
+   */
+  async control(action, body = {}) {
+    const res = await fetch("/api/control", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Pushup-Control": "1",
+      },
+      body: JSON.stringify({ action, ...body }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? `Server error (${res.status})`);
+    this.onState(data);
+    return data;
+  }
+
+  /** Tell the control panel what the camera can see. Best effort. */
+  telemetry(body) {
+    fetch("/api/telemetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  }
+
   async #flush() {
-    if (this.flushing || this.pending === 0) return;
+    if (this.flushing || this.queue.length === 0) return;
     this.flushing = true;
 
     // Snapshot what we're sending so reps detected mid-request aren't lost.
-    const reps = this.pending;
+    const ids = this.queue.slice(0, 50);
+    const reps = ids.length;
+    const bridged = Math.min(this.bridged ?? 0, reps);
+    const sent = () => {
+      this.queue = this.queue.filter((id) => !ids.includes(id));
+      this.bridged = Math.max(0, (this.bridged ?? 0) - bridged);
+      this.#changed();
+    };
     try {
       const res = await fetch("/api/rep", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reps, clientId: this.clientId }),
+        body: JSON.stringify({ reps, ids, bridged, clientId: this.clientId }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         // A rejected report will never succeed on retry, so drop it and say so.
         if (res.status === 400) {
-          this.pending -= reps;
-          this.onPending(this.pending);
-          this.onError(data.error ?? "Server rejected the rep count.");
+          sent();
+          if (data.notArmed) this.onRefused(data.error ?? "No set is running.");
+          else this.onError(data.error ?? "Server rejected the rep count.");
         } else {
           this.onError(
             data.error ?? `Server error (${res.status}) — retrying.`,
@@ -103,8 +186,7 @@ export class CounterClient {
         return;
       }
 
-      this.pending -= reps;
-      this.onPending(this.pending);
+      sent();
       this.onError("");
       this.onState(data);
     } catch {
@@ -115,7 +197,7 @@ export class CounterClient {
     } finally {
       this.flushing = false;
       // Anything counted while that request was in flight goes out now.
-      if (this.pending !== 0 && this.retryTimer === null) this.#flush();
+      if (this.queue.length !== 0 && this.retryTimer === null) this.#flush();
     }
   }
 

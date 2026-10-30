@@ -68,7 +68,9 @@ test("a detected rep is posted to /api/rep with the page id", async () => {
       assert.equal(requests.length, 1);
       assert.equal(requests[0].url, "/api/rep");
       assert.equal(requests[0].method, "POST");
-      assert.deepEqual(requests[0].body, { reps: 1, clientId: "overlay-abc" });
+      const { ids, ...rest } = requests[0].body;
+      assert.deepEqual(rest, { reps: 1, bridged: 0, clientId: "overlay-abc" });
+      assert.equal(ids.length, 1);
       client.stop();
     },
   );
@@ -206,6 +208,47 @@ test("there is no token to send, so a source cannot be locked out", async () => 
         undefined,
         "nothing token-shaped is sent, and nothing is required",
       );
+      client.stop();
+    },
+  );
+});
+
+test("a retried report carries the same ids, so the server can bank it once", async () => {
+  let calls = 0;
+  await withServer(
+    (req, res) => {
+      calls += 1;
+      if (calls === 1) {
+        req.socket.destroy();
+        return;
+      }
+      json(res, 200, { done: 2 });
+    },
+    async (requests) => {
+      const client = new CounterClient({ clientId: "overlay-abc" });
+      client.reportReps(2);
+      await until(() => requests.length >= 2, 6000);
+      assert.equal(requests.length, 2);
+      assert.deepEqual(requests[1].body.ids, requests[0].body.ids);
+      assert.equal(client.pending, 0);
+      client.stop();
+    },
+  );
+});
+
+test("a rep refused because no set is running is dropped and reported, not retried", async () => {
+  const refused = [];
+  await withServer(
+    (req, res) =>
+      json(res, 400, { error: "No set is running.", notArmed: true }),
+    async (requests) => {
+      const client = new CounterClient({ onRefused: (m) => refused.push(m) });
+      client.reportReps(1);
+      await settle();
+      await settle();
+      assert.equal(requests.length, 1);
+      assert.equal(client.pending, 0);
+      assert.deepEqual(refused, ["No set is running."]);
       client.stop();
     },
   );

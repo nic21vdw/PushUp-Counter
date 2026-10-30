@@ -95,11 +95,13 @@ test("anglesFromLandmarks rejects a truncated landmark array", () => {
   assert.deepEqual(anglesFromLandmarks([{ x: 0, y: 0, visibility: 1 }]), {
     elbowAngle: null,
     plankAngle: null,
+    torsoTilt: null,
     sidesUsed: [],
   });
   assert.deepEqual(anglesFromLandmarks(null), {
     elbowAngle: null,
     plankAngle: null,
+    torsoTilt: null,
     sidesUsed: [],
   });
 });
@@ -263,4 +265,26 @@ test("a far arm that reads too straight no longer stops the reps being counted",
     `a plain mean bottoms out at ${lowestPlainMean}, never reaching depth`,
   );
   assert.equal(reps, 5);
+});
+
+test("torsoTiltDeg reads a plank as shallow and standing as steep", async () => {
+  const { torsoTiltDeg } = await import("../public/js/pose-math.js");
+  const body = (shoulderY, shoulderX) => {
+    const pts = Array.from({ length: 33 }, () => ({
+      x: 0,
+      y: 0,
+      z: 0,
+      visibility: 1,
+    }));
+    pts[11] = { x: shoulderX, y: shoulderY, z: -0.1, visibility: 1 };
+    pts[12] = { x: shoulderX, y: shoulderY, z: 0.1, visibility: 1 };
+    pts[23] = { x: 0, y: 0, z: -0.1, visibility: 1 };
+    pts[24] = { x: 0, y: 0, z: 0.1, visibility: 1 };
+    return pts;
+  };
+  const plank = body(-0.15, 0.55);
+  assert.ok(torsoTiltDeg(plank, plank) < 20);
+  const standing = body(-0.5, 0.02);
+  assert.ok(torsoTiltDeg(standing, standing) > 80);
+  assert.equal(torsoTiltDeg(plank, null), null);
 });

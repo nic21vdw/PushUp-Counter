@@ -39,7 +39,13 @@ async function startServer(dir, env = {}) {
   const port = nextPort++;
   const child = spawn(process.execPath, ["server.js"], {
     cwd: dir,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ...env },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: "127.0.0.1",
+      REQUIRE_ARM: "off",
+      ...env,
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 

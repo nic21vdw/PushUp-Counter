@@ -198,7 +198,8 @@ export function armReading(
  *   because they are far less sensitive to camera placement.
  * @param {number} [minVisibility]
  * @param {number} [aspect] Video width over height, for the screen-landmark fallback.
- * @returns {{elbowAngle: number|null, plankAngle: number|null, sidesUsed: string[]}}
+ * @returns {{elbowAngle: number|null, plankAngle: number|null,
+ *            torsoTilt: number|null, sidesUsed: string[]}}
  */
 export function anglesFromLandmarks(
   screenLandmarks,
@@ -207,7 +208,12 @@ export function anglesFromLandmarks(
   aspect = 1,
 ) {
   if (!screenLandmarks || screenLandmarks.length < 29) {
-    return { elbowAngle: null, plankAngle: null, sidesUsed: [] };
+    return {
+      elbowAngle: null,
+      plankAngle: null,
+      torsoTilt: null,
+      sidesUsed: [],
+    };
   }
   const { points, stretch } = geometryFor(
     screenLandmarks,
@@ -251,6 +257,48 @@ export function anglesFromLandmarks(
   return {
     elbowAngle: fuse(elbows),
     plankAngle: weightedMean(planks),
+    torsoTilt: torsoTiltDeg(screenLandmarks, worldLandmarks, minVisibility),
     sidesUsed,
   };
+}
+
+/**
+ * How steep the torso is, in degrees from horizontal: about 0-25 in a push-up,
+ * about 90 standing. Only from the metric world landmarks, whose y axis follows
+ * the camera's; from flat screen landmarks a head-on plank foreshortens into
+ * something that looks upright. Null when the shoulders or hips are not seen.
+ */
+export function torsoTiltDeg(
+  screenLandmarks,
+  worldLandmarks,
+  minVisibility = 0.5,
+) {
+  if (!worldLandmarks || worldLandmarks.length < 29) return null;
+  const seen = [
+    LM.LEFT_SHOULDER,
+    LM.RIGHT_SHOULDER,
+    LM.LEFT_HIP,
+    LM.RIGHT_HIP,
+  ].filter((i) => allVisible(screenLandmarks, [i], minVisibility));
+  const hasShoulder =
+    seen.includes(LM.LEFT_SHOULDER) || seen.includes(LM.RIGHT_SHOULDER);
+  const hasHip = seen.includes(LM.LEFT_HIP) || seen.includes(LM.RIGHT_HIP);
+  if (!hasShoulder || !hasHip) return null;
+  const mid = (a, b) => {
+    const points = [a, b]
+      .filter((i) => seen.includes(i))
+      .map((i) => worldLandmarks[i]);
+    const n = points.length;
+    return {
+      x: points.reduce((sum, p) => sum + p.x, 0) / n,
+      y: points.reduce((sum, p) => sum + p.y, 0) / n,
+      z: points.reduce((sum, p) => sum + (p.z ?? 0), 0) / n,
+    };
+  };
+  const shoulders = mid(LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER);
+  const hips = mid(LM.LEFT_HIP, LM.RIGHT_HIP);
+  const dy = Math.abs(shoulders.y - hips.y);
+  const flat = Math.hypot(shoulders.x - hips.x, shoulders.z - hips.z);
+  if (dy === 0 && flat === 0) return null;
+  return (Math.atan2(dy, flat) * 180) / Math.PI;
 }

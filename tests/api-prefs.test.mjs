@@ -38,7 +38,13 @@ async function startServer(env = {}) {
   const port = nextPort++;
   const child = spawn(process.execPath, ["server.js"], {
     cwd: dir,
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ...env },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOST: "127.0.0.1",
+      REQUIRE_ARM: "off",
+      ...env,
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -241,7 +247,12 @@ test("preferences survive a restart, which is the whole point of them", async (t
   const run = async (fn) => {
     const child = spawn(process.execPath, ["server.js"], {
       cwd: dir,
-      env: { ...process.env, PORT: String(port), HOST: "127.0.0.1" },
+      env: {
+        ...process.env,
+        PORT: String(port),
+        HOST: "127.0.0.1",
+        REQUIRE_ARM: "off",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     await new Promise((resolve, reject) => {

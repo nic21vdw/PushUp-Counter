@@ -22,6 +22,7 @@ import {
 import { checkFraming, FRAMING } from "./framing.js";
 import { buildOverlayUrl } from "./obs-link.js";
 import { hypeState, repsToReplay, observeServer, within } from "./hype-sync.js";
+import { hudModel, CelebrationGate, trackingQuality } from "./scene-hud.js";
 
 const params = new URLSearchParams(location.search);
 const options = parseOverlayOptions(params);
@@ -68,6 +69,19 @@ const statOwed = document.getElementById("stat-owed");
 const statSubs = document.getElementById("stat-subs");
 const statDetector = document.getElementById("stat-detector");
 const statLastRep = document.getElementById("stat-lastrep");
+const phaseEl = document.getElementById("phase");
+const trackEl = document.getElementById("trackchip");
+const targetEl = document.getElementById("target");
+const ticksEl = document.getElementById("ticks");
+const setlineEl = document.getElementById("setline");
+const bossEl = document.getElementById("boss");
+const bossName = document.getElementById("boss-name");
+const bossStage = document.getElementById("boss-stage");
+const bossFill = document.getElementById("boss-bar").querySelector("i");
+const bossHp = document.getElementById("boss-hp");
+const celebrateEl = document.getElementById("celebrate");
+const celebrateTitle = document.getElementById("celebrate-title");
+const celebrateText = document.getElementById("celebrate-text");
 const obsUrl = document.getElementById("obs-url");
 const obsCopy = document.getElementById("obs-copy");
 
@@ -76,6 +90,12 @@ const obsCopy = document.getElementById("obs-copy");
 document.body.dataset.mirror = options.mirror ? "1" : "0";
 document.body.dataset.video = options.video ? "1" : "0";
 document.body.dataset.layout = options.layout;
+document.body.dataset.hud = options.hud;
+const motionOff =
+  !options.motion ||
+  (globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ??
+    false);
+document.body.dataset.motion = motionOff ? "0" : "1";
 
 panel.style.setProperty("--size", `${options.size}px`);
 panel.style.setProperty("--color", options.color);
@@ -84,7 +104,11 @@ panel.style.setProperty("--radius", `${options.radius}px`);
 if (options.font) panel.style.setProperty("--font", options.font);
 if (!options.shadow) panel.style.setProperty("--shadow", "none");
 
-labelEl.textContent = options.label;
+const DEFAULT_LABEL = "PUSH-UPS TO DO";
+labelEl.textContent =
+  options.display === "goal" && options.label === DEFAULT_LABEL
+    ? "PUSH-UPS"
+    : options.label;
 labelEl.hidden = options.label === "";
 panel.classList.add("ready");
 
@@ -138,12 +162,70 @@ let detectedThisSession = 0;
  */
 let activeCamera = options.camera;
 
+const celebrations = new CelebrationGate();
+let cameraDown = false;
+
+/**
+ * Whether a rep seen now should be reported. Only inside a set Nic started,
+ * so cutting to the scene, stepping into frame or stretching never counts.
+ */
+function canCount() {
+  const session = serverState?.session;
+  if (!session) return false;
+  return session.requireArm === false || session.phase === "active";
+}
+
+/**
+ * A set starting or resuming forgets whatever the arms were doing before it,
+ * so the first rep has to be a whole one done after the button.
+ */
+function followServerPhase(before, state) {
+  const was = before?.session?.phase ?? null;
+  const now = state.session?.phase ?? null;
+  if (tracker) tracker.idle = !options.demo && !canCount() && !isSetupView();
+  if (was === now) return;
+  if (now === "active") {
+    counter.resetPhase();
+    if (was === "rest" && before.session.restStartedAt) {
+      director?.resume(
+        Date.now() - Date.parse(before.session.restStartedAt),
+        performance.now(),
+      );
+    }
+  }
+}
+
+/**
+ * Thresholds tuned in the control panel. They layer over the defaults and the
+ * URL, the same way the panel's camera choice outranks `?camera=`.
+ */
+const urlDetection = parseDetectionOptions(params);
+let appliedDetection = "{}";
+function followServerDetection(state) {
+  const detection = state.session?.detection ?? {};
+  const key = JSON.stringify(detection);
+  if (key === appliedDetection) return;
+  appliedDetection = key;
+  counter.configure({ ...DEFAULT_OPTIONS, ...urlDetection, ...detection });
+}
+
 const client = new CounterClient({
   clientId,
   onState: (state) => {
     const before = serverState;
     serverState = state;
+    followServerPhase(before, state);
+    followServerDetection(state);
+    director?.setComboGap(state.session?.streakGapMs);
     render();
+    for (const c of celebrations.take(state)) showCelebration(c);
+    if (
+      before?.session &&
+      state.session?.boss &&
+      before.session.boss &&
+      state.session.boss.hp < before.session.boss.hp
+    )
+      bossHit();
     followServerHype(before, state);
     // Said on the tracker, not just the status page: this is the window that is
     // open while you decide whether the number in front of you is right.
@@ -156,6 +238,7 @@ const client = new CounterClient({
     render();
   },
   onError: (message) => setStatus("server", message),
+  onRefused: (message) => setStatus("server", message, "info"),
   // A number that stopped updating is worse than an obviously dimmed one.
   onConnection: (up) => panel.classList.toggle("offline", !up),
 });
@@ -165,44 +248,60 @@ const format = (n) => Number(n).toLocaleString("en-US");
 function render() {
   if (!serverState) return;
 
-  // Reps in flight are already counted here but not yet in the server's total,
-  // so subtract them to keep the number honest and instant.
-  const rawLeft = (serverState.rawLeft ?? serverState.left ?? 0) - pendingReps;
-  const left = Math.max(0, rawLeft);
-  countEl.textContent = format(left);
+  const hud = hudModel(serverState, {
+    pendingReps,
+    display: options.display,
+    tracking: lastTracking,
+    cameraDown,
+  });
 
-  if (lastShown !== null && left !== lastShown) {
+  countEl.textContent = hud.big;
+  const shown = options.display === "left" ? hud.big : hud.done;
+  if (lastShown !== null && shown !== lastShown) {
     countEl.classList.remove("bump");
     void countEl.offsetWidth; // restart the animation
-    countEl.style.setProperty(
-      "--pulse",
-      left < lastShown ? "#4ade80" : "#ff5a5a",
-    );
+    const better =
+      options.display === "left" ? hud.big < lastShown : shown > lastShown;
+    countEl.style.setProperty("--pulse", better ? "#4ade80" : "#ff5a5a");
     countEl.classList.add("bump");
   }
-  lastShown = left;
-  renderPanelStatus(rawLeft);
+  lastShown = shown;
+  renderPanelStatus(
+    (serverState.rawLeft ?? serverState.left ?? 0) - pendingReps,
+  );
 
-  const owed = serverState.owed ?? 0;
-  const done = (serverState.done ?? 0) + pendingReps;
+  targetEl.textContent = hud.targetText ?? "";
+  targetEl.hidden = !hud.targetText;
+  phaseEl.textContent = hud.phaseText;
+  phaseEl.dataset.phase = hud.phase;
+  trackEl.textContent = hud.trackText ?? "";
+  trackEl.hidden = !hud.trackText;
 
   if (options.bar) {
-    // Nothing owed yet is an empty bar, not a full one — you have not finished,
-    // there is simply nothing to finish.
-    const credited =
-      (serverState.credited ?? serverState.done ?? 0) + pendingReps;
-    const fraction = owed > 0 ? Math.min(1, Math.max(0, credited / owed)) : 0;
-    barFill.style.width = `${(fraction * 100).toFixed(1)}%`;
-
-    // Push-ups left bottoms out at zero, so once you are ahead the big number
-    // stops moving and every rep after that looks like nothing happened. The
-    // done figure always moves, and the credit says how far past the line you
-    // are — which is the part the zero was hiding.
-    const extra = (serverState.surplus ?? 0) + Math.max(0, -rawLeft);
-    progressText.textContent =
-      `${format(done)} done · ${format(owed)} owed` +
-      (extra ? ` · ${format(extra)} extra` : "");
+    barFill.style.width = `${(hud.fraction * 100).toFixed(1)}%`;
+    const ticks = hud.ticks
+      .map(
+        (t) =>
+          `<i style="left:${t.pct.toFixed(2)}%" data-reached="${t.reached ? 1 : 0}"></i>`,
+      )
+      .join("");
+    if (ticksEl.innerHTML !== ticks) ticksEl.innerHTML = ticks;
+    progressText.textContent = hud.progressText;
     progressEl.hidden = false;
+  }
+
+  const setline = hud.setline.join('<span class="sep">·</span>');
+  if (setlineEl.innerHTML !== setline) setlineEl.innerHTML = setline;
+  setlineEl.hidden = !setline;
+
+  const boss = options.boss ? hud.boss : null;
+  bossEl.hidden = !boss || !options.video;
+  if (boss) {
+    bossName.textContent = boss.name;
+    bossStage.textContent = boss.stage;
+    bossEl.dataset.stage = String(boss.stageIndex);
+    bossFill.style.width = `${(boss.hpFraction * 100).toFixed(1)}%`;
+    bossHp.textContent = boss.hpText;
   }
 
   // What this stream's subscribers have actually cost you, in push-ups. That is
@@ -219,6 +318,49 @@ function render() {
   } else {
     sublineEl.hidden = true;
   }
+}
+
+// The rest timer counts on screen, and the "tracking" chip follows the camera.
+setInterval(() => {
+  if (serverState?.session?.phase === "rest") render();
+}, 1000);
+
+let bossHitTimer = null;
+function bossHit() {
+  if (motionOff || bossEl.hidden) return;
+  bossEl.classList.remove("hit");
+  void bossEl.offsetWidth;
+  bossEl.classList.add("hit");
+  clearTimeout(bossHitTimer);
+  bossHitTimer = setTimeout(() => bossEl.classList.remove("hit"), 300);
+}
+
+const CELEBRATION_TITLE = {
+  milestone: "MILESTONE",
+  goal: "GOAL COMPLETE",
+  boss: "BOSS DEFEATED",
+};
+const CELEBRATE_MS = 3200;
+let celebrateTimer = null;
+const celebrationQueue = [];
+
+function showCelebration(c) {
+  celebrationQueue.push(c);
+  if (celebrationQueue.length === 1) playCelebration();
+}
+
+function playCelebration() {
+  const c = celebrationQueue[0];
+  if (!c) return;
+  celebrateTitle.textContent = CELEBRATION_TITLE[c.kind] ?? "NICE";
+  celebrateText.textContent = c.label ?? "";
+  celebrateEl.hidden = false;
+  clearTimeout(celebrateTimer);
+  celebrateTimer = setTimeout(() => {
+    celebrateEl.hidden = true;
+    celebrationQueue.shift();
+    if (celebrationQueue.length) setTimeout(playCelebration, 250);
+  }, CELEBRATE_MS);
 }
 
 /* --------------------------------------------------------------- drawing */
@@ -496,7 +638,7 @@ window.addEventListener("keydown", (event) => {
 /* -------------------------------------------------------------- counting */
 
 function handlePose({ landmarks, worldLandmarks, timestamp }) {
-  const { elbowAngle, plankAngle } = anglesFromLandmarks(
+  const { elbowAngle, plankAngle, torsoTilt } = anglesFromLandmarks(
     landmarks,
     worldLandmarks,
     counter.options.minVisibility,
@@ -504,19 +646,30 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
       ? video.videoWidth / video.videoHeight
       : undefined,
   );
-  const result = counter.update({ elbowAngle, plankAngle, timestamp });
+  const result = counter.update({
+    elbowAngle,
+    plankAngle,
+    torsoTilt,
+    timestamp,
+  });
   const framing = checkFraming(landmarks, {
     minVisibility: counter.options.minVisibility,
   });
   showCoaching(framing, result);
+  noteTracking(result, framing);
 
   if (result.repCompleted) {
     detectedThisSession += 1;
-    repSound.play();
-    tracker?.flash();
-    flashRep();
-    if (options.count && !options.demo) client.reportReps(1);
-    if (options.count) hypeRep(result.rep ?? null);
+    if (options.demo || !options.count || canCount()) {
+      repSound.play();
+      tracker?.flash();
+      flashRep();
+      if (options.count && !options.demo)
+        client.reportReps(1, { bridged: Boolean(result.rep?.bridged) });
+      if (options.count) hypeRep(result.rep ?? null);
+    } else {
+      ignoredOutsideSet += 1;
+    }
   }
 
   if (isSetupView()) {
@@ -535,7 +688,12 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
     const deg = (value) => (value === null ? "—" : `${Math.round(value)}°`);
     tuneEl.hidden = false;
     tuneEl.innerHTML =
-      `<b>${detectedThisSession}</b> rep${detectedThisSession === 1 ? "" : "s"} detected · ` +
+      `<b>${detectedThisSession}</b> rep${detectedThisSession === 1 ? "" : "s"} detected` +
+      (ignoredOutsideSet
+        ? ` (<b>${ignoredOutsideSet}</b> outside a set)`
+        : "") +
+      ` · quality <b>${lastQuality.level}</b> · ` +
+      `near misses <b>${result.nearMisses}</b> · torso <b>${deg(result.torsoTilt)}</b> · ` +
       `elbow <b>${deg(result.angle)}</b> · ` +
       `plank <b>${deg(result.plankAngle)}</b> · ` +
       `last <b>${deg(result.lastRepDepth)}→${deg(result.lastRepTop)}</b> · ` +
@@ -544,6 +702,58 @@ function handlePose({ landmarks, worldLandmarks, timestamp }) {
       `sound <b>${repSound.preset ?? "off"}/${repSound.status}` +
       `${repSound.latencyMs === null ? "" : ` ${repSound.latencyMs}ms`}</b> · ${result.feedback}`;
   }
+}
+
+/* ------------------------------------------------------------- telemetry */
+
+let ignoredOutsideSet = 0;
+
+/** Frames a second the counter gets while a set runs, even when idling now. */
+const fullRate = () =>
+  (tracker?.sampleRate ?? 0) * (tracker?.idle ? tracker.idleEvery : 1);
+let lastTracking = null;
+let lastQuality = { level: "none", text: "" };
+let lastResult = null;
+let lastFraming = null;
+
+function noteTracking(result, framing) {
+  lastResult = result;
+  lastFraming = framing;
+  lastQuality = trackingQuality({
+    framing,
+    tracking: result.tracking,
+    sampleRate: fullRate(),
+  });
+  if (result.tracking !== lastTracking) {
+    lastTracking = result.tracking;
+    render();
+  }
+}
+
+// Once a second the counting page tells the control panel what it can see.
+// Only a page that counts does this; display-only sources have nothing to say.
+if (options.count && !options.demo) {
+  setInterval(() => {
+    const r = lastResult;
+    client.telemetry({
+      quality: cameraDown ? "none" : lastQuality.level,
+      qualityText: cameraDown
+        ? "Camera is off or unavailable"
+        : lastQuality.text,
+      tracking: r?.tracking ?? null,
+      sampleRate: fullRate(),
+      angle: r?.angle ?? null,
+      torsoTilt: r?.torsoTilt ?? null,
+      plankAngle: r?.plankAngle ?? null,
+      nearMisses: r?.nearMisses ?? 0,
+      lastNearMiss: counter.lastNearMiss?.depth ?? null,
+      lastDepth: r?.lastRepDepth ?? null,
+      lastTop: r?.lastRepTop ?? null,
+      camera: cameraDown ? "error" : tracker?.running ? "ok" : null,
+      inferMs: tracker?.inferMs ?? null,
+      framing: lastFraming?.code ?? null,
+    });
+  }, 1000);
 }
 
 /* ------------------------------------------------------------------ hype */
@@ -591,7 +801,7 @@ function emit(events) {
 
 function showCombo() {
   if (!comboEl) return;
-  const combo = director.combo;
+  const combo = serverState?.session?.streak ?? director.combo;
   if (combo === shownCombo) return;
   shownCombo = combo;
   comboEl.hidden = combo < 3;
@@ -750,6 +960,15 @@ let coachShown = null;
 
 function showCoaching(framing, result) {
   if (!options.coach) return;
+  // Advice is for someone mid-set. Between sets the scene is just the camera.
+  if (!isSetupView() && serverState?.session && !canCount()) {
+    if (coachShown) {
+      coachShown = null;
+      coachCode = null;
+      coachEl.hidden = true;
+    }
+    return;
+  }
 
   // Mid-rep form notes come from the counter, which knows what the movement is
   // doing; framing comes from the landmarks. Framing wins when both have
@@ -805,6 +1024,7 @@ async function startCamera() {
     onStatus: (message) =>
       setStatus("camera", message === "Tracking" ? "" : message, "info"),
   });
+  tracker.idle = !options.demo && !canCount() && !isSetupView();
   await tracker.start();
   setStatus("camera", "");
 }
@@ -831,12 +1051,20 @@ async function openCamera(name) {
     if (tracker) await tracker.setCamera(name);
     else await startCamera();
     setStatus("camera", "");
+    setCameraDown(false);
     return true;
   } catch (err) {
     console.error(err);
     setStatus("camera", await describeCameraFailure(err));
+    setCameraDown(true);
     return false;
   }
+}
+
+function setCameraDown(down) {
+  if (cameraDown === down) return;
+  cameraDown = down;
+  render();
 }
 
 /**
@@ -914,6 +1142,7 @@ async function boot() {
   try {
     const state = await (await fetch("/api/state")).json();
     serverState = state;
+    celebrations.take(state);
     render();
     if (state.cameraChosen) activeCamera = state.camera ?? null;
     else if (!options.camera && state.camera) activeCamera = state.camera;
@@ -930,9 +1159,11 @@ async function boot() {
   if (options.video || options.count) {
     try {
       await startCamera();
+      setCameraDown(false);
     } catch (err) {
       console.error(err);
       setStatus("camera", await describeCameraFailure(err));
+      if (options.count) setCameraDown(true);
     }
     // Camera labels only exist once permission has been granted, so the list
     // in the options panel is filled in after the first attempt, failed or not.
@@ -941,7 +1172,26 @@ async function boot() {
 
   await buildOptions().catch((err) => console.error(err));
 
-  if (!options.demo) client.connect();
+  if (!options.demo) {
+    client.connect();
+    if (options.count) client.resume();
+  }
+  watchObsScene();
+}
+
+/**
+ * Inside OBS, the browser source knows when it leaves the program output.
+ * Leaving pauses a set in progress so nothing counts off-screen; coming back
+ * never resumes it, Nic does that. In a plain browser there is no such signal
+ * and this does nothing: the Rest button is the pause.
+ */
+function watchObsScene() {
+  if (!options.scene || options.demo || !globalThis.obsstudio) return;
+  window.addEventListener("obsSourceActiveChanged", (event) => {
+    if (event?.detail?.active !== false) return;
+    if (serverState?.session?.phase !== "active") return;
+    client.control("scene-away").catch((err) => console.error(err));
+  });
 }
 
 boot();

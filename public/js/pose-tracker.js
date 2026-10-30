@@ -262,6 +262,15 @@ export class PoseTracker {
     // can be seen at all — the setup view puts it on screen for that reason.
     this.sampleRate = 0;
     this.lastSampleAt = null;
+    // Milliseconds one inference takes, smoothed. Rendering is measured
+    // separately by the page, so the two can be told apart when it gets slow.
+    this.inferMs = null;
+    // Between sets nothing is counted, so only every `idleEvery`th frame is
+    // run through the model: enough to keep the framing advice and the quality
+    // readout alive at a third of the cost. The camera itself stays open.
+    this.idle = false;
+    this.idleEvery = 3;
+    this.frameIndex = 0;
   }
 
   /** Loads the runtime and model once. Safe to call repeatedly. */
@@ -561,6 +570,8 @@ export class PoseTracker {
   }
 
   #processFrame(source = this.video) {
+    this.frameIndex += 1;
+    if (this.idle && this.frameIndex % this.idleEvery !== 0) return;
     // MediaPipe rejects a timestamp that does not advance, and two frames can
     // land inside the same clock tick once the rate is high enough.
     const timestamp = Math.max(performance.now(), this.lastTimestamp + 1);
@@ -574,7 +585,13 @@ export class PoseTracker {
 
     let result;
     try {
+      const started = performance.now();
       result = this.landmarker.detectForVideo(source, timestamp);
+      const took = performance.now() - started;
+      this.inferMs =
+        this.inferMs === null
+          ? took
+          : this.inferMs + 0.1 * (took - this.inferMs);
     } catch (err) {
       // A single bad frame shouldn't kill the loop.
       console.warn("pose detection frame failed", err);

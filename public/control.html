@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Push-Up Control</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0f15;
+        --card: #131a24;
+        --line: rgba(255, 255, 255, 0.12);
+        --text: #e8eef5;
+        --muted: #9aa8b8;
+        --cyan: #3ddcff;
+        --violet: #7c5cff;
+        --green: #4ade80;
+        --amber: #fbbf24;
+        --red: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+        font-size: 15px;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 16px;
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+      }
+      section.wide {
+        grid-column: 1 / -1;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0;
+        letter-spacing: 0.04em;
+      }
+      h2 {
+        font-size: 13px;
+        margin: 0 0 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 18px;
+      }
+      .big {
+        font-size: 56px;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .big small {
+        font-size: 26px;
+        color: var(--muted);
+        font-weight: 800;
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(4, auto);
+        gap: 4px 18px;
+        font-variant-numeric: tabular-nums;
+      }
+      .facts span {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .facts b {
+        font-size: 20px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 5px 12px;
+        border-radius: 999px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        border: 2px solid var(--line);
+      }
+      .pill[data-phase="active"] {
+        border-color: var(--green);
+        color: #b9ffd2;
+      }
+      .pill[data-phase="rest"] {
+        border-color: #93c5fd;
+      }
+      .pill[data-phase="done"] {
+        border-color: #fde047;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      button {
+        font: inherit;
+        font-weight: 800;
+        color: var(--text);
+        background: #1d2734;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--cyan);
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 3px solid var(--cyan);
+        outline-offset: 2px;
+      }
+      button.primary {
+        font-size: 20px;
+        padding: 16px 22px;
+        background: #12402a;
+        border-color: var(--green);
+      }
+      button.rest {
+        background: #13294a;
+        border-color: #93c5fd;
+      }
+      button.chat {
+        background: #2a1f4a;
+        border-color: var(--violet);
+      }
+      button.danger {
+        background: #3a1418;
+        border-color: var(--red);
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      kbd {
+        font-size: 11px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 4px;
+        margin-left: 6px;
+      }
+      input,
+      select {
+        font: inherit;
+        color: var(--text);
+        background: #0e141c;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      input[type="number"] {
+        width: 90px;
+      }
+      label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .note {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 8px 0 0;
+      }
+      #message {
+        min-height: 1.3em;
+        font-weight: 700;
+      }
+      #message[data-tone="error"] {
+        color: var(--red);
+      }
+      #message[data-tone="ok"] {
+        color: var(--green);
+      }
+      .quality {
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+      .quality[data-level="good"] {
+        color: var(--green);
+      }
+      .quality[data-level="fair"] {
+        color: var(--amber);
+      }
+      .quality[data-level="poor"],
+      .quality[data-level="none"] {
+        color: var(--red);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+      td {
+        padding: 5px 6px;
+        border-top: 1px solid var(--line);
+      }
+      td.kind {
+        font-weight: 800;
+        white-space: nowrap;
+      }
+      tr[data-manual="1"] td.kind {
+        color: #c4b5fd;
+      }
+      tr[data-undone="1"] td {
+        text-decoration: line-through;
+        opacity: 0.6;
+      }
+      .ms-row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .ms-row input[type="text"] {
+        flex: 1;
+        min-width: 0;
+      }
+      .readings {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        font-variant-numeric: tabular-nums;
+      }
+      .readings div span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .readings div b {
+        font-size: 18px;
+      }
+      .thresholds {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+      }
+      .thresholds label {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      #offline {
+        background: #3a1418;
+        color: #fecaca;
+        padding: 8px 12px;
+        border-radius: 10px;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="wide">
+        <div class="hero">
+          <div class="big">
+            <span id="done">—</span> <small id="target"></small>
+          </div>
+          <span class="pill" id="phase" data-phase="ready">READY</span>
+          <div class="facts">
+            <span>This set</span><span>Streak</span><span>Set best</span
+            ><span>Stream best</span> <b id="set-reps">0</b><b id="streak">0</b
+            ><b id="set-best">0</b><b id="session-best">0</b>
+          </div>
+        </div>
+        <p id="offline" hidden>
+          Lost the counter server. Totals are safe on disk; this page reconnects
+          by itself.
+        </p>
+        <p id="message" aria-live="polite"></p>
+      </section>
+
+      <section>
+        <h2>Set</h2>
+        <div class="row">
+          <button id="b-start" class="primary">Start set<kbd>S</kbd></button>
+          <button id="b-rest" class="rest">Rest<kbd>R</kbd></button>
+          <button id="b-resume" class="primary">Resume<kbd>R</kbd></button>
+          <button id="b-finish">Finish set<kbd>F</kbd></button>
+        </div>
+        <p class="note" id="set-note"></p>
+      </section>
+
+      <section>
+        <h2>Corrections</h2>
+        <div class="row">
+          <button id="b-chat" class="chat">
+            Chat says it counted (+1)<kbd>C</kbd>
+          </button>
+        </div>
+        <div class="row" style="margin-top: 8px">
+          <button id="b-undo">Undo last rep<kbd>U</kbd></button>
+          <button id="b-plus">+1<kbd>+</kbd></button>
+          <button id="b-minus">−1<kbd>−</kbd></button>
+        </div>
+        <p class="note">
+          Every correction is logged by kind below. The overlay shows one plain
+          total.
+        </p>
+      </section>
+
+      <section>
+        <h2>Tracking</h2>
+        <p>
+          <span class="quality" id="quality" data-level="none">NO TRACKER</span>
+          <span id="quality-text"></span>
+        </p>
+        <div class="readings">
+          <div><span>Frames/s</span><b id="t-rate">—</b></div>
+          <div><span>Inference</span><b id="t-infer">—</b></div>
+          <div><span>Elbow</span><b id="t-angle">—</b></div>
+          <div><span>Torso tilt</span><b id="t-tilt">—</b></div>
+          <div><span>Last rep</span><b id="t-last">—</b></div>
+          <div><span>Near misses</span><b id="t-near">—</b></div>
+        </div>
+        <p class="note" id="t-suggest"></p>
+        <button id="b-suggest" hidden></button>
+      </section>
+
+      <section>
+        <h2>Goal</h2>
+        <div class="row">
+          <label
+            >Target
+            <input
+              id="goal"
+              type="number"
+              min="1"
+              max="10000"
+              placeholder="subs"
+          /></label>
+          <button id="b-goal">Save</button>
+        </div>
+        <p class="note">
+          Empty uses what subscribers say is owed. Changing it never removes
+          reps already done.
+        </p>
+        <h2 style="margin-top: 14px">Display</h2>
+        <div class="row">
+          <label><input type="radio" name="display" value="boss" /> Boss</label>
+          <label
+            ><input type="radio" name="display" value="counter" /> Counter
+            only</label
+          >
+          <input
+            id="boss-name"
+            type="text"
+            maxlength="40"
+            placeholder="Boss name"
+          />
+          <button id="b-boss">Save</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Milestones and rewards</h2>
+        <div id="milestones"></div>
+        <div class="row">
+          <button id="b-ms-add">Add</button>
+          <button id="b-ms-save">Save milestones</button>
+        </div>
+        <p class="note">
+          Rewards are labels only. Nothing here changes a game or another
+          service.
+        </p>
+      </section>
+
+      <section>
+        <h2>Counting rules</h2>
+        <label
+          ><input id="require-arm" type="checkbox" /> Only count inside a set I
+          started</label
+        >
+        <div class="row" style="margin-top: 8px">
+          <label
+            >Streak breaks after
+            <input id="streak-gap" type="number" min="2" max="120" /> s without
+            a rep</label
+          >
+          <button id="b-settings">Save</button>
+        </div>
+        <p class="note">
+          Resting and brief tracking loss never break a streak. Only a rep that
+          comes later than this, finishing the set, or an undo do.
+        </p>
+        <h2 style="margin-top: 14px">Detection thresholds</h2>
+        <div class="thresholds">
+          <label
+            >Down below (°)<input data-k="downAngle" type="number"
+          /></label>
+          <label>Up above (°)<input data-k="upAngle" type="number" /></label>
+          <label
+            >Lockout slack (°)<input data-k="upTolerance" type="number"
+          /></label>
+          <label
+            >Plank at least (°)<input data-k="minPlankAngle" type="number"
+          /></label>
+          <label
+            >Hold through loss (ms)<input data-k="maxGapMs" type="number"
+          /></label>
+          <label
+            >Upright above (°)<input data-k="maxTorsoTiltDeg" type="number"
+          /></label>
+        </div>
+        <div class="row" style="margin-top: 8px">
+          <button id="b-detect">Save thresholds</button>
+          <button id="b-detect-clear">Back to defaults</button>
+        </div>
+      </section>
+
+      <section class="wide">
+        <h2>Event log</h2>
+        <table>
+          <tbody id="log"></tbody>
+        </table>
+      </section>
+
+      <section class="wide">
+        <h2>Resets</h2>
+        <div class="row">
+          <button id="b-reset-set" class="danger">Reset this set…</button>
+          <button id="b-reset-stream" class="danger">
+            New stream (reset totals)…
+          </button>
+          <button id="b-undo-reset" hidden>Undo last reset</button>
+        </div>
+        <p class="note">
+          A reset asks you to type it out, and can be undone for 15 minutes. A
+          stream reset can only be undone if nothing has been counted since.
+        </p>
+      </section>
+    </main>
+    <script type="module" src="/js/control.js"></script>
+  </body>
+</html>
