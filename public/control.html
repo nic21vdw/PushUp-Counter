@@ -271,188 +271,236 @@
         border-radius: 10px;
         font-weight: 700;
       }
+      .simple {
+        max-width: 560px;
+        grid-template-columns: 1fr;
+      }
+      .center {
+        text-align: center;
+      }
+      .simple .big {
+        font-size: 84px;
+      }
+      .status {
+        margin-top: 10px;
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .subfacts {
+        margin-top: 10px;
+        color: var(--muted);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .subfacts b {
+        color: var(--text);
+      }
+      .go {
+        width: 100%;
+        font-size: 30px;
+        padding: 26px;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .pair button {
+        font-size: 18px;
+        padding: 18px 10px;
+      }
+      .finish {
+        margin-top: 10px;
+        width: 100%;
+        background: transparent;
+      }
+      details summary {
+        cursor: pointer;
+        font-weight: 800;
+        color: var(--muted);
+        padding: 6px 0;
+      }
+      details[open] summary {
+        margin-bottom: 12px;
+      }
+      details section {
+        margin-bottom: 12px;
+      }
+      kbd {
+        display: none;
+      }
     </style>
   </head>
   <body>
-    <main>
-      <section class="wide">
-        <div class="hero">
-          <div class="big">
-            <span id="done">—</span> <small id="target"></small>
-          </div>
-          <span class="pill" id="phase" data-phase="ready">READY</span>
-          <div class="facts">
-            <span>This set</span><span>Streak</span><span>Set best</span
-            ><span>Stream best</span> <b id="set-reps">0</b><b id="streak">0</b
-            ><b id="set-best">0</b><b id="session-best">0</b>
-          </div>
+    <main class="simple">
+      <section class="center">
+        <div class="big">
+          <span id="done">—</span> <small id="target"></small>
         </div>
+        <div class="status">
+          <span class="pill" id="phase" data-phase="ready">READY</span>
+          <span class="pill"
+            >Camera:
+            <span class="quality" id="quality" data-level="none">—</span></span
+          >
+        </div>
+        <p class="subfacts">
+          This set <b id="set-reps">0</b> · Streak <b id="streak">0</b>
+          <span hidden><b id="set-best">0</b><b id="session-best">0</b></span>
+        </p>
         <p id="offline" hidden>
-          Lost the counter server. Totals are safe on disk; this page reconnects
-          by itself.
+          Lost the counter. Your total is saved; this page reconnects by itself.
         </p>
         <p id="message" aria-live="polite"></p>
       </section>
 
       <section>
-        <h2>Set</h2>
-        <div class="row">
-          <button id="b-start" class="primary">Start set<kbd>S</kbd></button>
-          <button id="b-rest" class="rest">Rest<kbd>R</kbd></button>
-          <button id="b-resume" class="primary">Resume<kbd>R</kbd></button>
-          <button id="b-finish">Finish set<kbd>F</kbd></button>
+        <button id="b-start" class="primary go">Start set</button>
+        <button id="b-rest" class="rest go">Rest</button>
+        <button id="b-resume" class="primary go">Resume</button>
+        <div class="pair">
+          <button id="b-chat" class="chat">+1 Chat says it counted</button>
+          <button id="b-undo">Undo</button>
         </div>
-        <p class="note" id="set-note"></p>
+        <button id="b-finish" class="finish">Finish set</button>
+        <p class="note center" id="set-note"></p>
       </section>
 
-      <section>
-        <h2>Corrections</h2>
-        <div class="row">
-          <button id="b-chat" class="chat">
-            Chat says it counted (+1)<kbd>C</kbd>
-          </button>
-        </div>
-        <div class="row" style="margin-top: 8px">
-          <button id="b-undo">Undo last rep<kbd>U</kbd></button>
-          <button id="b-plus">+1<kbd>+</kbd></button>
-          <button id="b-minus">−1<kbd>−</kbd></button>
-        </div>
-        <p class="note">
-          Every correction is logged by kind below. The overlay shows one plain
-          total.
-        </p>
-      </section>
+      <details>
+        <summary>More settings</summary>
 
-      <section>
-        <h2>Tracking</h2>
-        <p>
-          <span class="quality" id="quality" data-level="none">NO TRACKER</span>
-          <span id="quality-text"></span>
-        </p>
-        <div class="readings">
-          <div><span>Frames/s</span><b id="t-rate">—</b></div>
-          <div><span>Inference</span><b id="t-infer">—</b></div>
-          <div><span>Elbow</span><b id="t-angle">—</b></div>
-          <div><span>Torso tilt</span><b id="t-tilt">—</b></div>
-          <div><span>Last rep</span><b id="t-last">—</b></div>
-          <div><span>Near misses</span><b id="t-near">—</b></div>
-        </div>
-        <p class="note" id="t-suggest"></p>
-        <button id="b-suggest" hidden></button>
-      </section>
-
-      <section>
-        <h2>Goal</h2>
-        <div class="row">
-          <label
-            >Target
+        <section>
+          <h2>Goal</h2>
+          <div class="row">
             <input
               id="goal"
               type="number"
               min="1"
               max="10000"
-              placeholder="subs"
-          /></label>
-          <button id="b-goal">Save</button>
-        </div>
-        <p class="note">
-          Empty uses what subscribers say is owed. Changing it never removes
-          reps already done.
-        </p>
-        <h2 style="margin-top: 14px">Display</h2>
-        <div class="row">
-          <label><input type="radio" name="display" value="boss" /> Boss</label>
+              placeholder="Subs"
+              aria-label="Goal"
+            />
+            <button id="b-goal">Save</button>
+          </div>
+          <p class="note">Leave empty to follow subscribers.</p>
+        </section>
+
+        <section>
+          <h2>Fix the count</h2>
+          <div class="row">
+            <button id="b-plus">+1</button>
+            <button id="b-minus">−1</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Look</h2>
+          <div class="row">
+            <label
+              ><input type="radio" name="display" value="boss" /> Boss</label
+            >
+            <label
+              ><input type="radio" name="display" value="counter" /> Counter
+              only</label
+            >
+            <input
+              id="boss-name"
+              type="text"
+              maxlength="40"
+              placeholder="Boss name"
+              aria-label="Boss name"
+            />
+            <button id="b-boss">Save</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Milestones</h2>
+          <div id="milestones"></div>
+          <div class="row">
+            <button id="b-ms-add">Add</button>
+            <button id="b-ms-save">Save</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Camera details</h2>
+          <p id="quality-text"></p>
+          <div class="readings">
+            <div><span>Frames/s</span><b id="t-rate">—</b></div>
+            <div><span>Inference</span><b id="t-infer">—</b></div>
+            <div><span>Elbow</span><b id="t-angle">—</b></div>
+            <div><span>Torso tilt</span><b id="t-tilt">—</b></div>
+            <div><span>Last rep</span><b id="t-last">—</b></div>
+            <div><span>Near misses</span><b id="t-near">—</b></div>
+          </div>
+          <p class="note" id="t-suggest"></p>
+          <button id="b-suggest" hidden></button>
+        </section>
+
+        <section>
+          <h2>Counting rules</h2>
           <label
-            ><input type="radio" name="display" value="counter" /> Counter
-            only</label
+            ><input id="require-arm" type="checkbox" /> Only count after Start
+            set</label
           >
-          <input
-            id="boss-name"
-            type="text"
-            maxlength="40"
-            placeholder="Boss name"
-          />
-          <button id="b-boss">Save</button>
-        </div>
-      </section>
+          <div class="row" style="margin-top: 8px">
+            <label
+              >Streak ends after
+              <input
+                id="streak-gap"
+                type="number"
+                min="2"
+                max="120"
+                aria-label="Seconds"
+              />
+              s</label
+            >
+            <button id="b-settings">Save</button>
+          </div>
+          <div class="thresholds" style="margin-top: 10px">
+            <label
+              >Down below (°)<input data-k="downAngle" type="number"
+            /></label>
+            <label>Up above (°)<input data-k="upAngle" type="number" /></label>
+            <label
+              >Lockout slack (°)<input data-k="upTolerance" type="number"
+            /></label>
+            <label
+              >Plank at least (°)<input data-k="minPlankAngle" type="number"
+            /></label>
+            <label
+              >Hold through loss (ms)<input data-k="maxGapMs" type="number"
+            /></label>
+            <label
+              >Upright above (°)<input data-k="maxTorsoTiltDeg" type="number"
+            /></label>
+          </div>
+          <div class="row" style="margin-top: 8px">
+            <button id="b-detect">Save thresholds</button>
+            <button id="b-detect-clear">Defaults</button>
+          </div>
+        </section>
 
-      <section>
-        <h2>Milestones and rewards</h2>
-        <div id="milestones"></div>
-        <div class="row">
-          <button id="b-ms-add">Add</button>
-          <button id="b-ms-save">Save milestones</button>
-        </div>
-        <p class="note">
-          Rewards are labels only. Nothing here changes a game or another
-          service.
-        </p>
-      </section>
+        <section>
+          <h2>History</h2>
+          <table>
+            <tbody id="log"></tbody>
+          </table>
+        </section>
 
-      <section>
-        <h2>Counting rules</h2>
-        <label
-          ><input id="require-arm" type="checkbox" /> Only count inside a set I
-          started</label
-        >
-        <div class="row" style="margin-top: 8px">
-          <label
-            >Streak breaks after
-            <input id="streak-gap" type="number" min="2" max="120" /> s without
-            a rep</label
-          >
-          <button id="b-settings">Save</button>
-        </div>
-        <p class="note">
-          Resting and brief tracking loss never break a streak. Only a rep that
-          comes later than this, finishing the set, or an undo do.
-        </p>
-        <h2 style="margin-top: 14px">Detection thresholds</h2>
-        <div class="thresholds">
-          <label
-            >Down below (°)<input data-k="downAngle" type="number"
-          /></label>
-          <label>Up above (°)<input data-k="upAngle" type="number" /></label>
-          <label
-            >Lockout slack (°)<input data-k="upTolerance" type="number"
-          /></label>
-          <label
-            >Plank at least (°)<input data-k="minPlankAngle" type="number"
-          /></label>
-          <label
-            >Hold through loss (ms)<input data-k="maxGapMs" type="number"
-          /></label>
-          <label
-            >Upright above (°)<input data-k="maxTorsoTiltDeg" type="number"
-          /></label>
-        </div>
-        <div class="row" style="margin-top: 8px">
-          <button id="b-detect">Save thresholds</button>
-          <button id="b-detect-clear">Back to defaults</button>
-        </div>
-      </section>
-
-      <section class="wide">
-        <h2>Event log</h2>
-        <table>
-          <tbody id="log"></tbody>
-        </table>
-      </section>
-
-      <section class="wide">
-        <h2>Resets</h2>
-        <div class="row">
-          <button id="b-reset-set" class="danger">Reset this set…</button>
-          <button id="b-reset-stream" class="danger">
-            New stream (reset totals)…
-          </button>
-          <button id="b-undo-reset" hidden>Undo last reset</button>
-        </div>
-        <p class="note">
-          A reset asks you to type it out, and can be undone for 15 minutes. A
-          stream reset can only be undone if nothing has been counted since.
-        </p>
-      </section>
+        <section>
+          <h2>Reset</h2>
+          <div class="row">
+            <button id="b-reset-set" class="danger">Reset this set…</button>
+            <button id="b-reset-stream" class="danger">New stream…</button>
+            <button id="b-undo-reset" hidden>Undo reset</button>
+          </div>
+        </section>
+      </details>
     </main>
     <script type="module" src="/js/control.js"></script>
   </body>

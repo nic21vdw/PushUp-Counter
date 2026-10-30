@@ -95,12 +95,12 @@ function render() {
   $("b-resume").hidden = s.phase !== "rest";
   $("b-finish").disabled = s.phase === "ready";
   $("set-note").textContent = !s.requireArm
-    ? "Counting is not tied to sets: the camera counts whenever it sees a rep."
+    ? "Counting whenever the camera sees a rep."
     : s.phase === "ready"
-      ? "Nothing counts until you start a set. Cutting to the scene never starts one."
+      ? "Nothing counts until you press Start set."
       : s.phase === "rest"
-        ? "Resting: movement is ignored and the streak is frozen. Resume when you are ready."
-        : "Counting. Rest freezes the set; Finish ends it.";
+        ? "Paused. Nothing counts until you resume."
+        : "";
 
   renderTracker(state.tracker, s);
   renderLog(s.events);
@@ -115,7 +115,7 @@ function render() {
 function renderTracker(t, s) {
   const quality = $("quality");
   if (!t) {
-    quality.textContent = "NO TRACKER";
+    quality.textContent = "Off";
     quality.dataset.level = "none";
     $("quality-text").textContent =
       "The counting window is not open, or has not reported in the last few seconds.";
@@ -132,7 +132,13 @@ function renderTracker(t, s) {
     $("b-suggest").hidden = true;
     return;
   }
-  quality.textContent = (t.quality ?? "none").toUpperCase();
+  quality.textContent =
+    {
+      good: "Good",
+      fair: "OK",
+      poor: "Check framing",
+      none: "No one in frame",
+    }[t.quality] ?? "—";
   quality.dataset.level = t.quality ?? "none";
   $("quality-text").textContent = t.qualityText ?? "";
   $("t-rate").textContent = t.sampleRate ? `${Math.round(t.sampleRate)}` : "—";
