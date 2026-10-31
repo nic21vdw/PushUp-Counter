@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { buildSet, dropWindow, stall, run } from "./rep-traces.mjs";
 import {
   RepCounter,
   STATE,
+  TRACKING,
   DEFAULT_OPTIONS,
   gradeFor,
   scoreRep,
@@ -326,6 +328,8 @@ test("a completed rep carries depth, top, duration, score and grade; every other
   ]);
   assert.equal(reps.length, 1);
   assert.deepEqual(Object.keys(reps[0]).sort(), [
+    "bridged",
+    "bridgedMs",
     "depth",
     "durationMs",
     "grade",
@@ -663,4 +667,156 @@ test("resetting a phase discards the previous camera's angle filter", () => {
   assert.equal(resumed.completions, 0);
   assert.equal(resumed.reps, 1);
   assert.equal(resumed.state, STATE.UP);
+});
+
+// The traces below reproduce what lost reps on stream on 2026-10-30. Each one
+// failed before the gap handling was split into refill / hold / abandon.
+
+const repsIn = (frames) =>
+  new Set(frames.filter((f) => f.rep >= 0).map((f) => f.rep)).size;
+
+const firstUpAt = (frames) => {
+  const at = new Map();
+  for (const f of frames)
+    if (f.phase === "up" && !at.has(f.rep)) at.set(f.rep, f.t);
+  return at;
+};
+
+test("trace: the arm hidden for ~400 ms at the bottom of every rep still counts every rep", () => {
+  const frames = dropWindow(
+    buildSet({ bottomHoldMs: 300 }),
+    (f) => f.phase === "bottom" || (f.phase === "up" && f.elbow < 105),
+  );
+  const { completions } = run(new RepCounter(), frames);
+  assert.equal(completions, repsIn(frames));
+});
+
+test("trace: a 500 ms inference stall mid-ascent does not drop the rep", () => {
+  const set = buildSet({ repMs: 1600 });
+  const up = firstUpAt(set);
+  const frames = stall(
+    set,
+    (f) =>
+      [2, 5, 8].includes(f.rep) &&
+      f.phase === "up" &&
+      f.t > up.get(f.rep) + 100 &&
+      f.t < up.get(f.rep) + 600,
+  );
+  assert.equal(run(new RepCounter(), frames).completions, 10);
+});
+
+test("trace: a rep finished out of view is counted once and marked bridged", () => {
+  const set = buildSet({ repMs: 2000 });
+  const up = firstUpAt(set);
+  const frames = dropWindow(
+    set,
+    (f) =>
+      [1, 4, 7].includes(f.rep) &&
+      f.phase === "up" &&
+      f.t < up.get(f.rep) + 700,
+  );
+  const counter = new RepCounter();
+  const bridged = [];
+  for (const f of frames) {
+    const r = counter.update({
+      elbowAngle: f.elbow,
+      plankAngle: f.plank,
+      timestamp: f.t,
+    });
+    if (r.rep) bridged.push(r.rep.bridged);
+  }
+  assert.equal(bridged.length, 10);
+  assert.equal(bridged.filter(Boolean).length, 3);
+});
+
+test("trace: a head-on camera misreading the hips at the bottom does not drop the rep", () => {
+  const frames = buildSet({ bottomHoldMs: 200 }).map((f) =>
+    f.phase === "bottom" || (f.phase === "up" && f.elbow < 120)
+      ? { ...f, plank: 130 }
+      : f,
+  );
+  assert.equal(run(new RepCounter(), frames).completions, 10);
+});
+
+test("trace: slow, tired and low-frame-rate sets stay exact", () => {
+  for (const options of [
+    { repMs: 4000, bottomHoldMs: 800 },
+    { repMs: 2500, paceJitter: 1.2, restMs: 2500, seed: 4 },
+    { fps: 15, jitterFps: 15, seed: 3 },
+  ]) {
+    assert.equal(run(new RepCounter(), buildSet(options)).completions, 10);
+  }
+});
+
+test("a pose gone longer than maxGapMs mid-rep is abandoned, not bridged", () => {
+  const counter = new RepCounter();
+  feed(counter, [170, 170, 170, 140, 100, 80, 80, 80]);
+  const back = feed(counter, hold(170, 10), { startAt: 1264 + 1500 });
+  assert.equal(back.completions, 0);
+});
+
+test("standing up and bending the arms never counts", () => {
+  const counter = new RepCounter();
+  let completions = 0;
+  REP.concat(REP, REP).forEach((elbowAngle, i) => {
+    const r = counter.update({
+      elbowAngle,
+      plankAngle: 178,
+      torsoTilt: 85,
+      timestamp: 1000 + i * 33,
+    });
+    if (r.repCompleted) completions += 1;
+  });
+  assert.equal(completions, 0);
+});
+
+test("a push-up with a measured, inclined torso counts", () => {
+  const counter = new RepCounter({ smoothing: 1 });
+  let completions = 0;
+  REP.forEach((elbowAngle, i) => {
+    const r = counter.update({
+      elbowAngle,
+      plankAngle: 175,
+      torsoTilt: 20,
+      timestamp: 1000 + i * 33,
+    });
+    if (r.repCompleted) completions += 1;
+  });
+  assert.equal(completions, 1);
+});
+
+test("a dip that stops just short of downAngle is reported as a near miss", () => {
+  const counter = new RepCounter({ smoothing: 1 });
+  let misses = 0;
+  let completions = 0;
+  times(3, repAngles({ bottom: 106 }))
+    .concat(hold(170, 4))
+    .forEach((elbowAngle, i) => {
+      const r = counter.update({
+        elbowAngle,
+        plankAngle: 175,
+        timestamp: 1000 + i * 33,
+      });
+      if (r.nearMiss) misses += 1;
+      if (r.repCompleted) completions += 1;
+    });
+  assert.equal(completions, 0);
+  assert.equal(misses, 3);
+  assert.ok(counter.lastNearMiss.depth < 110);
+});
+
+test("tracking reads holding during a brief loss and locked once it is back", () => {
+  const counter = new RepCounter();
+  feed(counter, hold(170, 6));
+  assert.equal(counter.tracking, TRACKING.LOCKED);
+  const lost = counter.update({
+    elbowAngle: null,
+    timestamp: 1000 + 6 * 33 + 100,
+  });
+  assert.equal(lost.tracking, TRACKING.HOLDING);
+  const gone = counter.update({
+    elbowAngle: null,
+    timestamp: 1000 + 6 * 33 + 2000,
+  });
+  assert.equal(gone.tracking, TRACKING.SEARCHING);
 });

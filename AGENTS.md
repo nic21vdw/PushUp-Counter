@@ -174,3 +174,29 @@ credit. Before this, `done` was subtracted whole: 45 done against 22 owed meant 
 subscribers added nothing on screen, which is how "two new subs added zero" happened on
 2026-10-17. `settle()` runs after every rep, every poll and at boot, and moves any `credited`
 past `owed` into `surplus`. A new stream resets `surplus` with `done`.
+
+## Sets, corrections and rep ids (2026-10-30)
+
+- With `REQUIRE_ARM` on (the default), `/api/rep` refuses camera reps unless a
+  set is active, with a **400** and `notArmed: true`. 400 on purpose: a page
+  from before sets drops a 400 and retries anything else, and a retried rep
+  would land the moment a set started. Tests run servers with
+  `REQUIRE_ARM=off` unless they test arming.
+- Every rep carries an id (`ids` in the report, queued in localStorage by
+  `counter-client.js`). The server remembers the last 2000 and banks a repeat
+  once. Do not drop the ids: lost answers and reloads otherwise double-count.
+- Hand corrections go through `POST /api/control`, which needs the
+  `X-Pushup-Control: 1` header, a localhost Host and no foreign Origin. That
+  keeps websites out (no CORS preflight is answered). Setting an absolute count
+  still needs `.admin-token` via `count.mjs`; keep that separate.
+- Sets, streaks, goal, milestones, boss and the event log live in
+  `public/js/session-model.js` (shared by server and pages), persisted as
+  `state.session`. Celebrations are recorded once per stream per milestone or
+  goal value; pages prime `CelebrationGate` with what is there on load, so a
+  reload never replays one.
+- Rep continuity (`rep-counter.js`): gaps over `refillGapMs` (150) refill the
+  median filter but keep the phase; gaps up to `maxGapMs` (now 1200) keep the
+  rep and mark it `bridged`; longer gaps abandon it. The 250 ms limit from
+  2026-10-23 dropped every rep whose bottom hid the arm for ~400 ms; the
+  traces in `tests/rep-traces.mjs` reproduce that. An upright torso
+  (`maxTorsoTiltDeg`, from world landmarks) can neither start nor finish a rep.

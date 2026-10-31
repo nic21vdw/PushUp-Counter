@@ -77,13 +77,34 @@ export class HypeDirector {
   #finished = false;
   #idleSince = null;
   #idleFired = 0;
+  #comboGapMs = COMBO_GAP_MS;
 
   /**
    * @param {{now?: () => number, random?: () => number}} [options] `random`
    *   is accepted for symmetry with the announcer; nothing here is random.
    */
-  constructor({ now = () => performance.now() } = {}) {
+  constructor({
+    now = () => performance.now(),
+    comboGapMs = COMBO_GAP_MS,
+  } = {}) {
     this.#now = now;
+    this.#comboGapMs = comboGapMs;
+  }
+
+  /** Follow the session's streak definition, so the combo and the streak agree. */
+  setComboGap(ms) {
+    if (Number.isFinite(ms) && ms > 0) this.#comboGapMs = ms;
+  }
+
+  /**
+   * Time spent resting is not a gap between reps. Moves the last rep forward
+   * by the pause so the streak survives it, and restarts the idle clock.
+   */
+  resume(pausedMs, at = this.#now()) {
+    if (this.#lastRepAt !== null && Number.isFinite(pausedMs) && pausedMs > 0)
+      this.#lastRepAt += pausedMs;
+    this.#idleSince = at;
+    this.#idleFired = 0;
   }
 
   /** Reps in the current streak. Zero once a pause has ended it. */
@@ -124,7 +145,7 @@ export class HypeDirector {
 
     const gap =
       this.#lastRepAt === null ? null : Math.max(0, at - this.#lastRepAt);
-    const continues = gap !== null && gap < COMBO_GAP_MS && this.#combo > 0;
+    const continues = gap !== null && gap < this.#comboGapMs && this.#combo > 0;
     this.#combo = continues ? this.#combo + 1 : 1;
     this.#lastRepAt = at;
     this.#reps += 1;
@@ -214,7 +235,7 @@ export class HypeDirector {
 
   #breakIfStale(at) {
     if (this.#lastRepAt === null || this.#combo === 0) return [];
-    if (at - this.#lastRepAt < COMBO_GAP_MS) return [];
+    if (at - this.#lastRepAt < this.#comboGapMs) return [];
     const was = this.#combo;
     this.#combo = 0;
     return was >= MIN_BREAK_COMBO

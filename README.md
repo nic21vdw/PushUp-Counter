@@ -7,9 +7,10 @@ a subscriber arrives while you are live   ->  the number goes up one
 the webcam sees you do a push-up          ->  the number goes down one
 ```
 
-That is the whole machine. There is no button that logs push-ups, no field that
-edits the total, and no endpoint behind either — the only way the number comes
-down is doing the push-ups in front of the camera.
+The camera counts only inside a **set** you start from the control panel, so
+cutting to the push-up scene or walking into frame never counts anything. Hand
+corrections exist (undo, +1, -1, "chat says it counted"), each logged by kind,
+and the number on stream stays one plain total. See "Control panel" below.
 
 The tracker is one page: a rounded tile showing your webcam with the pose
 skeleton drawn on it, and the count beside it. The page background is fully
@@ -471,3 +472,41 @@ geometry against synthetic angle sequences (clean reps, partial reps, jitter at
 the threshold, dropped poses, sagging hips, double-count debounce), the overlay's
 URL parsing, and the server's one writing endpoint over real HTTP — including
 that the endpoints which could once fake the count are gone and stay gone.
+
+## Control panel
+
+Open **`/control.html`** on the streaming PC (never in OBS). It is the only page
+that changes sets or corrects the count; the overlay and the OBS source only
+display.
+
+| Control                   | Key | What it does                                                            |
+| ------------------------- | --- | ----------------------------------------------------------------------- |
+| Start set                 | S   | Arms the camera. Nothing counts before this.                            |
+| Rest / Resume             | R   | Freezes the set, the streak and counting. A rest timer shows on stream. |
+| Finish set                | F   | Ends the set and the streak. Totals stay.                               |
+| Chat says it counted (+1) | C   | Adds a missed rep, logged as a chat correction. Keeps the streak.       |
+| Undo last rep             | U   | Takes back the newest counted rep, whatever added it.                   |
+| +1 / −1                   | + − | Plain corrections by hand, logged.                                      |
+| Reset this set…           |     | Type `RESET SET`. Undoable for 15 minutes.                              |
+| New stream…               |     | Type `RESET STREAM`. Undoable while nothing has been counted since.     |
+
+Keys only work while the panel has focus and no field is being typed in, so
+they can never reach OBS or a game.
+
+Also on the panel: the goal (empty follows subscribers), boss or counter-only
+display and the boss name, milestones with reward labels, the streak gap,
+detection thresholds, the live tracking readout (quality, frames/s, inference
+time, elbow angle, torso tilt, near misses) and the event log.
+
+**A streak** is reps in a row inside one set, each within the streak gap
+(15 s by default) of the last. Resting and brief tracking loss do not break
+it; a rep that comes later than the gap, finishing the set, or an undo do.
+
+**Leaving the scene.** Inside OBS the browser source sees when it leaves the
+program output and pauses an active set ("PAUSED"). It never starts or resumes
+one. A plain browser window cannot see OBS scenes, so there the Rest button is
+the pause.
+
+**Overlay options added:** `display=goal|left` (done / target, or the old
+countdown), `hud=full|compact`, `boss=0`, `motion=0` (also follows the system
+reduced-motion setting), `scene=0` (ignore OBS visibility).

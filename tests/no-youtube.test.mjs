@@ -53,6 +53,7 @@ async function startServer({ dir = null, env = {} } = {}) {
       ...process.env,
       PORT: String(port),
       HOST: "127.0.0.1",
+      REQUIRE_ARM: "off",
       // Explicitly blank, so a .env on the dev machine cannot leak in.
       YOUTUBE_API_KEY: "",
       YOUTUBE_CHANNEL_ID: "",

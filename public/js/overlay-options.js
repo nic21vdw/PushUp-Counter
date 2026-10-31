@@ -91,6 +91,23 @@ export const DEFAULT_OVERLAY_OPTIONS = {
   demo: false,
   /** Show the detector's live readout while you tune. Never use on stream. */
   setup: false,
+  /**
+   * What the big number is. 'goal': push-ups done this stream over the target
+   * (a goal set in the control panel, or what subscribers say is owed).
+   * 'left': the older countdown of push-ups still to do.
+   */
+  display: "goal",
+  /** 'full' shows the set line, milestones and boss; 'compact' only the count and bar. */
+  hud: "full",
+  /** The boss bar, when the control panel has it on. `boss=0` hides it on this source. */
+  boss: true,
+  /** Celebrations and hit shakes. Off, or a reduced-motion system setting, keeps them still. */
+  motion: true,
+  /**
+   * Inside OBS, pause an active set when this source leaves the program output.
+   * It never starts or resumes one.
+   */
+  scene: true,
 };
 
 /**
@@ -117,6 +134,13 @@ export const DETECTION_PARAMS = [
 const TRUTHY = new Set(["1", "true", "yes", "on"]);
 const FALSY = new Set(["0", "false", "no", "off"]);
 const LAYOUTS = new Set(["fill", "side"]);
+const DISPLAYS = new Set(["goal", "left"]);
+const HUDS = new Set(["full", "compact"]);
+
+function oneOf(raw, allowed, fallback) {
+  const value = (raw ?? "").trim().toLowerCase();
+  return allowed.has(value) ? value : fallback;
+}
 
 function bool(raw, fallback) {
   if (raw === null) return fallback;
@@ -221,6 +245,11 @@ export function parseOverlayOptions(params) {
     voice: bool(params.get("voice"), d.voice),
     demo: bool(params.get("demo"), d.demo),
     setup: bool(params.get("setup"), d.setup),
+    display: oneOf(params.get("display"), DISPLAYS, d.display),
+    hud: oneOf(params.get("hud"), HUDS, d.hud),
+    boss: bool(params.get("boss"), d.boss),
+    motion: bool(params.get("motion"), d.motion),
+    scene: bool(params.get("scene"), d.scene),
   };
 }
 
