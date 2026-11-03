@@ -177,11 +177,18 @@ past `owed` into `surplus`. A new stream resets `surplus` with `done`.
 
 ## Sets, corrections and rep ids (2026-10-30)
 
-- With `REQUIRE_ARM` on (the default), `/api/rep` refuses camera reps unless a
-  set is active, with a **400** and `notArmed: true`. 400 on purpose: a page
-  from before sets drops a 400 and retries anything else, and a retried rep
-  would land the moment a set started. Tests run servers with
-  `REQUIRE_ARM=off` unless they test arming.
+- **The camera counts any time (2026-11-03).** Nic's rule: reps register
+  whenever he does them, whatever the set, the scene or a preview is doing. A
+  camera rep with no set running starts one, and one during a rest resumes it.
+  Only the panel's "Only count after Start set" (`session.requireArm`, unticked
+  by default) brings back refusals: `/api/rep` then answers **400** with
+  `notArmed: true` (400 on purpose: a page from before sets drops a 400 and
+  retries anything else). Sessions saved under the old armed default are moved
+  off it once (`armDefault`). `REQUIRE_ARM=off` in `.env` forces counting even
+  with the box ticked. The armed default is what made the counter "stop
+  working" after #26: nothing counted until Start set, and OBS's display-only
+  copy rested the set whenever the scene left program (studio-mode preview,
+  scene switches). That copy (`count=0`) no longer sends `scene-away`.
 - Every rep carries an id (`ids` in the report, queued in localStorage by
   `counter-client.js`). The server remembers the last 2000 and banks a repeat
   once. Do not drop the ids: lost answers and reloads otherwise double-count.

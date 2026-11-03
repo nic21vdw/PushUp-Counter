@@ -86,9 +86,9 @@ const CONFIG = {
   // Restarting after this long counts as a new stream. Short gaps (a crash, a
   // reboot, closing the laptop between scenes) resume the session in progress.
   // "off" never starts one automatically; "0" always does.
-  // Off lets the camera bank reps without a set being started first, the way
-  // the counter worked before sets existed. The tests use it; on stream, sets
-  // are what stop the scene counting just because it was cut to.
+  // Off forces the camera to bank reps without a set being started first, even
+  // if the panel's "Only count after Start set" is ticked. On (the default)
+  // leaves that choice to the panel, which ships unticked.
   requireArm: !/^(0|off|false|no)$/i.test(env("REQUIRE_ARM", "on").trim()),
   newStreamAfterHours: (() => {
     const raw = env("NEW_STREAM_AFTER_HOURS", "6").toLowerCase();

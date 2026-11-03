@@ -93,9 +93,48 @@ async function startServer(env = {}) {
   };
 }
 
-test("the camera counts nothing until a set is started", async (t) => {
+test("by default the camera counts any time, and a rep starts the set itself", async (t) => {
   const s = await startServer();
   t.after(() => s.stop());
+
+  const first = await s.rep({ ids: ["a"], reps: 1 });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.done, 1);
+  assert.equal(first.body.session.phase, "active");
+  assert.equal(first.body.session.setNumber, 1);
+
+  await s.control("rest");
+  const resting = await s.rep({ ids: ["b"], reps: 1 });
+  assert.equal(resting.status, 200, "a rep while resting still counts");
+  assert.equal(resting.body.done, 2);
+  assert.equal(resting.body.session.phase, "active");
+
+  await s.control("scene-away");
+  const away = await s.rep({ ids: ["c"], reps: 1 });
+  assert.equal(
+    away.body.done,
+    3,
+    "cutting away from the scene never blocks a rep",
+  );
+
+  await s.control("finish");
+  const next = await s.rep({ ids: ["d"], reps: 1 });
+  assert.equal(next.body.done, 4);
+  assert.equal(next.body.session.setNumber, 2);
+});
+
+test("a session saved under the old armed default counts again after an upgrade", async (t) => {
+  const { normalizeSession } = await import("../public/js/session-model.js");
+  const old = normalizeSession({ requireArm: true, phase: "ready" });
+  assert.equal(old.requireArm, false);
+  const chosen = normalizeSession({ ...old, requireArm: true });
+  assert.equal(chosen.requireArm, true, "a later choice in the panel sticks");
+});
+
+test("with Only count after Start set ticked, the camera counts nothing until a set is started", async (t) => {
+  const s = await startServer();
+  t.after(() => s.stop());
+  await s.control("settings", { requireArm: true });
 
   const refused = await s.rep({ ids: ["a"], reps: 1 });
   assert.equal(refused.status, 400);
@@ -129,6 +168,7 @@ test("a retried rep id is banked once, across a restart too", async (t) => {
 test("rest freezes counting and the streak; resume picks both back up", async (t) => {
   const s = await startServer();
   t.after(() => s.stop());
+  await s.control("settings", { requireArm: true });
   await s.control("start");
   await s.rep({ ids: ["1"], reps: 1 });
   await s.rep({ ids: ["2"], reps: 1 });

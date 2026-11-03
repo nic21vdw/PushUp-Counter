@@ -166,12 +166,13 @@ const celebrations = new CelebrationGate();
 let cameraDown = false;
 
 /**
- * Whether a rep seen now should be reported. Only inside a set Nic started,
- * so cutting to the scene, stepping into frame or stretching never counts.
+ * Whether a rep seen now should be reported. Always, unless "Only count after
+ * Start set" is ticked and no set is running. Before the server has answered
+ * the rep is reported anyway: the client queues it and the server decides.
  */
 function canCount() {
   const session = serverState?.session;
-  if (!session) return false;
+  if (!session) return true;
   return session.requireArm === false || session.phase === "active";
 }
 
@@ -1180,13 +1181,16 @@ async function boot() {
 }
 
 /**
- * Inside OBS, the browser source knows when it leaves the program output.
- * Leaving pauses a set in progress so nothing counts off-screen; coming back
- * never resumes it, Nic does that. In a plain browser there is no such signal
+ * Inside OBS, a counting browser source knows when it leaves the program
+ * output. Leaving pauses a set in progress; the next rep resumes it unless
+ * "Only count after Start set" is on. The display-only copy (`count=0`) never
+ * pauses anything: studio mode's preview and scene switches used to rest the
+ * set from that copy and the camera then counted nothing. In a plain browser there is no such signal
  * and this does nothing: the Rest button is the pause.
  */
 function watchObsScene() {
-  if (!options.scene || options.demo || !globalThis.obsstudio) return;
+  if (!options.scene || !options.count || options.demo || !globalThis.obsstudio)
+    return;
   window.addEventListener("obsSourceActiveChanged", (event) => {
     if (event?.detail?.active !== false) return;
     if (serverState?.session?.phase !== "active") return;

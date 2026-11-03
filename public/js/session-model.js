@@ -6,9 +6,10 @@
  * changed. The server owns `done`, so anything that moves the count comes back
  * as a `delta` for it to apply. Persisted inside `state.json` as `session`.
  *
- * A set is something Nic starts on purpose. Cutting to the push-up scene, or
- * the camera seeing movement, never starts one: with `requireArm` on, a camera
- * rep outside an active set is refused.
+ * By default the camera counts every rep, whatever the set is doing: a rep
+ * outside an active set starts one (or resumes a rest), so sets and streaks
+ * still work without a button press. Only with `requireArm` switched on in the
+ * control panel is a camera rep outside an active set refused.
  *
  * A streak is reps in a row inside one set, each within `streakGapMs` of the
  * last. Time spent resting does not count toward that gap, and the camera
@@ -36,6 +37,13 @@ export const LATE_REP_GRACE_MS = 1500;
 /** A stream reset can be taken back for this long, if nothing was counted since. */
 export const UNDO_RESET_MS = 15 * 60_000;
 
+/**
+ * Sessions saved before 2026-11-03 carry `requireArm: true` from the old
+ * default, which left the camera counting nothing until Start set was pressed.
+ * They are moved to the new default once; a later choice in the panel sticks.
+ */
+const ARM_DEFAULT_VERSION = 2;
+
 export function createSession() {
   return {
     phase: "ready",
@@ -56,7 +64,8 @@ export function createSession() {
     celebrations: [],
     boss: { enabled: true, name: "Gravity Golem" },
     display: "boss",
-    requireArm: true,
+    requireArm: false,
+    armDefault: ARM_DEFAULT_VERSION,
     streakGapMs: 15_000,
     events: [],
     seenIds: [],
@@ -70,6 +79,10 @@ export function normalizeSession(raw) {
   if (!raw || typeof raw !== "object") return base;
   const s = { ...base, ...raw };
   if (!PHASES.includes(s.phase)) s.phase = "ready";
+  if (raw.armDefault !== ARM_DEFAULT_VERSION) {
+    s.requireArm = false;
+    s.armDefault = ARM_DEFAULT_VERSION;
+  }
   s.boss = { ...base.boss, ...(raw.boss ?? {}) };
   for (const key of [
     "milestones",
@@ -152,6 +165,10 @@ export function recordCameraReps(
     return { delta: 0, duplicates, refused: true };
   }
   remember(session, fresh);
+  if (!requireArm && session.phase === "ready")
+    startSet(session, now, "started by a rep");
+  else if (!requireArm && session.phase === "rest")
+    resumeSet(session, now, "resumed by a rep");
   for (let i = 0; i < fresh.length; i += 1) {
     session.setReps += 1;
     if (session.phase === "active") bumpStreak(session, now);
@@ -164,6 +181,36 @@ export function recordCameraReps(
     bridged > 0 ? "seen through a brief tracking gap" : "",
   );
   return { delta: fresh.length, duplicates, refused: false };
+}
+
+function setPhase(session, now, phase, pausedBy = null) {
+  session.wasActive = session.phase === "active";
+  session.phase = phase;
+  session.pausedBy = pausedBy;
+  session.phaseChangedAt = iso(now);
+}
+
+function startSet(session, now, note = "") {
+  session.setNumber += 1;
+  session.setReps = 0;
+  session.setStartedAt = iso(now);
+  session.restStartedAt = null;
+  session.streak = 0;
+  session.setBest = 0;
+  session.lastStreakRepAt = null;
+  session.restMsSinceRep = 0;
+  setPhase(session, now, "active");
+  log(session, now, "set-start", 0, note);
+}
+
+function resumeSet(session, now, note = "") {
+  const restedFor = session.restStartedAt
+    ? now - Date.parse(session.restStartedAt)
+    : 0;
+  session.restMsSinceRep += Math.max(0, restedFor);
+  session.restStartedAt = null;
+  setPhase(session, now, "active");
+  log(session, now, "resume", 0, note);
 }
 
 const clampGoal = (value) => {
@@ -204,25 +251,12 @@ function cleanMilestones(list) {
  */
 export function applyControl(session, body, ctx) {
   const { now } = ctx;
-  const phaseTo = (phase, pausedBy = null) => {
-    session.wasActive = session.phase === "active";
-    session.phase = phase;
-    session.pausedBy = pausedBy;
-    session.phaseChangedAt = iso(now);
-  };
+  const phaseTo = (phase, pausedBy = null) =>
+    setPhase(session, now, phase, pausedBy);
 
   switch (body.action) {
     case "start": {
-      session.setNumber += 1;
-      session.setReps = 0;
-      session.setStartedAt = iso(now);
-      session.restStartedAt = null;
-      session.streak = 0;
-      session.setBest = 0;
-      session.lastStreakRepAt = null;
-      session.restMsSinceRep = 0;
-      phaseTo("active");
-      log(session, now, "set-start", 0);
+      startSet(session, now);
       return { delta: 0, reason: `set ${session.setNumber} started` };
     }
     case "rest":
@@ -239,13 +273,7 @@ export function applyControl(session, body, ctx) {
     }
     case "resume": {
       if (session.phase !== "rest") return { delta: 0, reason: null };
-      const restedFor = session.restStartedAt
-        ? now - Date.parse(session.restStartedAt)
-        : 0;
-      session.restMsSinceRep += Math.max(0, restedFor);
-      session.restStartedAt = null;
-      phaseTo("active");
-      log(session, now, "resume", 0);
+      resumeSet(session, now);
       return { delta: 0, reason: "set resumed" };
     }
     case "finish": {
