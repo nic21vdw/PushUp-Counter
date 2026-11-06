@@ -72,11 +72,12 @@ export function evaluate({
   seeds = SEEDS,
   names,
   Counter = RepCounter,
+  fps = 30,
 } = {}) {
   const rows = [];
   for (const name of names ?? Object.keys(SCENARIOS)) {
     const runs = seeds.map((seed) => {
-      const scenario = buildScenario(name, seed);
+      const scenario = buildScenario(name, seed, { fps });
       return {
         seed,
         ...score(scenario, replay(scenario.samples, options, Counter)),
