@@ -12,6 +12,12 @@ import {
   sessionView,
   effectiveTarget,
 } from "./public/js/session-model.js";
+import {
+  LOG_VERSION,
+  parseStreamLog,
+  buildRecap,
+  listStreams,
+} from "./public/js/stream-recap.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -23,6 +29,10 @@ const STATE_FILE = path.join(ROOT, "state.json");
 const BACKUP_FILE = `${STATE_FILE}.bak`;
 const HISTORY_FILE = path.join(ROOT, "state-history.jsonl");
 const TOKEN_FILE = path.join(ROOT, ".admin-token");
+// What each stream did, one line per rep, correction, set and sub change, for
+// the recap page. Append-only and separate from state.json on purpose: the
+// count never depends on it, and losing it loses a recap, not push-ups.
+const STREAM_LOG_FILE = path.join(ROOT, "stream-log.jsonl");
 
 // ---------------------------------------------------------------------------
 // Config (.env file + real environment variables; env wins)
@@ -292,6 +302,61 @@ async function appendHistory(reason) {
 }
 
 /**
+ * Append to the stream log, one line per record, synced to disk before the
+ * next write starts. Failures are logged and swallowed: a recap is never worth
+ * a failed rep.
+ */
+let streamLogQueue = Promise.resolve();
+function logStream(records, stream = state.streamStartedAt) {
+  if (!stream || records.length === 0) return streamLogQueue;
+  const text = records
+    .map((r) => JSON.stringify({ v: LOG_VERSION, stream, ...r }))
+    .join("\n");
+  streamLogQueue = streamLogQueue
+    .then(async () => {
+      const handle = await fsp.open(STREAM_LOG_FILE, "a");
+      try {
+        await handle.writeFile(`${text}\n`);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    })
+    .catch((err) =>
+      console.error(`[stream-log] could not write: ${err.message}`),
+    );
+  return streamLogQueue;
+}
+
+/** Session events added since `beforeId`, as stream-log lines. */
+function logSessionEventsSince(beforeId) {
+  const events = state.session.events;
+  const from = beforeId ? events.findIndex((e) => e.id === beforeId) + 1 : 0;
+  const fresh = from > 0 || !beforeId ? events.slice(from) : events.slice(-1);
+  return logStream(
+    fresh.map((e) => ({
+      at: e.at,
+      type: "event",
+      kind: e.kind,
+      delta: e.delta,
+      set: e.set,
+      note: e.note,
+      done: state.done,
+      setReps: state.session.setReps,
+      best: state.session.sessionBest,
+    })),
+  );
+}
+
+async function readStreamLog() {
+  try {
+    return parseStreamLog(await fsp.readFile(STREAM_LOG_FILE, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * The secret that lets a person at this machine repair the count.
  *
  * It is a file rather than a password because of what it has to keep out: an
@@ -413,7 +478,7 @@ function controlAllowed(req) {
  * live count instead would bill you for every subscriber gained while you were
  * asleep — the exact thing per-stream tracking exists to avoid.
  */
-function startNewStream(subs, closingSubs = subs) {
+function startNewStream(subs, closingSubs = subs, note = "") {
   const gained =
     closingSubs !== null && state.baselineSubs !== null
       ? closingSubs - state.baselineSubs
@@ -428,6 +493,17 @@ function startNewStream(subs, closingSubs = subs) {
   state.surplus = 0;
   state.baselineSubs = subs ?? state.subs;
   state.streamStartedAt = new Date().toISOString();
+  logStream([
+    {
+      at: state.streamStartedAt,
+      type: "start",
+      carriedOver: stillOwed,
+      baselineSubs: state.baselineSubs,
+      subs: state.subs,
+      subsEnabled: CONFIG.subsEnabled,
+      note,
+    },
+  ]);
   return stillOwed;
 }
 
@@ -712,6 +788,21 @@ async function poll({ quiet = false } = {}) {
     // Written every poll, not just on a change: this timestamp is what tells a
     // restart whether the stream is still going, so it must not go stale while
     // the sub count happens to sit still.
+    if (previous !== null && previous !== subs) {
+      logStream([
+        {
+          at: state.subsUpdatedAt,
+          type: "subs",
+          subs,
+          delta: subs - previous,
+          gained: view().subsGained,
+          exact,
+          switched,
+          names: [],
+        },
+      ]);
+    }
+
     const over = settle();
     if (over > 0) reason ??= `sub count fell; ${over} done push-ups set aside`;
     state.lastSeenAt = new Date().toISOString();
@@ -894,6 +985,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    const lastEventId = state.session.events.at(-1)?.id ?? null;
     const result = recordCameraReps(state.session, {
       ids,
       now: Date.now(),
@@ -912,6 +1004,7 @@ const server = http.createServer(async (req, res) => {
     if (result.delta > 0) {
       recordReps(result.delta, clientId);
       celebrateNow();
+      logSessionEventsSince(lastEventId);
       await saveState(
         `${result.delta} push-up${result.delta === 1 ? "" : "s"} counted`,
       );
@@ -935,6 +1028,7 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       return sendJson(res, 400, { error: err.message });
     }
+    const lastEventId = state.session.events.at(-1)?.id ?? null;
     let result;
     try {
       result = applyControl(state.session, body, {
@@ -948,15 +1042,28 @@ const server = http.createServer(async (req, res) => {
             surplus: state.surplus,
             streamStartedAt: state.streamStartedAt,
           };
-          startNewStream(state.subs, state.subs);
+          startNewStream(state.subs, state.subs, "reset by hand");
           return snapshot;
         },
-        restoreStream: (snapshot) => Object.assign(state, snapshot),
+        restoreStream: (snapshot) => {
+          logStream(
+            [
+              {
+                at: new Date().toISOString(),
+                type: "discard",
+                note: "stream reset taken back",
+              },
+            ],
+            state.streamStartedAt,
+          );
+          Object.assign(state, snapshot);
+        },
       });
     } catch (err) {
       return sendJson(res, 400, { error: err.message });
     }
     applyDelta(result.delta);
+    logSessionEventsSince(lastEventId);
     if (
       result.delta !== 0 ||
       body.action === "goal" ||
@@ -1062,6 +1169,43 @@ const server = http.createServer(async (req, res) => {
       // No journal yet is not a fault: nothing has moved since this landed.
     }
     return sendJson(res, 200, { entries });
+  }
+
+  // Past streams for the recap page. Read-only, from the stream log; never
+  // from or to state.json.
+  if (url.pathname === "/api/streams" && req.method === "GET") {
+    const limit = Math.min(
+      200,
+      Math.max(1, Number(url.searchParams.get("limit") ?? 30) || 30),
+    );
+    const streams = listStreams(await readStreamLog(), {
+      current: state.streamStartedAt,
+    }).slice(0, limit);
+    return sendJson(res, 200, { current: state.streamStartedAt, streams });
+  }
+
+  if (url.pathname === "/api/streams/recap" && req.method === "GET") {
+    const records = await readStreamLog();
+    const asked = url.searchParams.get("id");
+    const id =
+      !asked || asked === "current"
+        ? state.streamStartedAt
+        : asked === "latest"
+          ? (listStreams(records)[0]?.id ?? null)
+          : asked;
+    const recap = id
+      ? buildRecap(records, id, { live: id === state.streamStartedAt })
+      : null;
+    if (!recap)
+      return sendJson(res, 404, { error: "no stream log for that stream" });
+    if (recap.live) {
+      recap.total = state.done;
+      recap.bestStreak = Math.max(
+        recap.bestStreak,
+        state.session.sessionBest ?? 0,
+      );
+    }
+    return sendJson(res, 200, { recap });
   }
 
   // What is in the sounds folder. The page builds its bank from this rather
@@ -1198,6 +1342,7 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
     `  Set it up     ${base}/overlay.html?setup=1   <- pick a camera, check framing`,
   );
   console.log(`  Status        ${base}/status.html`);
+  console.log(`  Recap         ${base}/recap.html   <- end-of-stream card`);
   console.log(
     `  Control panel ${base}/control.html   <- start sets, rest, fix the count`,
   );
@@ -1236,6 +1381,6 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
-    saveQueue.finally(() => process.exit(0));
+    Promise.all([saveQueue, streamLogQueue]).finally(() => process.exit(0));
   });
 }
