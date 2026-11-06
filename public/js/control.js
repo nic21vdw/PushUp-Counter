@@ -102,6 +102,7 @@ function render() {
         ? "Paused. Nothing counts until you resume."
         : "";
 
+  renderSources(state.sources ?? []);
   renderTracker(state.tracker, s);
   renderLog(s.events);
   $("b-undo-reset").hidden = !s.canUndoReset;
@@ -110,6 +111,42 @@ function render() {
 
   if (!formsFilled) fillForms(s);
   if (!editingMilestones) renderMilestones(s.milestones);
+}
+
+function renderSources(sources) {
+  const rows = sources.map((src) => {
+    const row = document.createElement("div");
+    row.className = "source";
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = src.enabled;
+    box.disabled = !src.configured;
+    box.addEventListener("change", () =>
+      act(
+        "source",
+        { source: src.id, enabled: box.checked },
+        `${src.label} ${box.checked ? "on" : "off"}.`,
+      ).then(render),
+    );
+    label.append(box, ` ${src.label}`);
+    const info = document.createElement("small");
+    if (!src.configured) {
+      info.textContent = "Not set up - add its keys to .env";
+    } else if (src.error && src.enabled) {
+      info.textContent = src.error;
+      info.dataset.tone = "error";
+    } else if (src.enabled) {
+      const count = src.count === null ? "waiting" : format(src.count);
+      info.textContent = `${src.live ? "LIVE" : "offline"} - ${count} - +${format(src.owed)} owed`;
+      if (src.live) info.dataset.tone = "live";
+    } else {
+      info.textContent = src.owed ? `off - +${format(src.owed)} owed` : "off";
+    }
+    row.append(label, info);
+    return row;
+  });
+  $("sources").replaceChildren(...rows);
 }
 
 function renderTracker(t, s) {

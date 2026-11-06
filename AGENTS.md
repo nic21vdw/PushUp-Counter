@@ -186,6 +186,18 @@ baseline across the gap, and on 2026-10-17 that swallowed two real subscribers.
 the dev machine cannot leak in. Switching between the exact and rounded source moves the
 baseline by the same jump, so a source change never adds or removes push-ups by itself.
 
+## Twitch and Kick are separate sources into the same total
+
+`public/js/stream-sources.js` holds the rules, `server.js` the fetchers. Each
+source (`twitch-subs`, `kick-follows`, `kick-subs`) keeps its own count,
+baseline and banked gain in `state.sources`, and `fromSources()` adds them to
+`owed`; the YouTube arithmetic is untouched. Off until configured in `.env` and
+switched on in the panel (`/api/control` action `source`). A gain counts only
+while that platform says live; switching on rebases at the next reading; a
+failed read changes nothing. Kick has no official follower count, so
+`kick-follows` reads the unofficial `kick.com/api/v2` endpoint and may be
+refused. `tests/platform-sources.test.mjs` runs everything against a mock.
+
 ## Getting ahead does not bank credit against new subs
 
 `left` is `owed - credited`, where `credited = done - surplus`. A rep done while nothing is

@@ -410,6 +410,53 @@ always start fresh on launch.
 So if you finish a stream owing 120, you come back tomorrow owing 120 — not 120
 plus every subscriber who arrived while you were asleep.
 
+## Twitch subs and Kick follows/subs
+
+Three more sources can add push-ups next to YouTube: **Twitch subs**, **Kick
+follows** and **Kick subs**. Each one adds its own gain into the same total, by
+the same rules: only gains while that channel is live count, the baseline
+follows the count down, and getting ahead banks nothing.
+
+- **Off by default.** A source needs its keys in `.env` _and_ its switch on
+  in the control panel's **Push-up sources** box. An unconfigured source shows
+  "Not set up" and cannot be switched on. YouTube is unaffected by any of this.
+- **Only while live.** Each platform is asked whether the channel is live on
+  every read (`SOURCES_POLL_SECONDS`, default 30). A gain only counts while it
+  says yes; going offline keeps what was gained and ignores the rest.
+- **Switching on mid-stream adds nothing.** The first reading after the switch
+  is the new baseline. Switching off keeps what that source already added.
+- **A failing source does not move the count.** It keeps its last reading and
+  shows the error in the panel until a read works again.
+- **A new stream** starts every source from a fresh baseline; what it owed is
+  carried over like everything else.
+- `PUSHUPS_PER_TWITCH_SUB`, `PUSHUPS_PER_KICK_FOLLOW` and
+  `PUSHUPS_PER_KICK_SUB` set the rate per source (default: `PUSHUPS_PER_SUB`).
+
+**Twitch** (Helix): register an app at
+[dev.twitch.tv/console](https://dev.twitch.tv/console) for `TWITCH_CLIENT_ID`,
+then get a **user** token for your own account with the
+`channel:read:subscriptions` scope (`TWITCH_ACCESS_TOKEN`).
+`TWITCH_BROADCASTER_ID` is your numeric user id. User tokens expire after a
+few hours, so also set `TWITCH_CLIENT_SECRET` and `TWITCH_REFRESH_TOKEN` and the
+server refreshes it on a 401 (in memory only; `.env` is never written). The
+count is `total` from `GET /helix/subscriptions?broadcaster_id=`, live is
+`GET /helix/streams?user_id=`.
+
+**Kick** (public API): create an app in your Kick account's developer settings
+for `KICK_CLIENT_ID` and `KICK_CLIENT_SECRET` (the server gets an app token with
+`client_credentials`), or paste a user token as `KICK_ACCESS_TOKEN`. Set
+`KICK_CHANNEL` to your channel slug. Subs are `active_subscribers_count` and
+live is `stream.is_live`, both from `GET /public/v1/channels`. The official API
+has no follower count (follows only arrive as a webhook, which needs a public
+URL), so **Kick follows** reads `followers_count` from Kick's unofficial
+`https://kick.com/api/v2/channels/<slug>` (`KICK_FOLLOWERS_API_BASE`). That
+endpoint is undocumented and sits behind Cloudflare, so it may refuse the
+server; when it does, the panel says so and the count does not move.
+
+All base URLs (`TWITCH_API_BASE`, `TWITCH_AUTH_BASE`, `KICK_API_BASE`,
+`KICK_AUTH_BASE`, `KICK_FOLLOWERS_API_BASE`) can be overridden; the tests point
+them at a local mock and never use real keys.
+
 ## When the number is wrong
 
 The count is the one thing here that cannot be rebuilt from anywhere else, so it
