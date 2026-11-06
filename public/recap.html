@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Push-Up Recap</title>
+    <style>
+      /* Transparent outside the card, so OBS composites it with no chroma key.
+         The card is drawn at 1920x1080 and scaled to whatever size the source
+         is given. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+        height: 100%;
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+        color: #e8eef5;
+      }
+      #card {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        object-fit: contain;
+      }
+      #message {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 28px;
+        color: #9aa8b8;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+      }
+      #message[hidden] {
+        display: none;
+      }
+
+      /* Only drawn once a pointer moves. OBS has no pointer, so the controls
+         never reach the stream. */
+      #controls {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(19, 26, 36, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        font-size: 14px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 160ms linear;
+      }
+      body.pointer #controls,
+      body[data-controls="1"] #controls {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: #0b0f15;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 10px;
+        padding: 8px 12px;
+      }
+      button {
+        cursor: pointer;
+        background: linear-gradient(135deg, #3ddcff33, #7c5cff33);
+      }
+      button:hover {
+        border-color: #3ddcff;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas
+      id="card"
+      width="1920"
+      height="1080"
+      aria-label="Stream recap"
+    ></canvas>
+    <div id="message" hidden></div>
+    <div id="controls">
+      <select id="stream" aria-label="Stream"></select>
+      <button id="png-tall" type="button">PNG 1080x1350</button>
+      <button id="png-wide" type="button">PNG 1920x1080</button>
+    </div>
+    <script type="module">
+      import { drawRecapCard, SIZES } from "/js/recap-card.js";
+
+      const params = new URLSearchParams(location.search);
+      const canvas = document.getElementById("card");
+      const message = document.getElementById("message");
+      const picker = document.getElementById("stream");
+      let streamId = params.get("id") || "current";
+      let recap = null;
+
+      if (params.get("controls") === "1") document.body.dataset.controls = "1";
+      let idle;
+      addEventListener("pointermove", () => {
+        document.body.classList.add("pointer");
+        clearTimeout(idle);
+        idle = setTimeout(
+          () => document.body.classList.remove("pointer"),
+          4000,
+        );
+      });
+
+      function say(text) {
+        message.textContent = text;
+        message.hidden = !text;
+      }
+
+      function draw() {
+        const ctx = canvas.getContext("2d");
+        if (recap) drawRecapCard(ctx, recap, { layout: "wide" });
+        else ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      async function fetchRecap(id) {
+        const res = await fetch(
+          `/api/streams/recap?id=${encodeURIComponent(id)}`,
+          {
+            cache: "no-store",
+          },
+        );
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error(`recap ${res.status}`);
+        return (await res.json()).recap;
+      }
+
+      async function load() {
+        try {
+          let next = await fetchRecap(streamId);
+          if (!next && streamId === "current")
+            next = await fetchRecap("latest");
+          recap = next;
+          say(recap ? "" : "No stream has been logged yet.");
+        } catch {
+          if (!recap) say("The counter is not answering.");
+        }
+        draw();
+      }
+
+      async function loadStreams() {
+        try {
+          const res = await fetch("/api/streams?limit=50", {
+            cache: "no-store",
+          });
+          const { streams } = await res.json();
+          picker.innerHTML = "";
+          const current = document.createElement("option");
+          current.value = "current";
+          current.textContent = "This stream";
+          picker.append(current);
+          for (const s of streams) {
+            const o = document.createElement("option");
+            o.value = s.id;
+            o.textContent = `${new Date(s.startedAt).toLocaleString()} - ${s.total} push-ups`;
+            picker.append(o);
+          }
+          picker.value = [...picker.options].some((o) => o.value === streamId)
+            ? streamId
+            : "current";
+        } catch {
+          /* the picker is a convenience */
+        }
+      }
+
+      picker.addEventListener("change", () => {
+        streamId = picker.value;
+        const url = new URL(location.href);
+        if (streamId === "current") url.searchParams.delete("id");
+        else url.searchParams.set("id", streamId);
+        history.replaceState(null, "", url);
+        load();
+      });
+
+      function download(layout) {
+        if (!recap) return;
+        const { width, height } = SIZES[layout];
+        const out = document.createElement("canvas");
+        out.width = width;
+        out.height = height;
+        drawRecapCard(out.getContext("2d"), recap, { layout, backdrop: true });
+        out.toBlob((blob) => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `pushup-recap-${recap.startedAt.slice(0, 10)}-${width}x${height}.png`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        }, "image/png");
+      }
+      document
+        .getElementById("png-tall")
+        .addEventListener("click", () => download("tall"));
+      document
+        .getElementById("png-wide")
+        .addEventListener("click", () => download("wide"));
+
+      const refresh = Math.max(5, Number(params.get("refresh")) || 15);
+      await document.fonts?.ready;
+      await Promise.all([load(), loadStreams()]);
+      setInterval(() => {
+        if (streamId === "current" || recap?.live) load();
+      }, refresh * 1000);
+    </script>
+  </body>
+</html>

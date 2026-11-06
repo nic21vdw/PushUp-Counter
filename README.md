@@ -568,3 +568,32 @@ is reachable from that port, the main server stays on localhost, only
 private-network addresses are answered, and five wrong PINs lock that address
 out for a minute. Windows asks once whether Node may accept connections on
 private networks; say yes for private only.
+
+## Stream recap
+
+**`/recap.html`** is an end-of-stream card: total push-ups, best set, sets,
+subs gained, best streak, a push-ups per hour chart, and top contributors. Add
+it to OBS as a **Browser Source** at `1920` x `1080`; everything outside the
+card is transparent. It follows the stream in progress and refreshes every 15
+seconds (`refresh=` changes that). `?id=<stream start>` pins a past stream.
+
+Move the mouse over it in a normal browser and a bar appears with a stream
+picker and two buttons that save the card as a PNG: `1080x1350` for a social
+post and `1920x1080`. The PNG is drawn in the page, on a dark background, with
+no outside service. OBS has no pointer, so the bar never reaches the stream.
+
+The numbers come from **`stream-log.jsonl`**, a gitignored append-only file
+with one line per rep, correction, set start or finish and sub change, tagged
+with the stream it belongs to. It is separate from `state.json` on purpose:
+the count never reads it, and losing it loses a recap, not push-ups. Each
+write is synced to disk; a torn last line is skipped when read. Streams from
+before this file existed have no recap.
+
+"Top contributors" shows where the reps came from (camera, chat fixes, by hand)
+and the biggest sub bursts. Neither sub feed this counter reads names
+subscribers, so the card says so rather than inventing names. Each sub line
+carries an empty `names` list; a feed that fills it makes the card list
+subscribers instead, with no other change.
+
+Read-only API: `GET /api/streams` lists past streams, newest first, and
+`GET /api/streams/recap?id=<id>` (or `current`, `latest`) returns one recap.
