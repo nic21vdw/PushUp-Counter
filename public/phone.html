@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0b0f15" />
+    <title>Push-Up Phone</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0f15;
+        --card: #131a24;
+        --line: rgba(255, 255, 255, 0.12);
+        --text: #e8eef5;
+        --muted: #9aa8b8;
+        --cyan: #3ddcff;
+        --violet: #7c5cff;
+        --green: #4ade80;
+        --amber: #fbbf24;
+        --red: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+        touch-action: manipulation;
+        user-select: none;
+      }
+      main {
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: max(16px, env(safe-area-inset-top)) 16px
+          max(16px, env(safe-area-inset-bottom));
+        max-width: 520px;
+        margin: 0 auto;
+      }
+      .count {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 16px;
+        text-align: center;
+      }
+      .count .big {
+        font-size: 72px;
+        font-weight: 800;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+      .count .label {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 4px;
+      }
+      .set {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 12px;
+        font-size: 18px;
+      }
+      .phase {
+        font-weight: 700;
+      }
+      .phase[data-phase="active"] {
+        color: var(--green);
+      }
+      .phase[data-phase="rest"] {
+        color: var(--amber);
+      }
+      .grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-auto-rows: minmax(88px, 1fr);
+        gap: 12px;
+      }
+      button {
+        font: inherit;
+        font-size: 26px;
+        font-weight: 800;
+        color: var(--text);
+        background: var(--card);
+        border: 2px solid var(--line);
+        border-radius: 20px;
+        min-height: 88px;
+        cursor: pointer;
+      }
+      button:active {
+        transform: scale(0.97);
+      }
+      button:disabled {
+        opacity: 0.4;
+      }
+      #start {
+        grid-column: 1 / -1;
+        border-color: var(--green);
+        color: var(--green);
+      }
+      #finish {
+        grid-column: 1 / -1;
+        border-color: var(--violet);
+        color: #c4b5fd;
+      }
+      #plus {
+        border-color: var(--cyan);
+        color: var(--cyan);
+        font-size: 40px;
+      }
+      #minus {
+        border-color: var(--red);
+        color: var(--red);
+        font-size: 40px;
+      }
+      #undo {
+        grid-column: 1 / -1;
+        border-color: var(--amber);
+        color: var(--amber);
+      }
+      .status {
+        min-height: 20px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .status.error {
+        color: var(--red);
+      }
+      form {
+        display: grid;
+        gap: 12px;
+        margin-top: 20vh;
+      }
+      input {
+        font: inherit;
+        font-size: 32px;
+        text-align: center;
+        letter-spacing: 8px;
+        padding: 16px;
+        border-radius: 16px;
+        border: 2px solid var(--line);
+        background: var(--card);
+        color: var(--text);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <form id="pin-form" hidden>
+        <label for="pin" class="status">Enter the PIN from .env</label>
+        <input
+          id="pin"
+          type="password"
+          inputmode="numeric"
+          autocomplete="off"
+          pattern="[0-9]*"
+          maxlength="12"
+        />
+        <button type="submit" id="pin-go">Unlock</button>
+      </form>
+      <section id="panel" hidden>
+        <div class="count">
+          <div class="big" id="left">-</div>
+          <div class="label">push-ups left</div>
+          <div class="set">
+            <span class="phase" id="phase">-</span>
+            <span id="set">Set -</span>
+          </div>
+        </div>
+      </section>
+      <div class="grid" id="buttons" hidden>
+        <button id="start" data-action="start">Start set</button>
+        <button id="minus" data-action="minus" aria-label="Minus one">
+          -1
+        </button>
+        <button id="plus" data-action="plus" aria-label="Plus one">+1</button>
+        <button id="undo" data-action="undo">Undo last rep</button>
+        <button id="finish" data-action="finish">End set</button>
+      </div>
+      <div class="status" id="status" role="status"></div>
+    </main>
+    <script type="module" src="/phone.js"></script>
+  </body>
+</html>

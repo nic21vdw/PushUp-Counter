@@ -153,6 +153,26 @@ announcer off so two voices never talk over each other.
   machine only has software WebGL, the page runs exactly as it did before.
 - The stage is throttled so the pose detector keeps 25+ samples/s. Check the
   rate in the Options panel after making the stage heavier.
+- **Measuring cost (2026-11-06).** `npm run perf:stage -- --three <dir>` replays
+  the demo on a virtual clock with seeded randomness, so two runs do the same
+  work and their CPU can be compared (`PERF_PATCH` / `PERF_PATCH_B` hold
+  find-and-replace patches for an A/B in one browser; `bodyFrom` swaps a whole
+  file). `npm run perf -- --video <file.mjpeg>` measures the real page for a
+  set time: detector rate, inference ms, frame times, CPU per process and
+  memory slope. jsdelivr is often blocked from a sandbox, so `--three` serves a
+  local copy of three@0.170.0 (unpack the npm tarball). Headless Chromium has
+  no GPU: WebGL and the pose model run on SwiftShader in the GPU process, so
+  its CPU time stands in for GPU cost and the detector reads 2-4 samples/s
+  there. Do not tune detector thresholds or rates from those numbers.
+- The stage renders without MSAA (`antialias: false`). Every layer is a soft
+  additive glow; MSAA only smoothed the streak lines and the edges of the big
+  3D numbers, and resolving it over a full-window transparent canvas was most
+  of the stage's GPU work. The aura quad is sized to how far its flames can
+  reach at the current tier and heat, and its shader skips pixels the flames
+  cannot touch; both change no pixel.
+- Do not cap the detector below the camera rate to save work: the replay
+  harness counts 99.7% of reps at 60 samples/s against 99.2% at 30 (`npm run
+harness -- --fps 30`).
 
 ## Subscribers come from the exact Studio feed first
 
@@ -219,3 +239,15 @@ past `owed` into `surplus`. A new stream resets `surplus` with `done`.
   2026-10-23 dropped every rep whose bottom hid the arm for ~400 ms; the
   traces in `tests/rep-traces.mjs` reproduce that. An upright torso
   (`maxTorsoTiltDeg`, from world landmarks) can neither start nor finish a rep.
+- **Replay harness (2026-11-06).** `npm run harness` renders synthetic 33-point
+  poses (clean, half, fast, paused, covered, walk-through, someone crossing the
+  camera, camera jitter) through `anglesFromLandmarks` and `RepCounter`, and
+  prints TP/FN/FP/TN with precision and recall against the labelled count
+  (`--verbose` lists the misses, `--seeds 1-20` widens it).
+  `tests/rep-harness.test.mjs` pins both at 98%+. Run it after touching any
+  threshold. Two rules came out of it: upright frames are treated as the arm
+  unseen (not fed to the filter, not a sample), so someone crossing the camera
+  mid-rep is bridged like any gap and standing up for over `maxGapMs` abandons
+  the rep; and a bottom that falls inside a gap counts when the angle was coming
+  down from an established top and one edge of the gap is within `nearMissDeg`
+  of `downAngle`. A half rep is nowhere near either edge.

@@ -382,6 +382,7 @@ void main() {
 
 const AURA_FRAG = `
 uniform vec2 uSize;
+uniform vec2 uDraw;
 uniform vec2 uRect;
 uniform float uTime;
 uniform float uLevel;
@@ -397,13 +398,17 @@ float sdBox(vec2 p, vec2 b, float r) {
   return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 void main() {
-  vec2 q = (vUv - 0.5) * uSize;
+  vec2 q = (vUv - 0.5) * uDraw;
   float sd = sdBox(q, uRect * 0.5, 18.0);
+  if (sd <= -8.0) discard;
   float up = clamp(q.y / (uSize.y * 0.5), -1.0, 1.0);
+  float base = (22.0 + 24.0 * uTier + 36.0 * uHeat) * (0.5 + 0.7 * smoothstep(-0.7, 1.0, up));
+  if (sd - 19.0 >= min(base * 1.45, 190.0)) discard;
   float t = uTime * (1.0 + 0.28 * uTier);
   float n = fbm(vec2(q.x * 0.016, q.y * 0.012 - t * 1.4));
+  float reach = min(base * (0.55 + 0.9 * n), 190.0);
+  if (sd - 19.0 >= reach) discard;
   float n2 = fbm(vec2(q.x * 0.045 + 5.2, q.y * 0.035 - t * 2.4));
-  float reach = min((22.0 + 24.0 * uTier + 36.0 * uHeat) * (0.55 + 0.9 * n) * (0.5 + 0.7 * smoothstep(-0.7, 1.0, up)), 190.0);
   float f = 1.0 - smoothstep(0.0, reach, sd + (n2 - 0.5) * 38.0);
   f *= f;
   vec2 hs = uSize * 0.5;
@@ -543,7 +548,7 @@ function buildStage(THREE, addons, host, doc, win) {
 
   const renderer = new THREE.WebGLRenderer({
     alpha: true,
-    antialias: true,
+    antialias: false,
     premultipliedAlpha: true,
     stencil: false,
   });
@@ -769,6 +774,7 @@ function buildStage(THREE, addons, host, doc, win) {
 
   const auraUniforms = {
     uSize: { value: new THREE.Vector2(400, 300) },
+    uDraw: { value: new THREE.Vector2(400, 300) },
     uRect: { value: new THREE.Vector2(240, 90) },
     uTime: timeUniform,
     uLevel: { value: 0 },
@@ -2251,9 +2257,14 @@ function buildStage(THREE, addons, host, doc, win) {
     if (!aura.visible) return;
     const padX = 230;
     const padY = 270;
+    const reach =
+      Math.min((22 + 24 * tierSmooth + 36 * heat) * 1.2 * 1.45, 190) + 20;
+    const drawW = Math.min(a.w + padX * 2, a.w + reach * 2);
+    const drawH = Math.min(a.h + padY * 2, a.h + reach * 2);
     auraUniforms.uRect.value.set(a.w, a.h);
     auraUniforms.uSize.value.set(a.w + padX * 2, a.h + padY * 2);
-    aura.scale.set(a.w + padX * 2, a.h + padY * 2, 1);
+    auraUniforms.uDraw.value.set(drawW, drawH);
+    aura.scale.set(drawW, drawH, 1);
     aura.position.set(a.x, a.y + 40, 1);
     auraUniforms.uLevel.value = auraLevel;
     auraUniforms.uTier.value = tierSmooth;

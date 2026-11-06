@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { isPrivateAddress } from "./public/js/lan-address.js";
 import { fileURLToPath } from "node:url";
 import {
   normalizeSession,
@@ -74,6 +75,13 @@ const CONFIG = {
   },
   port: Number(env("PORT", "4747")),
   host: env("HOST", "127.0.0.1"),
+  // The phone panel listens on the LAN only when a PIN is set in .env.
+  phonePin: (() => {
+    const pin = env("PHONE_PIN", "").trim();
+    return /^\d{4,12}$/.test(pin) ? pin : "";
+  })(),
+  phonePort: Number(env("PHONE_PORT", "4748")),
+  phoneHost: env("PHONE_HOST", "0.0.0.0"),
   pollSeconds: Math.max(15, Number(env("POLL_SECONDS", "30"))),
   exactSubsUrl: (() => {
     const url = env("EXACT_SUBS_URL", "http://127.0.0.1:4757/subs");
@@ -501,6 +509,35 @@ function controlAllowed(req) {
   )
     return false;
   return true;
+}
+
+async function runControl(body) {
+  const result = applyControl(state.session, body, {
+    now: Date.now(),
+    done: state.done,
+    resetStream: () => {
+      const snapshot = {
+        carriedOver: state.carriedOver,
+        baselineSubs: state.baselineSubs,
+        done: state.done,
+        surplus: state.surplus,
+        streamStartedAt: state.streamStartedAt,
+        sources: structuredClone(state.sources),
+      };
+      startNewStream(state.subs, state.subs);
+      return snapshot;
+    },
+    restoreStream: (snapshot) => Object.assign(state, snapshot),
+  });
+  applyDelta(result.delta);
+  if (
+    result.delta !== 0 ||
+    body.action === "goal" ||
+    body.action === "milestones"
+  )
+    celebrateNow();
+  await saveState(result.reason);
+  broadcast();
 }
 
 /**
@@ -1324,37 +1361,11 @@ const server = http.createServer(async (req, res) => {
       if (body.enabled) startSourcePolling();
       return sendJson(res, 200, view());
     }
-    let result;
     try {
-      result = applyControl(state.session, body, {
-        now: Date.now(),
-        done: state.done,
-        resetStream: () => {
-          const snapshot = {
-            carriedOver: state.carriedOver,
-            baselineSubs: state.baselineSubs,
-            done: state.done,
-            surplus: state.surplus,
-            streamStartedAt: state.streamStartedAt,
-            sources: structuredClone(state.sources),
-          };
-          startNewStream(state.subs, state.subs);
-          return snapshot;
-        },
-        restoreStream: (snapshot) => Object.assign(state, snapshot),
-      });
+      await runControl(body);
     } catch (err) {
       return sendJson(res, 400, { error: err.message });
     }
-    applyDelta(result.delta);
-    if (
-      result.delta !== 0 ||
-      body.action === "goal" ||
-      body.action === "milestones"
-    )
-      celebrateNow();
-    await saveState(result.reason);
-    broadcast();
     return sendJson(res, 200, view());
   }
 
@@ -1560,6 +1571,119 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Phone panel (LAN, PIN)
+// ---------------------------------------------------------------------------
+//
+// A separate listener so the main server can stay bound to 127.0.0.1. It
+// serves one page and five actions, answers only private-network addresses,
+// and needs the PIN from .env on every request.
+
+const PHONE_ACTIONS = new Set(["start", "finish", "plus", "minus", "undo"]);
+const PHONE_MAX_FAILURES = 5;
+const PHONE_LOCK_MS = 60_000;
+const phoneFailures = new Map();
+
+function pinMatches(given) {
+  const a = crypto
+    .createHash("sha256")
+    .update(String(given ?? ""))
+    .digest();
+  const b = crypto.createHash("sha256").update(CONFIG.phonePin).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+function phoneLocked(ip, now) {
+  const entry = phoneFailures.get(ip);
+  return Boolean(entry && entry.lockedUntil > now);
+}
+
+function phoneFailed(ip, now) {
+  const entry = phoneFailures.get(ip) ?? { count: 0, lockedUntil: 0 };
+  entry.count += 1;
+  if (entry.count >= PHONE_MAX_FAILURES) {
+    entry.count = 0;
+    entry.lockedUntil = now + PHONE_LOCK_MS;
+  }
+  phoneFailures.set(ip, entry);
+}
+
+function phoneView() {
+  const v = view();
+  return {
+    left: v.left,
+    done: v.done,
+    owed: v.owed,
+    phase: v.session?.phase ?? null,
+    setNumber: v.session?.setNumber ?? 0,
+    setReps: v.session?.setReps ?? 0,
+  };
+}
+
+const PHONE_FILES = {
+  "/": ["phone.html", "text/html; charset=utf-8"],
+  "/phone.js": ["js/phone.js", "text/javascript; charset=utf-8"],
+};
+
+const phoneServer = http.createServer(async (req, res) => {
+  const ip = req.socket.remoteAddress;
+  if (!isPrivateAddress(ip)) {
+    res.writeHead(403).end("Local network only");
+    return;
+  }
+  const url = new URL(req.url, "http://phone.local");
+  const file = PHONE_FILES[url.pathname];
+  if (file && req.method === "GET") {
+    try {
+      const body = await fsp.readFile(path.join(PUBLIC_DIR, file[0]));
+      res.writeHead(200, {
+        "Content-Type": file[1],
+        "Content-Length": body.length,
+        "Cache-Control": "no-store",
+        "X-Frame-Options": "DENY",
+      });
+      res.end(body);
+    } catch {
+      res.writeHead(404).end("Not found");
+    }
+    return;
+  }
+
+  const isState = url.pathname === "/api/state" && req.method === "GET";
+  const isControl = url.pathname === "/api/control" && req.method === "POST";
+  if (!isState && !isControl) {
+    return sendJson(res, 404, { error: "Unknown endpoint" });
+  }
+  const now = Date.now();
+  if (phoneLocked(ip, now)) {
+    return sendJson(res, 429, { error: "Too many wrong PINs. Wait a minute." });
+  }
+  if (!pinMatches(req.headers["x-pushup-pin"])) {
+    phoneFailed(ip, now);
+    return sendJson(res, 401, { error: "Wrong PIN" });
+  }
+  phoneFailures.delete(ip);
+  if (isState) return sendJson(res, 200, phoneView());
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    return sendJson(res, 400, { error: err.message });
+  }
+  if (!PHONE_ACTIONS.has(body.action)) {
+    return sendJson(res, 400, {
+      error: "That action is not on the phone panel",
+    });
+  }
+  try {
+    await runControl({ action: body.action });
+  } catch (err) {
+    return sendJson(res, 400, { error: err.message });
+  }
+  return sendJson(res, 200, phoneView());
+});
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
@@ -1595,6 +1719,11 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
   console.log(
     `  Control panel ${base}/control.html   <- start sets, rest, fix the count`,
   );
+  if (CONFIG.phonePin) {
+    console.log(
+      `  Phone panel   http://<this PC's LAN IP>:${CONFIG.phonePort}/   <- PIN from .env`,
+    );
+  }
   if (CONFIG.subsEnabled) {
     const plural = CONFIG.perSub === 1 ? "" : "s";
     console.log(
@@ -1636,6 +1765,13 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
     }, every * 1000);
   }
 });
+
+if (CONFIG.phonePin) {
+  phoneServer.on("error", (err) => {
+    console.log(`[phone] panel not started: ${err.message}`);
+  });
+  phoneServer.listen(CONFIG.phonePort, CONFIG.phoneHost);
+}
 
 let sourceTimer = null;
 let sourcesBusy = false;
