@@ -4,8 +4,8 @@ import { makeCamera } from "./pose-synth.mjs";
 const hideNearArm = (p) => (p.arm ? 0.25 : undefined);
 const hideBothArms = (p) => (p.arm ? 0.2 : undefined);
 
-function clean(seed) {
-  const tl = new Timeline({ seed });
+function clean(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed });
   tl.hold(1500);
   for (let r = 0; r < 12; r += 1)
     tl.rep({
@@ -19,8 +19,8 @@ function clean(seed) {
   return { tl, camera: { seed } };
 }
 
-function half(seed) {
-  const tl = new Timeline({ seed });
+function half(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed });
   tl.hold(1500);
   for (let r = 0; r < 16; r += 1) {
     const full = r % 2 === 0 || tl.rand(0, 1) < 0.3;
@@ -49,8 +49,8 @@ function half(seed) {
   return { tl, camera: { seed } };
 }
 
-function fast(seed) {
-  const tl = new Timeline({ seed });
+function fast(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed });
   tl.hold(1200);
   for (let r = 0; r < 16; r += 1) {
     const last = r === 15;
@@ -67,8 +67,8 @@ function fast(seed) {
   return { tl, camera: { seed } };
 }
 
-function paused(seed) {
-  const tl = new Timeline({ seed });
+function paused(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed });
   tl.hold(1500);
   for (let r = 0; r < 10; r += 1)
     tl.rep({
@@ -83,8 +83,8 @@ function paused(seed) {
   return { tl, camera: { seed } };
 }
 
-function covered(seed) {
-  const tl = new Timeline({ seed });
+function covered(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed });
   tl.hold(1500);
   for (let r = 0; r < 12; r += 1) {
     const kind = r % 4;
@@ -128,8 +128,8 @@ function covered(seed) {
   return { tl, camera: { seed } };
 }
 
-function walkThrough(seed) {
-  const tl = new Timeline({ seed });
+function walkThrough(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed });
   tl.cover(500);
   tl.walk(4000, { fromX: -1.0, toX: 2.6, elbow: 155, pump: 10 });
   tl.cover(800);
@@ -158,8 +158,8 @@ function walkThrough(seed) {
   return { tl, camera: { seed } };
 }
 
-function crossing(seed) {
-  const tl = new Timeline({ seed });
+function crossing(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed });
   tl.hold(1500);
   for (let r = 0; r < 10; r += 1) {
     let during = null;
@@ -191,8 +191,8 @@ function crossing(seed) {
   return { tl, camera: { seed } };
 }
 
-function jitter(seed) {
-  const tl = new Timeline({ seed, frameJitterMs: 9, dropRate: 0.06 });
+function jitter(seed, fps = 30) {
+  const tl = new Timeline({ fps, seed, frameJitterMs: 9, dropRate: 0.06 });
   tl.hold(1500);
   for (let r = 0; r < 12; r += 1)
     tl.rep({
@@ -230,8 +230,8 @@ export const SCENARIOS = {
 
 export const SEEDS = [1, 2, 3, 4, 5];
 
-export function buildScenario(name, seed) {
-  const { tl, camera } = SCENARIOS[name](seed);
+export function buildScenario(name, seed, { fps = 30 } = {}) {
+  const { tl, camera } = SCENARIOS[name](seed, fps);
   const render = makeCamera(camera);
   const samples = tl.frames.map((f) => ({ t: f.t, ...render(f.body) }));
   return { name, seed, samples, reps: tl.reps, decoys: tl.decoys };

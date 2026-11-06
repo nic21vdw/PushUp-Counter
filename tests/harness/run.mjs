@@ -11,7 +11,9 @@ const seeds =
         return Array.from({ length: to - from + 1 }, (_, i) => from + i);
       })
     : undefined;
-const result = evaluate({ seeds });
+const fpsAt = args.indexOf("--fps");
+const fps = fpsAt >= 0 ? Number(args[fpsAt + 1]) : undefined;
+const result = evaluate({ seeds, fps });
 console.log(formatTable(result));
 if (verbose)
   for (const row of result.rows)
