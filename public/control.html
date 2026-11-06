@@ -107,6 +107,22 @@
       .pill[data-phase="done"] {
         border-color: #fde047;
       }
+      .source {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 10px;
+        padding: 6px 0;
+      }
+      .source small {
+        color: var(--muted);
+      }
+      .source small[data-tone="live"] {
+        color: var(--green);
+      }
+      .source small[data-tone="error"] {
+        color: var(--red);
+      }
       .row {
         display: flex;
         flex-wrap: wrap;
@@ -439,6 +455,16 @@
           </div>
           <p class="note" id="t-suggest"></p>
           <button id="b-suggest" hidden></button>
+        </section>
+
+        <section>
+          <h2>Push-up sources</h2>
+          <div id="sources"></div>
+          <p class="note">
+            Gains count only while that channel is live. Switching one on
+            mid-stream starts from its current count, so it adds nothing by
+            itself.
+          </p>
         </section>
 
         <section>

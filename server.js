@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { isPrivateAddress } from "./public/js/lan-address.js";
 import { fileURLToPath } from "node:url";
 import {
   normalizeSession,
@@ -12,6 +13,14 @@ import {
   sessionView,
   effectiveTarget,
 } from "./public/js/session-model.js";
+import {
+  SOURCES,
+  normalizeSources,
+  sourceGained,
+  applyReading,
+  setSourceEnabled,
+  resetSourceForNewStream,
+} from "./public/js/stream-sources.js";
 import {
   LOG_VERSION,
   parseStreamLog,
@@ -76,6 +85,13 @@ const CONFIG = {
   },
   port: Number(env("PORT", "4747")),
   host: env("HOST", "127.0.0.1"),
+  // The phone panel listens on the LAN only when a PIN is set in .env.
+  phonePin: (() => {
+    const pin = env("PHONE_PIN", "").trim();
+    return /^\d{4,12}$/.test(pin) ? pin : "";
+  })(),
+  phonePort: Number(env("PHONE_PORT", "4748")),
+  phoneHost: env("PHONE_HOST", "0.0.0.0"),
   pollSeconds: Math.max(15, Number(env("POLL_SECONDS", "30"))),
   exactSubsUrl: (() => {
     const url = env("EXACT_SUBS_URL", "http://127.0.0.1:4757/subs");
@@ -100,6 +116,44 @@ const CONFIG = {
   // if the panel's "Only count after Start set" is ticked. On (the default)
   // leaves that choice to the panel, which ships unticked.
   requireArm: !/^(0|off|false|no)$/i.test(env("REQUIRE_ARM", "on").trim()),
+  // Twitch and Kick. Each source is off until it is configured here and
+  // switched on in the control panel. The base URLs exist so the tests can
+  // point them at a local mock.
+  twitch: {
+    clientId: env("TWITCH_CLIENT_ID"),
+    clientSecret: env("TWITCH_CLIENT_SECRET"),
+    accessToken: env("TWITCH_ACCESS_TOKEN"),
+    refreshToken: env("TWITCH_REFRESH_TOKEN"),
+    broadcasterId: env("TWITCH_BROADCASTER_ID"),
+    apiBase: env("TWITCH_API_BASE", "https://api.twitch.tv/helix").replace(
+      /\/+$/,
+      "",
+    ),
+    authBase: env("TWITCH_AUTH_BASE", "https://id.twitch.tv/oauth2").replace(
+      /\/+$/,
+      "",
+    ),
+  },
+  kick: {
+    clientId: env("KICK_CLIENT_ID"),
+    clientSecret: env("KICK_CLIENT_SECRET"),
+    accessToken: env("KICK_ACCESS_TOKEN"),
+    channel: env("KICK_CHANNEL").replace(/^@/, ""),
+    broadcasterId: env("KICK_BROADCASTER_ID"),
+    apiBase: env("KICK_API_BASE", "https://api.kick.com/public/v1").replace(
+      /\/+$/,
+      "",
+    ),
+    authBase: env("KICK_AUTH_BASE", "https://id.kick.com").replace(/\/+$/, ""),
+    followersBase: env(
+      "KICK_FOLLOWERS_API_BASE",
+      "https://kick.com/api/v2",
+    ).replace(/\/+$/, ""),
+  },
+  sourcesPollSeconds: Math.max(
+    1,
+    Number(env("SOURCES_POLL_SECONDS", "30")) || 30,
+  ),
   newStreamAfterHours: (() => {
     const raw = env("NEW_STREAM_AFTER_HOURS", "6").toLowerCase();
     if (raw === "off" || raw === "never") return Infinity;
@@ -107,6 +161,48 @@ const CONFIG = {
     return Number.isFinite(hours) && hours >= 0 ? hours : 6;
   })(),
 };
+
+function perUnit(key) {
+  const raw = env(key, "");
+  const value = Number(raw);
+  return raw !== "" && Number.isFinite(value) && value > 0
+    ? value
+    : CONFIG.perSub;
+}
+
+const SOURCE_RATES = {
+  "twitch-subs": perUnit("PUSHUPS_PER_TWITCH_SUB"),
+  "kick-follows": perUnit("PUSHUPS_PER_KICK_FOLLOW"),
+  "kick-subs": perUnit("PUSHUPS_PER_KICK_SUB"),
+};
+
+const twitchConfigured = () => {
+  const t = CONFIG.twitch;
+  return Boolean(
+    t.clientId &&
+    t.broadcasterId &&
+    (t.accessToken || (t.refreshToken && t.clientSecret)),
+  );
+};
+
+const kickConfigured = () => {
+  const k = CONFIG.kick;
+  return Boolean(
+    (k.channel || k.broadcasterId) &&
+    (k.accessToken || (k.clientId && k.clientSecret)),
+  );
+};
+
+/** Whether each source has what it needs in .env. Unconfigured is off. */
+function sourceConfigured(id) {
+  if (id === "twitch-subs") return twitchConfigured();
+  if (id === "kick-subs") return kickConfigured();
+  if (id === "kick-follows")
+    return kickConfigured() && Boolean(CONFIG.kick.channel);
+  return false;
+}
+
+const anySourceConfigured = () => SOURCES.some((s) => sourceConfigured(s.id));
 
 // ---------------------------------------------------------------------------
 // State
@@ -160,10 +256,13 @@ const DEFAULT_STATE = {
   // Sets, streaks, goal, milestones, boss and the event log. See
   // public/js/session-model.js.
   session: null,
+  // Twitch and Kick: one entry per source. See public/js/stream-sources.js.
+  sources: null,
 };
 
 let state = { ...DEFAULT_STATE };
 state.session = normalizeSession(null);
+state.sources = normalizeSources(null);
 let lastError = null;
 /**
  * Something about the count itself is not to be trusted — it came from a
@@ -186,6 +285,7 @@ function loadState() {
       const text = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
       state = { ...DEFAULT_STATE, ...JSON.parse(text) };
       state.session = normalizeSession(state.session);
+      state.sources = normalizeSources(state.sources);
       if (file === BACKUP_FILE) {
         console.error(
           "[state] state.json was unreadable — the count came from the backup.",
@@ -276,6 +376,7 @@ async function appendHistory(reason) {
     left: now.left,
     owed: now.owed,
     done: now.done,
+    fromSources: now.fromSources,
     carriedOver: state.carriedOver,
     subs: state.subs,
     baselineSubs: state.baselineSubs,
@@ -286,6 +387,7 @@ async function appendHistory(reason) {
     entry.left,
     entry.owed,
     entry.done,
+    entry.fromSources,
     entry.carriedOver,
     entry.subs,
     entry.baselineSubs,
@@ -398,6 +500,14 @@ function activeCameraView() {
   return activeCamera.id;
 }
 
+/** Push-ups owed from Twitch and Kick this stream, whatever is switched on now. */
+function fromSources() {
+  let total = 0;
+  for (const s of SOURCES)
+    total += sourceGained(state.sources[s.id]) * SOURCE_RATES[s.id];
+  return total;
+}
+
 /** Bank push-ups the camera actually saw. The only way `done` ever moves. */
 function credited() {
   return state.done - state.surplus;
@@ -466,6 +576,49 @@ function controlAllowed(req) {
   return true;
 }
 
+async function runControl(body) {
+  const lastEventId = state.session.events.at(-1)?.id ?? null;
+  const result = applyControl(state.session, body, {
+    now: Date.now(),
+    done: state.done,
+    resetStream: () => {
+      const snapshot = {
+        carriedOver: state.carriedOver,
+        baselineSubs: state.baselineSubs,
+        done: state.done,
+        surplus: state.surplus,
+        streamStartedAt: state.streamStartedAt,
+        sources: structuredClone(state.sources),
+      };
+      startNewStream(state.subs, state.subs, "reset by hand");
+      return snapshot;
+    },
+    restoreStream: (snapshot) => {
+      logStream(
+        [
+          {
+            at: new Date().toISOString(),
+            type: "discard",
+            note: "stream reset taken back",
+          },
+        ],
+        state.streamStartedAt,
+      );
+      Object.assign(state, snapshot);
+    },
+  });
+  applyDelta(result.delta);
+  logSessionEventsSince(lastEventId);
+  if (
+    result.delta !== 0 ||
+    body.action === "goal" ||
+    body.action === "milestones"
+  )
+    celebrateNow();
+  await saveState(result.reason);
+  broadcast();
+}
+
 /**
  * Begin a fresh stream session.
  *
@@ -485,10 +638,11 @@ function startNewStream(subs, closingSubs = subs, note = "") {
       : 0;
   const stillOwed = Math.max(
     0,
-    state.carriedOver + gained * CONFIG.perSub - credited(),
+    state.carriedOver + gained * CONFIG.perSub + fromSources() - credited(),
   );
 
   state.carriedOver = stillOwed;
+  for (const s of SOURCES) resetSourceForNewStream(state.sources[s.id]);
   state.done = 0;
   state.surplus = 0;
   state.baselineSubs = subs ?? state.subs;
@@ -520,7 +674,8 @@ function setLeft(left) {
     state.subs !== null && state.baselineSubs !== null
       ? state.subs - state.baselineSubs
       : 0;
-  state.carriedOver = left + credited() - subsGained * CONFIG.perSub;
+  state.carriedOver =
+    left + credited() - subsGained * CONFIG.perSub - fromSources();
   return view().left;
 }
 
@@ -536,7 +691,8 @@ function view() {
   // Losing subscribers mid-stream makes `subsGained` negative, which used to
   // drag the total owed below zero and put "3 / -11" on screen. You cannot owe
   // a negative number of push-ups; the floor is nothing owed.
-  const owed = Math.max(0, state.carriedOver + fromSubs);
+  const extra = fromSources();
+  const owed = Math.max(0, state.carriedOver + fromSubs + extra);
   const rawLeft = owed - credited();
   const session = sessionView(state.session, {
     done: state.done,
@@ -561,6 +717,8 @@ function view() {
     baselineSubs: baseline,
     subsGained,
     fromSubs,
+    fromSources: extra,
+    sources: sourcesView(),
     subsUpdatedAt: state.subsUpdatedAt,
     hiddenSubscriberCount: state.hiddenSubscriberCount,
     channelTitle: state.channelTitle,
@@ -589,6 +747,33 @@ function view() {
 
 let telemetry = null;
 const TELEMETRY_STALE_MS = 5000;
+
+/** Failures per source, for the panel. Never persisted, never a token. */
+const sourceErrors = {};
+
+function sourcesView() {
+  return SOURCES.map((meta) => {
+    const s = state.sources[meta.id];
+    const configured = sourceConfigured(meta.id);
+    const gained = sourceGained(s);
+    return {
+      id: meta.id,
+      platform: meta.platform,
+      label: meta.label,
+      unit: meta.unit,
+      configured,
+      enabled: configured && s.enabled,
+      live: s.live,
+      count: s.count,
+      baseline: s.baseline,
+      gained,
+      perUnit: SOURCE_RATES[meta.id],
+      owed: gained * SOURCE_RATES[meta.id],
+      updatedAt: s.updatedAt,
+      error: sourceErrors[meta.id] ?? null,
+    };
+  });
+}
 
 // ---------------------------------------------------------------------------
 // YouTube Data API v3
@@ -826,6 +1011,244 @@ async function poll({ quiet = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Twitch (Helix) and Kick
+//
+// Each tick reads every platform that has a source switched on, then hands
+// each source its count and the platform's live flag. A failed read changes
+// nothing about the count: the source keeps its last reading and says why.
+// ---------------------------------------------------------------------------
+
+function redactSourceSecrets(text) {
+  let safe = redactSecrets(text);
+  for (const secret of [
+    CONFIG.twitch.accessToken,
+    CONFIG.twitch.refreshToken,
+    CONFIG.twitch.clientSecret,
+    CONFIG.kick.accessToken,
+    CONFIG.kick.clientSecret,
+    twitchToken,
+    kickToken,
+  ]) {
+    if (secret) safe = safe.split(secret).join("***");
+  }
+  return safe;
+}
+
+async function getJson(url, init, label) {
+  const res = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = body?.message ?? body?.error ?? res.statusText;
+    const err = new Error(`${label} ${res.status}: ${message}`);
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+
+let twitchToken = null;
+
+async function refreshTwitchToken() {
+  const t = CONFIG.twitch;
+  if (!t.refreshToken || !t.clientSecret) return false;
+  const body = await getJson(
+    `${t.authBase}/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: t.refreshToken,
+        client_id: t.clientId,
+        client_secret: t.clientSecret,
+      }),
+    },
+    "Twitch token refresh",
+  );
+  if (typeof body?.access_token !== "string")
+    throw new Error("Twitch token refresh returned no access token");
+  twitchToken = body.access_token;
+  return true;
+}
+
+async function twitchGet(pathAndQuery) {
+  const t = CONFIG.twitch;
+  if (!twitchToken) twitchToken = t.accessToken || null;
+  if (!twitchToken) await refreshTwitchToken();
+  const call = () =>
+    getJson(
+      `${t.apiBase}${pathAndQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${twitchToken}`,
+          "Client-Id": t.clientId,
+        },
+      },
+      "Twitch API",
+    );
+  try {
+    return await call();
+  } catch (err) {
+    if (err.status === 401 && (await refreshTwitchToken())) return call();
+    throw err;
+  }
+}
+
+async function readTwitch() {
+  const id = encodeURIComponent(CONFIG.twitch.broadcasterId);
+  const [streams, subs] = await Promise.all([
+    twitchGet(`/streams?user_id=${id}`),
+    twitchGet(`/subscriptions?broadcaster_id=${id}&first=1`),
+  ]);
+  const total = Number(subs?.total);
+  if (!Number.isFinite(total))
+    throw new Error("Twitch API returned no subscription total");
+  const live = Array.isArray(streams?.data)
+    ? streams.data.some((s) => s?.type === "live")
+    : null;
+  if (live === null) throw new Error("Twitch API returned no stream list");
+  return { "twitch-subs": { count: total, live } };
+}
+
+let kickToken = null;
+
+async function kickAppToken() {
+  const k = CONFIG.kick;
+  const body = await getJson(
+    `${k.authBase}/oauth/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: k.clientId,
+        client_secret: k.clientSecret,
+      }),
+    },
+    "Kick token",
+  );
+  if (typeof body?.access_token !== "string")
+    throw new Error("Kick token request returned no access token");
+  kickToken = body.access_token;
+}
+
+async function kickChannel() {
+  const k = CONFIG.kick;
+  const query = k.broadcasterId
+    ? `broadcaster_user_id=${encodeURIComponent(k.broadcasterId)}`
+    : `slug=${encodeURIComponent(k.channel)}`;
+  if (!kickToken) kickToken = k.accessToken || null;
+  if (!kickToken) await kickAppToken();
+  const call = () =>
+    getJson(
+      `${k.apiBase}/channels?${query}`,
+      { headers: { Authorization: `Bearer ${kickToken}` } },
+      "Kick API",
+    );
+  let body;
+  try {
+    body = await call();
+  } catch (err) {
+    if (err.status !== 401 || !k.clientId || !k.clientSecret) throw err;
+    await kickAppToken();
+    body = await call();
+  }
+  const channel = body?.data?.[0];
+  if (!channel)
+    throw new Error("Kick API returned no channel - check KICK_CHANNEL");
+  return channel;
+}
+
+async function readKick(wanted) {
+  const channel = await kickChannel();
+  const live = channel.stream?.is_live === true;
+  const out = {};
+  if (wanted.has("kick-subs")) {
+    const count = Number(channel.active_subscribers_count);
+    if (!Number.isFinite(count))
+      out["kick-subs"] = new Error("Kick API returned no subscriber count");
+    else out["kick-subs"] = { count, live };
+  }
+  if (wanted.has("kick-follows")) {
+    try {
+      const slug = encodeURIComponent(CONFIG.kick.channel);
+      const body = await getJson(
+        `${CONFIG.kick.followersBase}/channels/${slug}`,
+        { headers: { Accept: "application/json" } },
+        "Kick followers",
+      );
+      const count = Number(body?.followers_count ?? body?.followersCount);
+      if (!Number.isFinite(count))
+        throw new Error("Kick returned no follower count");
+      out["kick-follows"] = { count, live };
+    } catch (err) {
+      out["kick-follows"] = err;
+    }
+  }
+  return out;
+}
+
+const PLATFORM_READERS = { twitch: readTwitch, kick: readKick };
+
+async function pollSources() {
+  const wanted = SOURCES.filter(
+    (s) => sourceConfigured(s.id) && state.sources[s.id].enabled,
+  );
+  if (!wanted.length) return;
+
+  const reasons = [];
+  let changed = false;
+  for (const platform of new Set(wanted.map((s) => s.platform))) {
+    const ids = new Set(
+      wanted.filter((s) => s.platform === platform).map((s) => s.id),
+    );
+    let readings;
+    try {
+      readings = await PLATFORM_READERS[platform](ids);
+    } catch (err) {
+      readings = {};
+      for (const id of ids) readings[id] = err;
+    }
+    for (const id of ids) {
+      const reading = readings[id];
+      if (!reading || reading instanceof Error) {
+        const raw =
+          reading?.name === "TimeoutError"
+            ? `${platform} request timed out`
+            : (reading?.message ?? "no reading");
+        const message = redactSourceSecrets(raw);
+        if (sourceErrors[id] !== message) console.error(`[${id}] ${message}`);
+        if (sourceErrors[id] !== message) changed = true;
+        sourceErrors[id] = message;
+        continue;
+      }
+      if (sourceErrors[id]) changed = true;
+      sourceErrors[id] = null;
+      const s = state.sources[id];
+      const before = { count: s.count, live: s.live };
+      const delta = applyReading(s, reading, { active: true, now: Date.now() });
+      if (before.count !== s.count || before.live !== s.live) changed = true;
+      if (before.live !== s.live)
+        reasons.push(`${id} ${s.live ? "went live" : "went offline"}`);
+      if (delta !== 0)
+        reasons.push(
+          `${id} ${before.count} -> ${s.count} (${delta > 0 ? "+" : ""}${delta})`,
+        );
+    }
+  }
+
+  if (!changed && !reasons.length) return;
+  settle();
+  const reason = reasons.length ? reasons.join("; ") : null;
+  if (reason) console.log(`[sources] ${reason} = ${view().left} push-ups left`);
+  await saveState(reason);
+  broadcast();
+}
+
+// ---------------------------------------------------------------------------
 // Server-sent events so the overlay updates without a refresh
 // ---------------------------------------------------------------------------
 
@@ -1028,50 +1451,28 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       return sendJson(res, 400, { error: err.message });
     }
-    const lastEventId = state.session.events.at(-1)?.id ?? null;
-    let result;
+    if (body.action === "source") {
+      const meta = SOURCES.find((s) => s.id === body.source);
+      if (!meta) return sendJson(res, 400, { error: "unknown source" });
+      if (typeof body.enabled !== "boolean")
+        return sendJson(res, 400, { error: "enabled must be true or false" });
+      if (body.enabled && !sourceConfigured(meta.id))
+        return sendJson(res, 400, {
+          error: `${meta.label} is not set up - add its keys to .env first`,
+        });
+      setSourceEnabled(state.sources[meta.id], body.enabled);
+      sourceErrors[meta.id] = null;
+      settle();
+      await saveState(`${meta.label} switched ${body.enabled ? "on" : "off"}`);
+      broadcast();
+      if (body.enabled) startSourcePolling();
+      return sendJson(res, 200, view());
+    }
     try {
-      result = applyControl(state.session, body, {
-        now: Date.now(),
-        done: state.done,
-        resetStream: () => {
-          const snapshot = {
-            carriedOver: state.carriedOver,
-            baselineSubs: state.baselineSubs,
-            done: state.done,
-            surplus: state.surplus,
-            streamStartedAt: state.streamStartedAt,
-          };
-          startNewStream(state.subs, state.subs, "reset by hand");
-          return snapshot;
-        },
-        restoreStream: (snapshot) => {
-          logStream(
-            [
-              {
-                at: new Date().toISOString(),
-                type: "discard",
-                note: "stream reset taken back",
-              },
-            ],
-            state.streamStartedAt,
-          );
-          Object.assign(state, snapshot);
-        },
-      });
+      await runControl(body);
     } catch (err) {
       return sendJson(res, 400, { error: err.message });
     }
-    applyDelta(result.delta);
-    logSessionEventsSince(lastEventId);
-    if (
-      result.delta !== 0 ||
-      body.action === "goal" ||
-      body.action === "milestones"
-    )
-      celebrateNow();
-    await saveState(result.reason);
-    broadcast();
     return sendJson(res, 200, view());
   }
 
@@ -1314,10 +1715,127 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Phone panel (LAN, PIN)
+// ---------------------------------------------------------------------------
+//
+// A separate listener so the main server can stay bound to 127.0.0.1. It
+// serves one page and five actions, answers only private-network addresses,
+// and needs the PIN from .env on every request.
+
+const PHONE_ACTIONS = new Set(["start", "finish", "plus", "minus", "undo"]);
+const PHONE_MAX_FAILURES = 5;
+const PHONE_LOCK_MS = 60_000;
+const phoneFailures = new Map();
+
+function pinMatches(given) {
+  const a = crypto
+    .createHash("sha256")
+    .update(String(given ?? ""))
+    .digest();
+  const b = crypto.createHash("sha256").update(CONFIG.phonePin).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+function phoneLocked(ip, now) {
+  const entry = phoneFailures.get(ip);
+  return Boolean(entry && entry.lockedUntil > now);
+}
+
+function phoneFailed(ip, now) {
+  const entry = phoneFailures.get(ip) ?? { count: 0, lockedUntil: 0 };
+  entry.count += 1;
+  if (entry.count >= PHONE_MAX_FAILURES) {
+    entry.count = 0;
+    entry.lockedUntil = now + PHONE_LOCK_MS;
+  }
+  phoneFailures.set(ip, entry);
+}
+
+function phoneView() {
+  const v = view();
+  return {
+    left: v.left,
+    done: v.done,
+    owed: v.owed,
+    phase: v.session?.phase ?? null,
+    setNumber: v.session?.setNumber ?? 0,
+    setReps: v.session?.setReps ?? 0,
+  };
+}
+
+const PHONE_FILES = {
+  "/": ["phone.html", "text/html; charset=utf-8"],
+  "/phone.js": ["js/phone.js", "text/javascript; charset=utf-8"],
+};
+
+const phoneServer = http.createServer(async (req, res) => {
+  const ip = req.socket.remoteAddress;
+  if (!isPrivateAddress(ip)) {
+    res.writeHead(403).end("Local network only");
+    return;
+  }
+  const url = new URL(req.url, "http://phone.local");
+  const file = PHONE_FILES[url.pathname];
+  if (file && req.method === "GET") {
+    try {
+      const body = await fsp.readFile(path.join(PUBLIC_DIR, file[0]));
+      res.writeHead(200, {
+        "Content-Type": file[1],
+        "Content-Length": body.length,
+        "Cache-Control": "no-store",
+        "X-Frame-Options": "DENY",
+      });
+      res.end(body);
+    } catch {
+      res.writeHead(404).end("Not found");
+    }
+    return;
+  }
+
+  const isState = url.pathname === "/api/state" && req.method === "GET";
+  const isControl = url.pathname === "/api/control" && req.method === "POST";
+  if (!isState && !isControl) {
+    return sendJson(res, 404, { error: "Unknown endpoint" });
+  }
+  const now = Date.now();
+  if (phoneLocked(ip, now)) {
+    return sendJson(res, 429, { error: "Too many wrong PINs. Wait a minute." });
+  }
+  if (!pinMatches(req.headers["x-pushup-pin"])) {
+    phoneFailed(ip, now);
+    return sendJson(res, 401, { error: "Wrong PIN" });
+  }
+  phoneFailures.delete(ip);
+  if (isState) return sendJson(res, 200, phoneView());
+
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    return sendJson(res, 400, { error: err.message });
+  }
+  if (!PHONE_ACTIONS.has(body.action)) {
+    return sendJson(res, 400, {
+      error: "That action is not on the phone panel",
+    });
+  }
+  try {
+    await runControl({ action: body.action });
+  } catch (err) {
+    return sendJson(res, 400, { error: err.message });
+  }
+  return sendJson(res, 200, phoneView());
+});
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
 loadState();
+for (const meta of SOURCES) {
+  const s = state.sources[meta.id];
+  if (!sourceConfigured(meta.id)) setSourceEnabled(s, s.enabled);
+}
 {
   const over = settle();
   if (over > 0) {
@@ -1346,6 +1864,11 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
   console.log(
     `  Control panel ${base}/control.html   <- start sets, rest, fix the count`,
   );
+  if (CONFIG.phonePin) {
+    console.log(
+      `  Phone panel   http://<this PC's LAN IP>:${CONFIG.phonePort}/   <- PIN from .env`,
+    );
+  }
   if (CONFIG.subsEnabled) {
     const plural = CONFIG.perSub === 1 ? "" : "s";
     console.log(
@@ -1360,9 +1883,18 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
       "  Add YOUTUBE_API_KEY and YOUTUBE_CHANNEL_ID to .env to have subscribers add.",
     );
   }
+  if (anySourceConfigured()) {
+    const on = SOURCES.filter(
+      (s) => sourceConfigured(s.id) && state.sources[s.id].enabled,
+    ).map((s) => s.label);
+    console.log(
+      `  Twitch / Kick: ${on.length ? `${on.join(", ")} on` : "set up, all switched off"} (switch them in the control panel).`,
+    );
+  }
   console.log("");
 
   await poll();
+  if (anySourceConfigured()) startSourcePolling();
   // Nothing to poll for when subscribers are off, so don't wake up to do it.
   if (CONFIG.subsEnabled) {
     const every = CONFIG.exactSubsUrl
@@ -1378,6 +1910,32 @@ server.listen(CONFIG.port, CONFIG.host, async () => {
     }, every * 1000);
   }
 });
+
+if (CONFIG.phonePin) {
+  phoneServer.on("error", (err) => {
+    console.log(`[phone] panel not started: ${err.message}`);
+  });
+  phoneServer.listen(CONFIG.phonePort, CONFIG.phoneHost);
+}
+
+let sourceTimer = null;
+let sourcesBusy = false;
+
+function sourceTick() {
+  if (sourcesBusy) return;
+  sourcesBusy = true;
+  pollSources()
+    .catch((err) => console.error(`[sources] ${err.message}`))
+    .finally(() => {
+      sourcesBusy = false;
+    });
+}
+
+function startSourcePolling() {
+  sourceTick();
+  if (sourceTimer) return;
+  sourceTimer = setInterval(sourceTick, CONFIG.sourcesPollSeconds * 1000);
+}
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {

@@ -820,3 +820,72 @@ test("tracking reads holding during a brief loss and locked once it is back", ()
   });
   assert.equal(gone.tracking, TRACKING.SEARCHING);
 });
+
+function feedFrames(counter, frames) {
+  let completions = 0;
+  for (const f of frames) {
+    const r = counter.update({ plankAngle: 172, torsoTilt: 18, ...f });
+    if (r.repCompleted) completions += 1;
+  }
+  return completions;
+}
+
+const frames = (angles, startAt, extra = {}) =>
+  angles.map((elbowAngle, i) => ({
+    elbowAngle,
+    timestamp: startAt + i * 33,
+    ...extra,
+  }));
+
+test("someone crossing in front of the camera mid-rep does not cost the rep", () => {
+  const counter = new RepCounter();
+  const down = [...hold(168, 8), 160, 150, 140, 125, 110, 95, 85];
+  const walker = frames(hold(125, 22), 1000 + down.length * 33, {
+    torsoTilt: 86,
+  });
+  const after = 1000 + (down.length + walker.length) * 33;
+  const completions = feedFrames(counter, [
+    ...frames(down, 1000),
+    ...walker,
+    ...frames([105, 118, 132, 148, 160, 168, ...hold(168, 8)], after),
+  ]);
+  assert.equal(completions, 1);
+});
+
+test("standing up for longer than maxGapMs abandons the rep in progress", () => {
+  const counter = new RepCounter();
+  const down = [...hold(168, 8), 150, 125, 100, 85, 80];
+  const standing = frames(hold(80, 45), 1000 + down.length * 33, {
+    torsoTilt: 86,
+  });
+  const after = 1000 + (down.length + standing.length) * 33;
+  const completions = feedFrames(counter, [
+    ...frames(down, 1000),
+    ...standing,
+    ...frames([100, 130, 160, 168, ...hold(168, 8)], after),
+  ]);
+  assert.equal(completions, 0);
+});
+
+test("a bottom hidden by a gap still counts when the arm was seen on its way down", () => {
+  const counter = new RepCounter();
+  const down = [...hold(168, 8), 160, 148, 135, 122, 110, 102];
+  const back = 1000 + down.length * 33 + 600;
+  const completions = feedFrames(counter, [
+    ...frames(down, 1000),
+    ...frames([108, 118, 132, 148, 162, 168, ...hold(168, 8)], back),
+  ]);
+  assert.equal(completions, 1);
+  assert.equal(counter.lastRep.bridged, true);
+});
+
+test("a half rep hidden by a gap does not count", () => {
+  const counter = new RepCounter();
+  const down = [...hold(168, 8), 160, 150, 140, 132, 127];
+  const back = 1000 + down.length * 33 + 600;
+  const completions = feedFrames(counter, [
+    ...frames(down, 1000),
+    ...frames([126, 132, 145, 158, 166, 168, ...hold(168, 8)], back),
+  ]);
+  assert.equal(completions, 0);
+});
