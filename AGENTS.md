@@ -207,3 +207,15 @@ past `owed` into `surplus`. A new stream resets `surplus` with `done`.
   2026-10-23 dropped every rep whose bottom hid the arm for ~400 ms; the
   traces in `tests/rep-traces.mjs` reproduce that. An upright torso
   (`maxTorsoTiltDeg`, from world landmarks) can neither start nor finish a rep.
+- **Replay harness (2026-11-06).** `npm run harness` renders synthetic 33-point
+  poses (clean, half, fast, paused, covered, walk-through, someone crossing the
+  camera, camera jitter) through `anglesFromLandmarks` and `RepCounter`, and
+  prints TP/FN/FP/TN with precision and recall against the labelled count
+  (`--verbose` lists the misses, `--seeds 1-20` widens it).
+  `tests/rep-harness.test.mjs` pins both at 98%+. Run it after touching any
+  threshold. Two rules came out of it: upright frames are treated as the arm
+  unseen (not fed to the filter, not a sample), so someone crossing the camera
+  mid-rep is bridged like any gap and standing up for over `maxGapMs` abandons
+  the rep; and a bottom that falls inside a gap counts when the angle was coming
+  down from an established top and one edge of the gap is within `nearMissDeg`
+  of `downAngle`. A half rep is nowhere near either edge.

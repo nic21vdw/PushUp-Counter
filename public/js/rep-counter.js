@@ -40,7 +40,9 @@
  *
  * A body that is upright (torso closer to vertical than `maxTorsoTiltDeg`) is
  * standing or walking, not doing a push-up, so it can neither start nor finish
- * a rep. Bent arms while walking into frame are the classic phantom.
+ * a rep. Bent arms while walking into frame are the classic phantom. Its frames
+ * count as the arm unseen: someone crossing in front of the camera mid-rep for
+ * under `maxGapMs` costs nothing, standing up for longer abandons the rep.
  *
  * Each counted rep also comes back as `rep`: depth, top, duration and a 0..100
  * score, so the page can say how good it was and not only that it happened.
@@ -89,7 +91,7 @@ export const DEFAULT_OPTIONS = {
   plankShare: 0.6,
   /** Torso steeper than this (deg from horizontal) is standing, not a push-up. */
   maxTorsoTiltDeg: 55,
-  /** How long (ms) the torso must read upright before a rep in progress is dropped. */
+  /** How long (ms) the torso must read upright before the top position is forgotten. */
   torsoGraceMs: 400,
   /** A dip that gets within this many degrees of `downAngle` is a near miss. */
   nearMissDeg: 15,
@@ -207,6 +209,8 @@ export class RepCounter {
     this.window = [];
     this.minAngleThisPhase = 180;
     this.peakSinceBottom = null;
+    this.beforeGap = null;
+    this.gapMs = 0;
     this.#clearRepStats();
     this.tracking = TRACKING.SEARCHING;
     this.torsoTilt = null;
@@ -232,6 +236,8 @@ export class RepCounter {
     this.phaseStartedAt = null;
     this.minAngleThisPhase = 180;
     this.peakSinceBottom = null;
+    this.beforeGap = null;
+    this.gapMs = 0;
     this.#clearRepStats();
     this.tracking = TRACKING.SEARCHING;
   }
@@ -279,6 +285,8 @@ export class RepCounter {
       this.window = [];
       this.minAngleThisPhase = 180;
       this.peakSinceBottom = null;
+      this.beforeGap = null;
+      this.gapMs = 0;
       this.#clearRepStats();
       this.inPlank = true;
       this.uprightSince = null;
@@ -287,6 +295,13 @@ export class RepCounter {
       return this.#snapshot(false, null);
     }
 
+    const upright =
+      this.torsoTilt !== null &&
+      Number.isFinite(o.maxTorsoTiltDeg) &&
+      this.torsoTilt > o.maxTorsoTiltDeg;
+    if (upright) return this.#standing(timestamp);
+    this.uprightSince = null;
+
     if (sinceLast !== null && sinceLast > o.refillGapMs) {
       // Samples from before the gap describe where the arm was, not where it
       // is. Refill the filter, keep the phase.
@@ -294,6 +309,7 @@ export class RepCounter {
       this.smoothedAngle = null;
       if (this.state === STATE.DOWN)
         this.bridgedMs = Math.max(this.bridgedMs, sinceLast);
+      else this.gapMs = Math.max(this.gapMs, sinceLast);
     }
     this.lastSampleAt = timestamp;
 
@@ -310,32 +326,6 @@ export class RepCounter {
         ? despiked
         : this.smoothedAngle + o.smoothing * (despiked - this.smoothedAngle);
     const angle = this.smoothedAngle;
-
-    // Upright gate: arms bending while standing or walking are not a push-up.
-    const upright =
-      this.torsoTilt !== null &&
-      Number.isFinite(o.maxTorsoTiltDeg) &&
-      this.torsoTilt > o.maxTorsoTiltDeg;
-    if (!upright) {
-      this.uprightSince = null;
-    } else {
-      if (this.uprightSince === null) this.uprightSince = timestamp;
-      if (
-        this.state !== STATE.UNKNOWN &&
-        timestamp - this.uprightSince >= o.torsoGraceMs
-      ) {
-        this.state = STATE.UNKNOWN;
-        this.phaseStartedAt = null;
-        this.minAngleThisPhase = 180;
-        this.peakSinceBottom = null;
-        this.shallowMin = null;
-        this.#clearRepStats();
-      }
-      if (this.state !== STATE.DOWN) {
-        this.feedback = "Get down into a push-up to start counting.";
-        return this.#snapshot(false, angle);
-      }
-    }
 
     // Plank gate: only enforced when we could actually measure the torso.
     const plankKnown = Number.isFinite(plankAngle);
@@ -367,15 +357,16 @@ export class RepCounter {
     let rep = null;
     let nearMiss = null;
 
+    const hidden = this.#hiddenBottom(angle);
     if (this.state !== STATE.DOWN) {
       this.#trackTop(angle, timestamp);
       nearMiss = this.#trackShallow(angle);
     }
 
-    if (this.state !== STATE.DOWN && angle <= o.downAngle) {
+    if (this.state !== STATE.DOWN && (angle <= o.downAngle || hidden)) {
       this.state = STATE.DOWN;
-      this.phaseStartedAt = timestamp;
-      this.minAngleThisPhase = angle;
+      this.phaseStartedAt = hidden ? timestamp - hidden.gapMs : timestamp;
+      this.minAngleThisPhase = hidden ? Math.min(angle, hidden.depth) : angle;
       this.peakSinceBottom = angle;
       this.#markClimb(angle, timestamp);
       this.repStartTop = this.topAngle;
@@ -384,6 +375,7 @@ export class RepCounter {
       this.topAt = null;
       this.plankSum = 0;
       this.plankCount = 0;
+      if (hidden) this.bridgedMs = hidden.gapMs;
       this.feedback = "Down — now push.";
     } else if (this.state === STATE.DOWN) {
       if (plankKnown) {
@@ -410,8 +402,6 @@ export class RepCounter {
 
       if (!inPlank) {
         this.feedback = "Straighten up — hips are sagging or piked.";
-      } else if (upright) {
-        this.feedback = "Get down into a push-up to start counting.";
       } else if (lockedOut || turnedAround || heldAtTop) {
         const heldLongEnough =
           timestamp - (this.phaseStartedAt ?? timestamp) >= o.minPhaseMs;
@@ -446,7 +436,58 @@ export class RepCounter {
       this.feedback = "Lower your chest.";
     }
 
+    this.beforeGap =
+      this.state === STATE.DOWN ? null : { angle, top: this.topAngle };
     return this.#snapshot(repCompleted, angle, rep, nearMiss);
+  }
+
+  /**
+   * The bottom of a rep that happened while the arm was unseen. The angle was
+   * on its way down from the top before the gap, and one side of the gap or
+   * the other is within `nearMissDeg` of `downAngle`; a half rep is nowhere
+   * near either. Without this, a rep whose bottom is hidden behind the body or
+   * behind someone crossing the camera is lost even though both its descent
+   * and its ascent were seen.
+   */
+  #hiddenBottom(angle) {
+    const gapMs = this.gapMs;
+    const before = this.beforeGap;
+    this.gapMs = 0;
+    if (!gapMs || !before || this.state === STATE.DOWN) return null;
+    const o = this.options;
+    const fromTop =
+      before.top !== null && before.top >= o.upAngle - o.upTolerance;
+    const depth = Math.min(before.angle, angle);
+    return fromTop && depth <= o.downAngle + o.nearMissDeg
+      ? { depth, gapMs }
+      : null;
+  }
+
+  /**
+   * An upright body is not the push-up: someone walking through, or standing
+   * up. Its arms are not fed to the filter and the frame does not count as a
+   * sample, so a rep in progress is held exactly as if the arm were unseen and
+   * is abandoned after `maxGapMs`. Out of a rep, standing for `torsoGraceMs`
+   * forgets the top.
+   */
+  #standing(timestamp) {
+    if (this.uprightSince === null) this.uprightSince = timestamp;
+    if (
+      this.state !== STATE.UNKNOWN &&
+      this.state !== STATE.DOWN &&
+      timestamp - this.uprightSince >= this.options.torsoGraceMs
+    ) {
+      this.state = STATE.UNKNOWN;
+      this.phaseStartedAt = null;
+      this.minAngleThisPhase = 180;
+      this.peakSinceBottom = null;
+      this.shallowMin = null;
+      this.#clearRepStats();
+    }
+    this.tracking =
+      this.state === STATE.DOWN ? TRACKING.HOLDING : TRACKING.LOCKED;
+    this.feedback = "Get down into a push-up to start counting.";
+    return this.#snapshot(false, this.rawAngle);
   }
 
   /**
