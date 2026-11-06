@@ -510,3 +510,14 @@ the pause.
 **Overlay options added:** `display=goal|left` (done / target, or the old
 countdown), `hud=full|compact`, `boss=0`, `motion=0` (also follows the system
 reduced-motion setting), `scene=0` (ignore OBS visibility).
+
+## Phone control panel
+
+Set `PHONE_PIN` (4 to 12 digits) in `.env` and restart. The server then also
+listens on `PHONE_PORT` (4748) for a phone on the same Wi-Fi: open
+`http://<this PC's LAN IP>:4748/` on the phone, type the PIN once, and you get
+five big buttons: start set, +1, -1, undo, end set. Nothing else on the server
+is reachable from that port, the main server stays on localhost, only
+private-network addresses are answered, and five wrong PINs lock that address
+out for a minute. Windows asks once whether Node may accept connections on
+private networks; say yes for private only.

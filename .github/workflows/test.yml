@@ -1,0 +1,51 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    env:
+      EXACT_SUBS_URL: "off"
+      YOUTUBE_API_KEY: ""
+      YOUTUBE_CHANNEL_ID: ""
+      YOUTUBE_HANDLE: ""
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: npm test
+        run: |
+          set -o pipefail
+          node --test --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=tap --test-reporter-destination=test-results.tap \
+            tests/*.test.mjs
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Node ${{ matrix.node }}"
+            echo
+            echo "| File | test() calls |"
+            echo "| --- | --- |"
+            for f in tests/*.test.mjs; do
+              echo "| \`$f\` | $(grep -cE '^\s*(test|it)\(' "$f") |"
+            done
+            echo
+            grep -E '^# (tests|pass|fail|skipped|cancelled|todo|duration_ms)' test-results.tap || true
+          } >> "$GITHUB_STEP_SUMMARY"
